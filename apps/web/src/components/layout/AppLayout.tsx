@@ -9,9 +9,9 @@ export function AppLayout() {
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-60 shrink-0 flex-col border-r border-slate-200 bg-white print:hidden">
+      <aside className="flex min-h-0 w-60 shrink-0 flex-col border-r border-slate-200 bg-white print:hidden">
         <div className="border-b border-slate-200 px-5 py-4 font-semibold">Service Manager</div>
-        <nav className="flex-1 space-y-4 p-3">
+        <nav className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
           {navForRole(user.role).map((section, i) => (
             <div key={section.title ?? i} className="space-y-1">
               {section.title && (
@@ -34,7 +34,7 @@ export function AppLayout() {
         </nav>
       </aside>
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3 print:hidden">
           <div className="text-sm text-slate-500">{user.branch ? `${user.branch.name} (${user.branch.code})` : 'All branches'}</div>
           <div className="flex items-center gap-4">
@@ -47,7 +47,7 @@ export function AppLayout() {
             </button>
           </div>
         </header>
-        <main className="flex-1 overflow-auto p-6 print:overflow-visible print:p-0">
+        <main className="min-h-0 flex-1 overflow-auto p-6 print:overflow-visible print:p-0">
           <Outlet />
         </main>
       </div>

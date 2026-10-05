@@ -1,10 +1,38 @@
+import type React from 'react';
 import { useState } from 'react';
 import { Link } from 'react-router';
+import {
+  AlertTriangle,
+  ArrowLeftRight,
+  BadgeCheck,
+  Banknote,
+  Boxes,
+  CalendarClock,
+  CircleDollarSign,
+  ClipboardList,
+  Clock,
+  FilePlus2,
+  HandCoins,
+  Inbox,
+  PackageCheck,
+  PackageSearch,
+  PhoneCall,
+  Plus,
+  Receipt,
+  Search,
+  ShieldAlert,
+  Stethoscope,
+  TestTube2,
+  Truck,
+  UserCheck,
+  Users,
+  Wallet,
+  Wrench,
+} from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ENGINEER_OPEN_STATUSES,
   JOB_STATUS_LABELS,
-  ROLE_LABELS,
   ROLES,
   type JobStatus,
   type TransferDto,
@@ -17,6 +45,7 @@ import {
   type EngineerWorkloadDto,
   type JobListItemDto,
   type JobStatsDto,
+  type JobTrendDto,
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -28,6 +57,9 @@ import { useList } from '@/lib/crud';
 import { formatCurrency, timeAgo } from '@/lib/format';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { StatCard } from './StatCard';
+import { DashboardHero, HeroAction } from './DashboardHero';
+import { TrendChart } from '@/components/charts/TrendChart';
+import { BarList } from '@/components/charts/BarList';
 import { FranchisePicker, type FranchiseSelection } from './FranchisePicker';
 import { AgeBadge, OverdueCard } from './OverdueCard';
 import { CancelTransferButton, TransferResponseButtons } from '@/features/jobs/TransferActions';
@@ -40,19 +72,62 @@ const jobLink = (j: JobListItemDto) => (
   </Link>
 );
 
+const link = (to: string, label: string, Icon: React.ComponentType<{ className?: string }>) => (
+  <Link to={to}>
+    <HeroAction>
+      <Icon className="size-4" />
+      {label}
+    </HeroAction>
+  </Link>
+);
+
+function heroActions(role: string) {
+  switch (role) {
+    case ROLES.CCO:
+    case ROLES.BRANCH_MANAGER:
+      return (
+        <>
+          {link('/jobs/new', 'New job sheet', Plus)}
+          {link('/calling', 'Customer calling', PhoneCall)}
+          {link('/jobs', 'Find a job', Search)}
+        </>
+      );
+    case ROLES.ENGINEER:
+      return link('/jobs', 'My jobs', ClipboardList);
+    case ROLES.STOREKEEPER:
+      return (
+        <>
+          {link('/store/requests', 'Part requests', Inbox)}
+          {link('/store/stock', 'Stock', Boxes)}
+        </>
+      );
+    case ROLES.ACCOUNTS:
+      return (
+        <>
+          {link('/accounts/day-book', 'Day book', Wallet)}
+          {link('/reports', 'Reports', ClipboardList)}
+        </>
+      );
+    case ROLES.SUPER_ADMIN:
+      return (
+        <>
+          {link('/reports', 'Reports', ClipboardList)}
+          {link('/accounts/day-book', 'Day book', Wallet)}
+          {link('/jobs', 'All jobs', Search)}
+        </>
+      );
+    default:
+      return null;
+  }
+}
+
 export function DashboardPage() {
   const { user } = useAuth();
   if (!user) return null;
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Welcome, {user.name}</h1>
-        <p className="mt-1 text-slate-600">
-          {ROLE_LABELS[user.role]}
-          {user.branch && ` · ${user.branch.name}`}
-        </p>
-      </div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <DashboardHero user={user} actions={heroActions(user.role)} />
       {user.role === ROLES.ENGINEER && <EngineerDashboard />}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
@@ -62,6 +137,11 @@ export function DashboardPage() {
   );
 }
 
+/** Section heading between dashboard blocks. */
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-xs font-semibold tracking-wider text-slate-500 uppercase">{children}</h2>;
+}
+
 // ─── Accounts ───────────────────────────────────────────────────────────────
 
 function AccountsDashboard() {
@@ -69,13 +149,16 @@ function AccountsDashboard() {
   const pending = useQuery({ queryKey: ['calling', 'summary', 'dash'], queryFn: () => api.get<PendingCollectionSummaryDto>('/calling/summary') });
   const money = (v?: number) => (v === undefined ? undefined : formatCurrency(v));
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-      <StatCard label="Received today" value={money(book.data?.received.total)} to="/accounts/day-book" tone="info" />
-      <StatCard label="Expenses today" value={money(book.data?.expenses.total)} to="/accounts/day-book" />
-      <StatCard label="Net today" value={money(book.data?.net)} to="/accounts/day-book" tone="info" />
-      <StatCard label="Cash in hand" value={money(book.data?.cashInHand)} to="/accounts/day-book" tone="warning" />
-      <StatCard label="Pending collection" value={money(pending.data?.ready.amount)} to="/calling" tone="warning" />
-    </div>
+    <>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard label="Received today" value={money(book.data?.received.total)} to="/accounts/day-book" tone="brand" icon={Banknote} />
+        <StatCard label="Expenses today" value={money(book.data?.expenses.total)} to="/accounts/day-book" icon={Receipt} />
+        <StatCard label="Net today" value={money(book.data?.net)} to="/accounts/day-book" tone="brand" icon={CircleDollarSign} />
+        <StatCard label="Cash in hand" value={money(book.data?.cashInHand)} to="/accounts/day-book" icon={Wallet} />
+        <StatCard label="Pending collection" value={money(pending.data?.ready.amount)} to="/calling" tone="warning" icon={HandCoins} />
+      </div>
+      <TrendCard />
+    </>
   );
 }
 
@@ -94,13 +177,13 @@ function StoreDashboard() {
   return (
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Part requests to handle" value={pending} to="/store/requests" tone="warning" />
-        <StatCard label="Waiting for stock" value={waiting} to="/store/requests" />
-        <StatCard label="Low-stock parts" value={low.data?.total} to="/store/stock" tone="warning" />
-        <StatCard label="Parts to receive (transfers)" value={incoming.data?.length} to="/store/transfers" tone="info" />
+        <StatCard label="Part requests to handle" value={pending} to="/store/requests" tone={pending ? 'warning' : 'default'} icon={Inbox} />
+        <StatCard label="Waiting for stock" value={waiting} to="/store/requests" icon={PackageSearch} />
+        <StatCard label="Low-stock parts" value={low.data?.total} to="/store/stock" tone={low.data?.total ? 'critical' : 'default'} icon={AlertTriangle} />
+        <StatCard label="Parts to receive" value={incoming.data?.length} to="/store/transfers" tone="brand" icon={ArrowLeftRight} hint="From other branches" />
       </div>
       {!!low.data?.items.length && (
-        <Card title="Low stock — reorder">
+        <Card title="Low stock — reorder" icon={AlertTriangle} subtitle="At or below the reorder level">
           <ul className="divide-y divide-slate-100 text-sm">
             {low.data.items.map((r) => (
               <li key={r.part.id} className="flex justify-between py-2">
@@ -147,27 +230,27 @@ function EngineerDashboard() {
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
   const outgoing = useQuery({ queryKey: ['jobs', 'transfers', 'outgoing'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=outgoing') });
 
-  const card = (label: string, st: JobStatus, tone?: 'warning' | 'info') => (
-    <button type="button" onClick={() => setStatus(status === st ? '' : st)} className={`text-left ${status === st ? 'ring-2 ring-brand-500 rounded-lg' : ''}`}>
-      <StatCard label={label} value={by?.[st]} tone={tone} />
+  const card = (label: string, st: JobStatus, icon: React.ComponentType<{ className?: string }>, tone?: 'warning' | 'brand') => (
+    <button type="button" onClick={() => setStatus(status === st ? '' : st)} className={`rounded-xl text-left ${status === st ? 'ring-2 ring-brand-500' : ''}`}>
+      <StatCard label={label} value={by?.[st]} tone={tone} icon={icon} />
     </button>
   );
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <button type="button" onClick={() => setStatus('')} className={`text-left ${status === '' ? 'ring-2 ring-brand-500 rounded-lg' : ''}`}>
-          <StatCard label="My pending calls" value={open} tone="warning" />
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <button type="button" onClick={() => setStatus('')} className={`rounded-xl text-left ${status === '' ? 'ring-2 ring-brand-500' : ''}`}>
+          <StatCard label="My pending calls" value={open} tone="brand" icon={ClipboardList} />
         </button>
-        {card('To diagnose', 'ASSIGNED', 'info')}
-        {card('Awaiting approval', 'AWAITING_APPROVAL')}
-        {card('To repair', 'IN_REPAIR', 'info')}
-        {card('Repaired', 'REPAIRED')}
-        {card('Testing', 'TESTING')}
-        {card('Spare not available', 'SPARE_PENDING', 'warning')}
+        {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
+        {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
+        {card('To repair', 'IN_REPAIR', Wrench, 'brand')}
+        {card('Repaired', 'REPAIRED', BadgeCheck)}
+        {card('Testing', 'TESTING', TestTube2)}
+        {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
       </div>
       {!!incoming.data?.length && (
-        <Card title={`Transfer requests for you (${incoming.data.length})`}>
+        <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
           <ul className="divide-y divide-slate-100">
             {incoming.data.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
@@ -187,7 +270,7 @@ function EngineerDashboard() {
         </Card>
       )}
       {!!outgoing.data?.length && (
-        <Card title="Your transfer requests (waiting for acceptance)">
+        <Card title="Your transfer requests" icon={ArrowLeftRight} subtitle="Waiting for the other engineer to accept">
           <ul className="divide-y divide-slate-100">
             {outgoing.data.map((t) => (
               <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-sm">
@@ -200,7 +283,7 @@ function EngineerDashboard() {
           </ul>
         </Card>
       )}
-      <Card title={status ? JOB_STATUS_LABELS[status as JobStatus] : 'My pending calls (oldest first)'}>
+      <Card title={status ? JOB_STATUS_LABELS[status as JobStatus] : 'My queue'} subtitle="Oldest first" icon={ClipboardList}>
         <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
       </Card>
     </>
@@ -298,24 +381,40 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Awaiting assignment" value={by?.RECEIVED} tone="warning" />
-        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} tone="warning" />
-        <StatCard label="With engineers" value={withEngineer} tone="info" />
-        <StatCard label="Spare not available" value={by?.SPARE_PENDING} tone="warning" />
-        <StatCard label="Ready – returned OK" value={by?.READY_FOR_DELIVERY} />
-        <StatCard label="RWR (unrepaired)" value={by?.RWR} />
-        <StatCard label="Delivered" value={by?.DELIVERED} />
-        <StatCard label="At L4 / in transit" value={stats.data?.atL4} to="/l4" />
-        <StatCard label="Follow-ups due" value={followUps.data?.followUpsDue} to="/calling" tone="warning" />
-        <StatCard label="Customer rejected" value={by?.CUSTOMER_REJECTED} />
-        <StatCard label="Total jobs" value={stats.data?.total} to="/jobs" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard label="Awaiting assignment" value={by?.RECEIVED} tone={by?.RECEIVED ? 'warning' : 'default'} icon={UserCheck} hint="Phones here without an engineer" />
+        <StatCard label="With engineers" value={withEngineer} tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
+        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
+        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} />
+        <MiniStat label="Follow-ups due" value={followUps.data?.followUpsDue} icon={CalendarClock} to="/calling" />
+        <MiniStat label="At L4 / in transit" value={stats.data?.atL4} icon={Truck} to="/l4" />
+        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} />
+        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} />
+        <MiniStat label="Total jobs" value={stats.data?.total} icon={Users} to="/jobs" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <TrendCard branchId={branchId} />
+        </div>
+        <Card title="Where jobs are now" subtitle="Phones at this branch, by stage" icon={ClipboardList} className="h-full">
+          <BarList
+            items={by ? PIPELINE.map(([st, label]) => ({ key: st, label, value: by[st], to: `/jobs?status=${st}` })) : []}
+            emptyText="Loading…"
+          />
+        </Card>
       </div>
 
       <OverdueCard branchId={branchId} />
 
       <Card
-        title={`Ready for collection — call customers (${collection.length})`}
+        title={`Ready for collection (${collection.length})`}
+        subtitle="Call the customer, then deliver & bill"
+        icon={PackageCheck}
         actions={toCollect > 0 && <span className="text-sm font-medium text-slate-700">To collect: {formatCurrency(toCollect)}</span>}
       >
         <DataTable
@@ -360,7 +459,7 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         />
       </Card>
 
-      <Card title="Customer approval needed — call these customers">
+      <Card title="Customer approval needed" subtitle="Call and record the customer's answer" icon={PhoneCall}>
         <DataTable
           columns={approvalColumns}
           rows={approvals.data?.items}
@@ -371,7 +470,7 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
       </Card>
 
       {!!spares.data?.items.length && (
-        <Card title="Waiting for spare parts">
+        <Card title="Waiting for spare parts" icon={PackageSearch}>
           <DataTable
             columns={[
               { header: 'Job no.', cell: jobLink },
@@ -389,6 +488,8 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card
           title="Waiting for an engineer"
+          subtitle="Oldest first"
+          icon={UserCheck}
           className={isSuperAdmin ? 'lg:col-span-3' : 'lg:col-span-2'}
           actions={
             (queue.data?.total ?? 0) > 10 && (
@@ -402,19 +503,11 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         </Card>
 
         {!isSuperAdmin && (
-          <Card title="Engineer workload" className="h-fit">
-            {engineers.data?.length ? (
-              <ul className="space-y-2">
-                {engineers.data.map((e) => (
-                  <li key={e.id} className="flex items-center justify-between text-sm">
-                    <span>{e.name}</span>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium">{e.openJobs} open</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-slate-500">{engineers.isLoading ? 'Loading…' : 'No active engineers'}</p>
-            )}
+          <Card title="Engineer workload" subtitle="Open jobs per engineer" icon={Users} className="h-fit">
+            <BarList
+              items={(engineers.data ?? []).map((e) => ({ key: e.id, label: e.name, value: e.openJobs }))}
+              emptyText={engineers.isLoading ? 'Loading…' : 'No active engineers'}
+            />
           </Card>
         )}
       </div>
@@ -429,4 +522,70 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
       />
     </>
   );
+}
+
+// ─── Shared dashboard pieces ────────────────────────────────────────────────
+
+/** Workflow stages shown in the "where jobs are now" bars, in workflow order. */
+const PIPELINE: [JobStatus, string][] = [
+  ['RECEIVED', 'Awaiting engineer'],
+  ['ASSIGNED', 'Diagnosis'],
+  ['AWAITING_APPROVAL', 'Customer approval'],
+  ['IN_REPAIR', 'In repair'],
+  ['SPARE_PENDING', 'Spare not available'],
+  ['REPAIRED', 'Repaired'],
+  ['TESTING', 'Testing'],
+  ['READY_FOR_DELIVERY', 'Ready (OK)'],
+  ['RWR', 'Ready (RWR)'],
+];
+
+// Validated categorical slots 1 & 2 (blue / orange) — see the dataviz palette.
+const SERIES = [
+  { key: 'received', label: 'Received', color: '#2a78d6' },
+  { key: 'delivered', label: 'Delivered', color: '#eb6834' },
+];
+
+function TrendCard({ branchId }: { branchId?: string }) {
+  const [days, setDays] = useState(14);
+  const trend = useQuery({
+    queryKey: ['jobs', 'trend', days, branchId],
+    queryFn: () => api.get<JobTrendDto>(`/jobs/trend?days=${days}${branchId ? `&branchId=${branchId}` : ''}`),
+  });
+  const totals = (trend.data ?? []).reduce((t, d) => ({ in: t.in + d.received, out: t.out + d.delivered }), { in: 0, out: 0 });
+  return (
+    <Card
+      title="Jobs in & out"
+      subtitle={`Last ${days} days · ${totals.in} received · ${totals.out} delivered`}
+      icon={CalendarClock}
+      className="h-full"
+      actions={
+        <div className="inline-flex rounded-md border border-slate-200 p-0.5 text-xs">
+          {[7, 14, 30].map((d) => (
+            <button key={d} type="button" onClick={() => setDays(d)} className={`rounded px-2 py-1 ${days === d ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>
+              {d}d
+            </button>
+          ))}
+        </div>
+      }
+    >
+      {trend.data ? (
+        <TrendChart data={trend.data} series={SERIES} height={300} ariaLabel={`Jobs received and delivered per day, last ${days} days`} />
+      ) : (
+        <div className="h-[324px] animate-pulse rounded-lg bg-slate-50" />
+      )}
+    </Card>
+  );
+}
+
+function MiniStat({ label, value, icon: Icon, to }: { label: string; value: number | undefined; icon: React.ComponentType<{ className?: string }>; to?: string }) {
+  const body = (
+    <div className="flex items-center gap-3 rounded-xl bg-white px-3.5 py-3 ring-1 ring-slate-200/80 transition hover:shadow-sm">
+      <Icon className="size-4 shrink-0 text-slate-400" />
+      <div className="min-w-0">
+        <div className="truncate text-xs text-slate-500">{label}</div>
+        <div className="text-lg leading-tight font-semibold text-slate-900 tabular-nums">{value ?? '–'}</div>
+      </div>
+    </div>
+  );
+  return to ? <Link to={to}>{body}</Link> : body;
 }

@@ -8,6 +8,7 @@ import {
   roundMoney,
   type EngineerWorkloadDto,
   type JobStatsDto,
+  type JobTrendDto,
   type JobStatus,
 } from '@msm/shared';
 import type {
@@ -29,6 +30,7 @@ import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { storage } from '../../lib/storage.ts';
+import { businessRange, businessToday, startOfBusinessDay } from '../../lib/business-date.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { jobPartSelect, toJobPartDto } from '../inventory/job-part.ts';
 import { nextJobNumber } from './job-number.ts';
@@ -637,4 +639,29 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
   const byStatus = Object.fromEntries(JOB_STATUSES.map((s) => [s, 0])) as Record<JobStatus, number>;
   for (const g of groups) byStatus[g.status] = g._count._all;
   return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0), atL4 };
+}
+
+// ─── Dashboard trend ────────────────────────────────────────────────────────
+
+/** Jobs received vs delivered per business day for the caller's branch (or the chosen / all branches for Super Admin). */
+export async function trend(actor: Actor, days: number, branchId?: string): Promise<JobTrendDto> {
+  const branch = actor.branchId ?? branchId;
+  const today = businessToday();
+  const dates = Array.from({ length: days }, (_, i) => businessToday(new Date(startOfBusinessDay(today).getTime() - (days - 1 - i) * 86_400_000 + 43_200_000)));
+  const range = businessRange(dates[0]!, today);
+  const scope = branch ? { branchId: branch } : {};
+  const [received, delivered] = await Promise.all([
+    prisma.job.findMany({ where: { ...scope, createdAt: range }, select: { createdAt: true } }),
+    prisma.job.findMany({ where: { ...scope, deliveredAt: range }, select: { deliveredAt: true } }),
+  ]);
+  const rows = new Map(dates.map((d) => [d, { date: d, received: 0, delivered: 0 }]));
+  for (const j of received) {
+    const r = rows.get(businessToday(j.createdAt));
+    if (r) r.received++;
+  }
+  for (const j of delivered) {
+    const r = rows.get(businessToday(j.deliveredAt!));
+    if (r) r.delivered++;
+  }
+  return [...rows.values()];
 }

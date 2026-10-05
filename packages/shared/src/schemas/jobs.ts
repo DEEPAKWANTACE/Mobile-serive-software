@@ -486,6 +486,14 @@ export type JobDto = {
   photos: JobPhotoDto[];
 };
 
+export const jobTrendQuerySchema = z.object({
+  days: z.coerce.number().int().min(7).max(60).default(14),
+  branchId: z.uuid().optional(),
+});
+
+/** Daily counts (business days, oldest first) for the dashboard trend chart. */
+export type JobTrendDto = { date: string; received: number; delivered: number }[];
+
 export type EngineerWorkloadDto = { id: string; name: string; openJobs: number };
 
 /** Job counts by status within the caller's scope (engineers: their own jobs). */

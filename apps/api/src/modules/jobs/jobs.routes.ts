@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  jobTrendQuerySchema,
   imeiCheckQuerySchema,
   jobEditSchema,
   photoDeleteSchema,
@@ -41,6 +42,7 @@ import * as calling from '../calling/calling.service.ts';
 import { actorOf } from '../../lib/request-context.ts';
 import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
+import * as service from './jobs.service.ts';
 import * as l4 from './l4.service.ts';
 import * as editing from './edit.service.ts';
 
@@ -79,6 +81,10 @@ jobRoutes.get('/engineers', authorize(...viewers), validate({ query: engineerLis
 // Transfers (static paths before "/:id")
 const transferParams = z.object({ transferId: z.uuid() });
 jobRoutes.get('/transfers', authorize(...viewers), validate({ query: transferListQuerySchema }), controller.listTransfers);
+jobRoutes.get('/trend', authorize(...assigners, ROLES.ACCOUNTS), validate({ query: jobTrendQuerySchema }), async (req, res) => {
+  const q = res.locals.query as { days: number; branchId?: string };
+  res.json(await service.trend(actorOf(req), q.days, q.branchId));
+});
 jobRoutes.get('/imei-check', authorize(...viewers), validate({ query: imeiCheckQuerySchema }), async (_req, res) => {
   const q = res.locals.query as { imei: string; excludeJobId?: string };
   res.json(await editing.imeiCheck(q.imei, q.excludeJobId));

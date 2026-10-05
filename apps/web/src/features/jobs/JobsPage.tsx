@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   JOB_STATUS_LABELS,
   JOB_STATUSES,
@@ -26,7 +26,8 @@ export function JobsPage() {
   const isEngineer = user?.role === ROLES.ENGINEER;
   const canCreate = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
 
-  const list = useListState({ status: '', branchId: '', engineerId: '' });
+  const [searchParams] = useSearchParams();
+  const list = useListState({ status: searchParams.get('status') ?? '', branchId: '', engineerId: '' });
   const { data, isLoading } = useList<JobListItemDto>('jobs', list.params);
   const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: isSuperAdmin });
   // Engineer filter needs a branch: own branch for staff, the selected one for Super Admin.
