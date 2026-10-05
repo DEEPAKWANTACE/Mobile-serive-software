@@ -17,6 +17,8 @@ const UNIQUE_CONSTRAINTS: Record<string, [string, string]> = {
   brands_name_key: ['name', 'This brand already exists'],
   device_models_brand_id_name_key: ['name', 'This model already exists for the selected brand'],
   faults_name_key: ['name', 'This fault already exists'],
+  fault_categories_name_key: ['name', 'This category already exists'],
+  parts_code_key: ['code', 'A part with this code already exists'],
 };
 
 const constraintName = (err: Prisma.PrismaClientKnownRequestError): string | undefined =>

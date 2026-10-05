@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   BRANCH_STAFF_ROLES,
@@ -30,6 +30,9 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/features/auth/auth-context';
+import { AuthImage } from '@/features/jobs/AuthImage';
+import { PhotoPicker } from '@/features/jobs/PhotoPicker';
+import { compressImage } from '@/lib/image';
 import { useListState } from '@/hooks/use-list-state';
 import { api } from '@/lib/api-client';
 import { useList, useOptions, useSave } from '@/lib/crud';
@@ -150,7 +153,9 @@ type StaffFormProps = {
 function StaffForm({ user, me, roles, branches, onDone }: StaffFormProps) {
   const isSuperAdmin = me.role === ROLES.SUPER_ADMIN;
   const isSelf = user?.id === me.id;
-  const save = useSave<Omit<UserCreateData, 'password'> | UserCreateData>('users');
+  const save = useSave<Omit<UserCreateData, 'password'> | UserCreateData, UserDto>('users');
+  const [aadhaarPhoto, setAadhaarPhoto] = useState<File[]>([]);
+  const queryClient = useQueryClient();
 
   const { register, handleSubmit, setError, watch, formState: { errors } } = useForm<UserCreateInput, unknown, UserCreateData>({
     // Edit form has the same fields minus password; cast keeps one typed form for both modes.
@@ -160,6 +165,8 @@ function StaffForm({ user, me, roles, branches, onDone }: StaffFormProps) {
       username: user?.username ?? '',
       phone: user?.phone ?? '',
       email: user?.email ?? '',
+      address: user?.address ?? '',
+      aadhaarNumber: user?.aadhaarNumber ?? '',
       role: user?.role ?? (roles.includes(ROLES.ENGINEER) ? ROLES.ENGINEER : roles[0]),
       branchId: user ? user.branch?.id ?? null : isSuperAdmin ? null : me.branch?.id ?? null,
       password: '',
@@ -171,7 +178,15 @@ function StaffForm({ user, me, roles, branches, onDone }: StaffFormProps) {
     save.mutate(
       { id: user?.id, data: user ? (({ password: _, ...rest }) => rest)(data) : data },
       {
-        onSuccess: () => {
+        onSuccess: async (saved) => {
+          if (aadhaarPhoto[0]) {
+            const form = new FormData();
+            form.append('photo', await compressImage(aadhaarPhoto[0]), 'aadhaar.jpg');
+            await api.put(`/users/${saved.id}/aadhaar-photo`, form).catch((e: Error) => toast.error(`Aadhaar photo: ${e.message}`));
+            // The list was refreshed before the upload finished; refresh again and drop the cached old image.
+            queryClient.removeQueries({ queryKey: ['blob', `/users/${saved.id}/aadhaar-photo`] });
+            await queryClient.invalidateQueries({ queryKey: ['users'] });
+          }
           toast.success(user ? 'Staff updated' : 'Staff account created');
           onDone();
         },
@@ -231,6 +246,25 @@ function StaffForm({ user, me, roles, branches, onDone }: StaffFormProps) {
             <input value={(isSelf ? user?.branch?.name : me.branch?.name) ?? ''} disabled className={inputClass} />
           </Field>
         ))}
+      <Field label="Address" error={errors.address?.message} className="sm:col-span-2">
+        <input {...register('address')} className={inputClass} />
+      </Field>
+      <Field label="Aadhaar number" error={errors.aadhaarNumber?.message} hint="12 digits">
+        <input {...register('aadhaarNumber')} inputMode="numeric" maxLength={14} className={`${inputClass} font-mono`} />
+      </Field>
+      <div>
+        {user?.hasAadhaarPhoto && !aadhaarPhoto.length && (
+          <div className="mb-2">
+            <div className="mb-1 text-sm font-medium text-slate-700">Aadhaar photo (saved)</div>
+            <AuthImage src={`/users/${user.id}/aadhaar-photo`} alt="Aadhaar" className="h-24 rounded ring-1 ring-slate-200" />
+          </div>
+        )}
+        <PhotoPicker
+          label={user?.hasAadhaarPhoto ? 'Replace Aadhaar photo' : 'Aadhaar photo'}
+          files={aadhaarPhoto}
+          onChange={setAadhaarPhoto}
+        />
+      </div>
       {!user && (
         <Field label="Password" required error={errors.password?.message} hint="Minimum 8 characters">
           <input {...register('password')} type="password" autoComplete="new-password" className={inputClass} aria-invalid={!!errors.password} />

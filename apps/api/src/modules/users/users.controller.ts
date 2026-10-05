@@ -19,3 +19,14 @@ export async function resetPassword(req: Request<{ id: string }>, res: Response)
   await service.resetPassword(req.params.id, req.body.password, actorOf(req));
   res.status(204).end();
 }
+
+export async function setAadhaarPhoto(req: Request<{ id: string }>, res: Response) {
+  await service.setAadhaarPhoto(req.params.id, req.file, actorOf(req));
+  res.status(204).end();
+}
+
+export async function getAadhaarPhoto(req: Request<{ id: string }>, res: Response) {
+  const { stream, mimeType } = await service.getAadhaarPhoto(req.params.id, actorOf(req));
+  res.set({ 'Content-Type': mimeType, 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' });
+  stream.pipe(res);
+}

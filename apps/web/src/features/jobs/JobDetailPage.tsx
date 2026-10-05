@@ -1,10 +1,19 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import {
   ASSIGNABLE_STATUSES,
+  RWR_REASON_LABELS,
+  JOB_STATUS_LABELS,
+  type JobStatus,
   ENGINEER_VISIBLE_PHOTO_KINDS,
+  jobDeviceUpdateSchema,
+  PAYMENT_MODE_LABELS,
+  type JobDeviceUpdateData,
+  type JobDeviceUpdateInput,
   PHOTO_KIND_LABELS,
   PHOTO_KINDS,
   ROLES,
@@ -15,14 +24,20 @@ import {
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Field, inputClass } from '@/components/ui/Field';
+import { FormActions } from '@/components/ui/FormActions';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/features/auth/auth-context';
-import { formatDateTime } from '@/lib/format';
+import { api } from '@/lib/api-client';
+import { handleFormError } from '@/lib/form-errors';
+import { formatCurrency, formatDateTime } from '@/lib/format';
 import { AssignEngineerDialog } from './AssignEngineerDialog';
 import { AuthImage } from './AuthImage';
 import { uploadJobPhotos, useJob, useJobHistory } from './api';
 import { JobStatusBadge } from './JobStatusBadge';
 import { PhotoPicker } from './PhotoPicker';
+import { JobPartsCard } from './JobPartsCard';
+import { WorkPanel } from './WorkPanel';
 
 export function JobDetailPage() {
   const { id = '' } = useParams();
@@ -81,6 +96,8 @@ export function JobDetailPage() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
+          <WorkPanel job={job} />
+          <JobPartsCard job={job} />
           <JobInfo job={job} />
           <Photos job={job} />
         </div>
@@ -101,9 +118,24 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 function JobInfo({ job }: { job: JobDto }) {
   const accessories = [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])];
+  const [editingDevice, setEditingDevice] = useState(false);
   return (
     <>
-      <Card title="Customer & device">
+      <Card
+        title="Customer & device"
+        actions={
+          job.status !== 'DELIVERED' && (
+            <Button variant="link" onClick={() => setEditingDevice(true)}>
+              {job.imei || job.serialNumber ? 'Edit IMEI / serial' : 'Add IMEI / serial'}
+            </Button>
+          )
+        }
+      >
+        {!job.imei && !job.serialNumber && job.status !== 'DELIVERED' && (
+          <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            IMEI / serial not recorded yet — it must be added before the phone is delivered.
+          </div>
+        )}
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Row label="Customer">{job.customer.name}</Row>
           <Row label="Mobile">
@@ -123,24 +155,91 @@ function JobInfo({ job }: { job: JobDto }) {
           <Row label="Serial no.">{job.serialNumber && <span className="font-mono">{job.serialNumber}</span>}</Row>
           <Row label="Colour">{job.color}</Row>
         </dl>
+        <Modal open={editingDevice} onClose={() => setEditingDevice(false)} title="IMEI / serial number" size="sm">
+          {editingDevice && <DeviceForm job={job} onDone={() => setEditingDevice(false)} />}
+        </Modal>
       </Card>
       <Card title="Problem & intake">
         <dl className="space-y-4">
           <Row label="Faults reported">
-            <div className="flex flex-wrap gap-1.5">
+            <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
               {job.faults.map((f) => (
-                <span key={f.id} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs">
-                  {f.name}
-                </span>
+                <li key={f.id} className="flex justify-between gap-3 px-3 py-1.5">
+                  <span>{f.name}</span>
+                  <span className="text-slate-600">
+                    {f.price !== null ? `${f.priceLabel} — ${formatCurrency(f.price)}` : <span className="text-slate-400">To be decided</span>}
+                  </span>
+                </li>
               ))}
-            </div>
+            </ul>
           </Row>
           <Row label="Customer complaint">{job.customerComplaint}</Row>
           <Row label="Accessories received">{accessories.length ? accessories.join(', ') : 'None'}</Row>
           <Row label="Physical condition">{job.conditionNotes}</Row>
         </dl>
       </Card>
+      <Estimate job={job} />
     </>
+  );
+}
+
+function Estimate({ job }: { job: JobDto }) {
+  const paid = job.payments.reduce((sum, p) => sum + p.amount, 0);
+  return (
+    <Card title="Estimate & payments">
+      <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Row label="Estimated amount">
+          <span className="text-base font-semibold">{job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</span>
+        </Row>
+        <Row label="Received so far">
+          <span className="text-base font-semibold text-emerald-700">{formatCurrency(paid)}</span>
+        </Row>
+        {job.estimatedAmount !== null && (
+          <Row label="Balance (as per estimate)">
+            <span className="text-base font-semibold">{formatCurrency(Math.max(0, job.estimatedAmount - paid))}</span>
+          </Row>
+        )}
+      </dl>
+      {job.payments.length > 0 && (
+        <ul className="mt-4 space-y-1 text-sm text-slate-600">
+          {job.payments.map((p) => (
+            <li key={p.id}>
+              {p.kind === 'ADVANCE' ? 'Advance' : 'Payment'} · {formatCurrency(p.amount)} by {PAYMENT_MODE_LABELS[p.mode]}
+              {p.reference && ` (${p.reference})`} · {formatDateTime(p.createdAt)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const { register, handleSubmit, setError, formState: { errors } } = useForm<JobDeviceUpdateInput, unknown, JobDeviceUpdateData>({
+    resolver: zodResolver(jobDeviceUpdateSchema),
+    defaultValues: { imei: job.imei ?? '', serialNumber: job.serialNumber ?? '' },
+  });
+  const save = useMutation({
+    mutationFn: (data: JobDeviceUpdateData) => api.patch(`/jobs/${job.id}/device`, data),
+    onSuccess: () => {
+      toast.success('Device details updated');
+      void queryClient.invalidateQueries({ queryKey: ['jobs', job.id] });
+      onDone();
+    },
+    onError: (err) => handleFormError(err, setError),
+  });
+
+  return (
+    <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
+      <Field label="IMEI" error={errors.imei?.message} hint="15 digits — dial *#06#">
+        <input {...register('imei')} inputMode="numeric" maxLength={15} autoFocus className={`${inputClass} font-mono`} />
+      </Field>
+      <Field label="Serial number" error={errors.serialNumber?.message}>
+        <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
+      </Field>
+      <FormActions onCancel={onDone} loading={save.isPending} />
+    </form>
   );
 }
 
@@ -158,11 +257,12 @@ function Photos({ job }: { job: JobDto }) {
       <div className="space-y-5">
         {kinds.map((kind) => {
           const list = job.photos.filter((p) => p.kind === kind);
+          if (kind === 'RWR' && !list.length) return null;
           return (
             <div key={kind}>
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-sm font-medium text-slate-700">{PHOTO_KIND_LABELS[kind]}</span>
-                {canUpload && (
+                {canUpload && kind !== 'RWR' && (
                   <Button variant="link" onClick={() => setAdding(kind)}>
                     Add
                   </Button>
@@ -228,16 +328,66 @@ function AddPhotos({ jobId, kind, onDone }: { jobId: string; kind: PhotoKind; on
   );
 }
 
+function formatMinutes(mins: number) {
+  if (mins < 60) return `${mins} min`;
+  const h = Math.floor(mins / 60);
+  return h < 24 ? `${h}h ${mins % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
 function describe(entry: JobHistoryEntryDto) {
   const meta = (entry.metadata ?? {}) as Record<string, unknown>;
   switch (entry.action) {
     case 'job.created':
-      return 'Job sheet created';
+      return meta.estimatedAmount != null
+        ? `Job sheet created — estimate ${formatCurrency(Number(meta.estimatedAmount))}`
+        : 'Job sheet created';
     case 'job.photos_added': {
       const kind = meta.kind as PhotoKind | undefined;
       const count = Number(meta.count ?? 0);
       return `${kind ? PHOTO_KIND_LABELS[kind] : 'Photos'}: ${count} photo${count === 1 ? '' : 's'} added`;
     }
+    case 'payment.received':
+      return `${meta.kind === 'ADVANCE' ? 'Advance' : 'Payment'} received: ${formatCurrency(Number(meta.amount ?? 0))} (${PAYMENT_MODE_LABELS[meta.mode as keyof typeof PAYMENT_MODE_LABELS] ?? meta.mode})`;
+    case 'job.device_updated': {
+      const to = (meta.to ?? {}) as { imei?: string | null; serialNumber?: string | null };
+      return `Device details updated${to.imei ? ` — IMEI ${to.imei}` : ''}${to.serialNumber ? ` — S/N ${to.serialNumber}` : ''}`;
+    }
+    case 'job.diagnosed':
+      return meta.autoApproved
+        ? `Diagnosed — estimate ${formatCurrency(Number(meta.total ?? 0))} (within agreed amount)`
+        : `Diagnosed — estimate ${formatCurrency(Number(meta.total ?? 0))}, sent for customer approval`;
+    case 'job.approved':
+      return `Customer approved ${formatCurrency(Number(meta.amount ?? 0))}${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.rejected':
+      return `Customer rejected ${formatCurrency(Number(meta.amount ?? 0))} — “${meta.note ?? ''}”`;
+    case 'job.status_changed':
+      return `${JOB_STATUS_LABELS[meta.from as JobStatus] ?? meta.from} → ${JOB_STATUS_LABELS[meta.to as JobStatus] ?? meta.to}${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.transfer_requested':
+      return `Transfer requested to ${(meta.to as { name?: string })?.name} — “${meta.reason ?? ''}”`;
+    case 'job.transfer_accepted':
+      return `Transfer accepted by ${(meta.to as { name?: string })?.name} (held by ${(meta.from as { name?: string })?.name} for ${formatMinutes(Number(meta.heldMinutes ?? 0))})`;
+    case 'job.transfer_rejected':
+      return `Transfer rejected by ${(meta.to as { name?: string })?.name} — “${meta.note ?? ''}”`;
+    case 'job.transfer_cancelled':
+      return 'Transfer request cancelled';
+    case 'job.spare_hold':
+      return `Spare not available: ${meta.part ?? ''}`;
+    case 'job.spare_received':
+      return `Spare received${meta.waitedMinutes != null ? ` after ${formatMinutes(Number(meta.waitedMinutes))}` : ''} — work resumed`;
+    case 'job.rwr':
+      return `Returned without repair — ${RWR_REASON_LABELS[meta.reason as keyof typeof RWR_REASON_LABELS] ?? meta.reason}: “${meta.note ?? ''}”`;
+    case 'job.part_requested':
+      return `Part requested: ${meta.code} ${meta.name}${Number(meta.quantity) > 1 ? ` × ${meta.quantity}` : ''}`;
+    case 'job.part_issued':
+      return `Part issued: ${meta.code} ${meta.name}`;
+    case 'job.part_not_available':
+      return `Part not available: ${meta.part}${meta.jobOnHold ? ' — job waiting for spare' : ''}`;
+    case 'job.part_returned':
+      return `Part returned to stock: ${meta.code} ${meta.name}`;
+    case 'job.part_cancelled':
+      return `Part request cancelled: ${meta.code} ${meta.name}`;
+    case 'job.delivered':
+      return `Delivered to ${meta.deliveredTo} — invoice ${meta.invoiceNumber}, total ${formatCurrency(Number(meta.total ?? 0))}${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
     case 'job.assigned':
       return `Assigned to ${(meta.engineer as { name?: string } | undefined)?.name ?? 'engineer'}`;
     case 'job.reassigned':

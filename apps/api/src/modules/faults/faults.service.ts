@@ -1,19 +1,32 @@
-import type { FaultCreateData, FaultDto, FaultUpdateData, ListQuery } from '@msm/shared';
+import type { FaultCreateData, FaultDto, FaultListQuery, FaultUpdateData } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 
-const select = { id: true, name: true, description: true, isActive: true } satisfies Prisma.FaultSelect;
+const select = {
+  id: true,
+  name: true,
+  description: true,
+  requiresIdProof: true,
+  isActive: true,
+  category: { select: { id: true, name: true } },
+} satisfies Prisma.FaultSelect;
 
-export async function list(query: ListQuery) {
+export async function list(query: FaultListQuery) {
   const where: Prisma.FaultWhereInput = {
     isActive: query.isActive,
+    categoryId: query.categoryId,
     ...(query.search && { name: contains(query.search) }),
   };
   const [rows, total] = await prisma.$transaction([
-    prisma.fault.findMany({ where, select, orderBy: { name: 'asc' }, ...pageArgs(query) }),
+    prisma.fault.findMany({
+      where,
+      select,
+      orderBy: [{ category: { sortOrder: 'asc' } }, { category: { name: 'asc' } }, { name: 'asc' }],
+      ...pageArgs(query),
+    }),
     prisma.fault.count({ where }),
   ]);
   return toPage<FaultDto>(rows, total, query);

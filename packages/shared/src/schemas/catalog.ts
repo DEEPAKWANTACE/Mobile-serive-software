@@ -32,15 +32,42 @@ export type ModelDto = {
   priceCount: number;
 };
 
+// ─── Fault categories ───────────────────────────────────────────────────────
+
+export const faultCategoryCreateSchema = z.object({
+  name,
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+export const faultCategoryUpdateSchema = faultCategoryCreateSchema.partial().extend({ isActive: z.boolean().optional() });
+export type FaultCategoryCreateInput = z.input<typeof faultCategoryCreateSchema>;
+export type FaultCategoryCreateData = z.output<typeof faultCategoryCreateSchema>;
+export type FaultCategoryUpdateData = z.output<typeof faultCategoryUpdateSchema>;
+
+export type FaultCategoryDto = { id: string; name: string; sortOrder: number; isActive: boolean; faultCount: number };
+
 // ─── Faults / problems ──────────────────────────────────────────────────────
 
-export const faultCreateSchema = z.object({ name, description: optionalText(300) });
+export const faultCreateSchema = z.object({
+  categoryId: z.uuid('Select a category'),
+  name,
+  description: optionalText(300),
+  requiresIdProof: z.boolean().default(false),
+});
 export const faultUpdateSchema = faultCreateSchema.partial().extend({ isActive: z.boolean().optional() });
+export const faultListQuerySchema = listQuerySchema.extend({ categoryId: z.uuid().optional() });
 export type FaultCreateInput = z.input<typeof faultCreateSchema>;
 export type FaultCreateData = z.output<typeof faultCreateSchema>;
 export type FaultUpdateData = z.output<typeof faultUpdateSchema>;
+export type FaultListQuery = z.output<typeof faultListQuerySchema>;
 
-export type FaultDto = { id: string; name: string; description: string | null; isActive: boolean };
+export type FaultDto = {
+  id: string;
+  name: string;
+  description: string | null;
+  requiresIdProof: boolean;
+  isActive: boolean;
+  category: { id: string; name: string } | null;
+};
 
 // ─── Service pricing (per model + fault) ────────────────────────────────────
 
@@ -50,13 +77,33 @@ export const priceAmount = z.coerce
   .max(10_000_000, 'Price is too large')
   .multipleOf(0.01, 'Max 2 decimal places');
 
-/** Replace a model's price list. `price: null` removes that fault's price. */
+export const priceOptionSchema = z.object({
+  label: z.string().trim().min(1, 'Label is required').max(40),
+  price: priceAmount,
+});
+
+/**
+ * Replace the price options of the listed faults for one model (e.g. Screen: Copy 1000 / OG 2000 / Original 3000).
+ * An empty `options` array removes all prices for that fault; faults not listed are untouched.
+ */
 export const modelPricesUpdateSchema = z.object({
   prices: z
-    .array(z.object({ faultId: z.uuid(), price: priceAmount.nullable() }))
+    .array(
+      z.object({
+        faultId: z.uuid(),
+        options: z
+          .array(priceOptionSchema)
+          .max(10)
+          .refine(
+            (opts) => new Set(opts.map((o) => o.label.toLowerCase())).size === opts.length,
+            'Option labels must be unique',
+          ),
+      }),
+    )
     .max(1000)
     .refine((rows) => new Set(rows.map((r) => r.faultId)).size === rows.length, 'Duplicate fault in price list'),
 });
 export type ModelPricesUpdateData = z.output<typeof modelPricesUpdateSchema>;
 
-export type ModelPriceDto = { faultId: string; price: number };
+/** One price option of a model + fault. */
+export type ModelPriceDto = { id: string; faultId: string; label: string; price: number };

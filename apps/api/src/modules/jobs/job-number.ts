@@ -2,7 +2,7 @@ import type { Prisma } from '../../generated/prisma/client.ts';
 import { env } from '../../config/env.ts';
 
 /** "YYMM" for the given date in the business timezone. */
-function period(date: Date) {
+export function period(date: Date) {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: env.APP_TIMEZONE, year: '2-digit', month: '2-digit' })
     .formatToParts(date)
     .reduce<Record<string, string>>((acc, p) => ({ ...acc, [p.type]: p.value }), {});

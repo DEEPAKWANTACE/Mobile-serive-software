@@ -2,9 +2,21 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  deliverySchema,
+  partRequestSchema,
+  approvalSchema,
+  rwrSchema,
+  spareHoldSchema,
+  spareReceivedSchema,
+  transferListQuerySchema,
+  transferRequestSchema,
+  transferResponseSchema,
+  diagnosisSchema,
   engineerListQuerySchema,
+  statusChangeSchema,
   idParamSchema,
   jobAssignSchema,
+  jobDeviceUpdateSchema,
   jobStatsQuerySchema,
   jobCreateSchema,
   jobListQuerySchema,
@@ -14,12 +26,15 @@ import {
   ROLES,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
+import { multipartJson } from '../../middleware/multipart-json.ts';
 import { validate } from '../../middleware/validate.ts';
+import * as billing from '../billing/billing.controller.ts';
+import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: PHOTO_MAX_BYTES, files: PHOTO_MAX_PER_UPLOAD },
+  limits: { fileSize: PHOTO_MAX_BYTES, files: PHOTO_MAX_PER_UPLOAD + 5 },
 });
 
 const photoParams = z.object({ id: z.uuid(), photoId: z.uuid() });
@@ -33,16 +48,49 @@ const creators = [ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 const assigners = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 
 jobRoutes.get('/', authorize(...viewers), validate({ query: jobListQuerySchema }), controller.list);
-jobRoutes.post('/', authorize(...creators), validate({ body: jobCreateSchema }), controller.create);
+// Multipart: "data" (JSON job sheet) + optional CUSTOMER / ID_PROOF / DEVICE image files.
+jobRoutes.post(
+  '/',
+  authorize(...creators),
+  upload.fields([
+    { name: 'CUSTOMER', maxCount: 1 },
+    { name: 'ID_PROOF', maxCount: 4 },
+    { name: 'DEVICE', maxCount: PHOTO_MAX_PER_UPLOAD },
+  ]),
+  multipartJson('data'),
+  validate({ body: jobCreateSchema }),
+  controller.create,
+);
 // Static paths before "/:id".
 jobRoutes.get('/stats', authorize(...viewers), validate({ query: jobStatsQuerySchema }), controller.stats);
-jobRoutes.get('/engineers', authorize(...assigners), validate({ query: engineerListQuerySchema }), controller.engineers);
+jobRoutes.get('/engineers', authorize(...viewers), validate({ query: engineerListQuerySchema }), controller.engineers);
+// Transfers (static paths before "/:id")
+const transferParams = z.object({ transferId: z.uuid() });
+jobRoutes.get('/transfers', authorize(...viewers), validate({ query: transferListQuerySchema }), controller.listTransfers);
+jobRoutes.post(
+  '/transfers/:transferId/respond',
+  authorize(ROLES.ENGINEER),
+  validate({ params: transferParams, body: transferResponseSchema }),
+  controller.respondTransfer,
+);
+jobRoutes.post(
+  '/transfers/:transferId/cancel',
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),
+  validate({ params: transferParams }),
+  controller.cancelTransfer,
+);
 jobRoutes.get('/:id', authorize(...viewers), validate({ params: idParamSchema }), controller.get);
 jobRoutes.post(
   '/:id/assign',
   authorize(...assigners),
   validate({ params: idParamSchema, body: jobAssignSchema }),
   controller.assign,
+);
+jobRoutes.patch(
+  '/:id/device',
+  authorize(...viewers),
+  validate({ params: idParamSchema, body: jobDeviceUpdateSchema }),
+  controller.updateDevice,
 );
 jobRoutes.get('/:id/history', authorize(...viewers), validate({ params: idParamSchema }), controller.history);
 jobRoutes.post(
@@ -54,3 +102,62 @@ jobRoutes.post(
   controller.addPhotos,
 );
 jobRoutes.get('/:id/photos/:photoId', authorize(...viewers), validate({ params: photoParams }), controller.getPhoto);
+
+// ─── Workflow ───────────────────────────────────────────────────────────────
+jobRoutes.put(
+  '/:id/diagnosis',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema, body: diagnosisSchema }),
+  controller.diagnose,
+);
+jobRoutes.post(
+  '/:id/approval',
+  authorize(...assigners),
+  validate({ params: idParamSchema, body: approvalSchema }),
+  controller.decideApproval,
+);
+jobRoutes.post(
+  '/:id/status',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema, body: statusChangeSchema }),
+  controller.changeStatus,
+);
+jobRoutes.post(
+  '/:id/transfers',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema, body: transferRequestSchema }),
+  controller.requestTransfer,
+);
+jobRoutes.post(
+  '/:id/spare-hold',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema, body: spareHoldSchema }),
+  controller.spareHold,
+);
+jobRoutes.post(
+  '/:id/spare-received',
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),
+  validate({ params: idParamSchema, body: spareReceivedSchema }),
+  controller.spareReceived,
+);
+// Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, at least one)
+jobRoutes.post(
+  '/:id/rwr',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema }),
+  upload.array('photos', PHOTO_MAX_PER_UPLOAD),
+  multipartJson('data'),
+  validate({ body: rwrSchema }),
+  controller.rwr,
+);
+jobRoutes.post(
+  '/:id/parts',
+  authorize(ROLES.ENGINEER),
+  validate({ params: idParamSchema, body: partRequestSchema }),
+  inventory.requestPart,
+);
+
+// ─── Delivery & billing (counter) ───────────────────────────────────────────
+jobRoutes.get('/:id/bill-preview', authorize(...assigners), validate({ params: idParamSchema }), billing.preview);
+jobRoutes.post('/:id/deliver', authorize(...assigners), validate({ params: idParamSchema, body: deliverySchema }), billing.deliver);
+jobRoutes.get('/:id/invoice', authorize(...assigners), validate({ params: idParamSchema }), billing.invoice);

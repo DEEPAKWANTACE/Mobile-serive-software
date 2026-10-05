@@ -25,8 +25,18 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Brands', to: '/catalog/brands', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Models', to: '/catalog/models', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Fault Categories', to: '/catalog/fault-categories', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Faults / Problems', to: '/catalog/faults', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Repair Pricing', to: '/catalog/pricing', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Spare Parts', to: '/catalog/parts', roles: [ROLES.SUPER_ADMIN] },
+    ],
+  },
+  {
+    title: 'Store',
+    items: [
+      { label: 'Part Requests', to: '/store/requests', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Stock', to: '/store/stock', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Stock Ledger', to: '/store/ledger', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
     ],
   },
   {

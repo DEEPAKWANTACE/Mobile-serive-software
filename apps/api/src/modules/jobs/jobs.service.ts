@@ -5,12 +5,14 @@ import {
   ENGINEER_VISIBLE_PHOTO_KINDS,
   JOB_STATUSES,
   ROLES,
+  roundMoney,
   type EngineerWorkloadDto,
   type JobStatsDto,
   type JobStatus,
 } from '@msm/shared';
 import type {
   JobCreateData,
+  JobDeviceUpdateData,
   JobDto,
   JobHistoryEntryDto,
   JobListItemDto,
@@ -28,6 +30,7 @@ import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { storage } from '../../lib/storage.ts';
 import { recordAudit } from '../audit/audit.service.ts';
+import { jobPartSelect, toJobPartDto } from '../inventory/job-part.ts';
 import { nextJobNumber } from './job-number.ts';
 
 const isEngineer = (actor: Actor) => actor.role === ROLES.ENGINEER;
@@ -44,62 +47,194 @@ function resolveBranchId(actor: Actor, requested?: string) {
   return requested;
 }
 
+// ─── Photos (shared helpers) ────────────────────────────────────────────────
+
+export type IncomingPhotos = Partial<Record<PhotoKind, Express.Multer.File[]>>;
+type PreparedPhoto = { kind: PhotoKind; buffer: Buffer; mime: string; key: string };
+
+/** Validates real image type of every file (never trust client mimetype) and assigns storage keys. */
+export function preparePhotos(photos: IncomingPhotos): PreparedPhoto[] {
+  const month = new Date().toISOString().slice(0, 7).replace('-', '/');
+  return (Object.entries(photos) as [PhotoKind, Express.Multer.File[]][]).flatMap(([kind, files]) =>
+    files.map((f) => {
+      const type = detectImageType(f.buffer);
+      if (!type) throw HttpError.badRequest(`"${f.originalname}" is not a JPEG, PNG or WebP image`);
+      return { kind, buffer: f.buffer, mime: type.mime, key: `jobs/${month}/${randomUUID()}.${type.ext}` };
+    }),
+  );
+}
+
+/**
+ * Writes files to storage, then runs `persist` (DB work). If anything fails, stored files are removed
+ * so no orphaned images are left behind.
+ */
+export async function withStoredPhotos<T>(prepared: PreparedPhoto[], persist: () => Promise<T>): Promise<T> {
+  const stored: string[] = [];
+  try {
+    for (const p of prepared) {
+      await storage.put(p.key, p.buffer);
+      stored.push(p.key);
+    }
+    return await persist();
+  } catch (err) {
+    await Promise.all(stored.map((k) => storage.delete(k).catch((e) => logger.warn({ err: e, key: k }, 'cleanup failed'))));
+    throw err;
+  }
+}
+
+export async function createPhotoRows(tx: Prisma.TransactionClient, jobId: string, prepared: PreparedPhoto[], actor: Actor) {
+  const created: JobPhotoDto[] = [];
+  for (const p of prepared) {
+    const row = await tx.jobPhoto.create({
+      data: { jobId, kind: p.kind, storageKey: p.key, mimeType: p.mime, sizeBytes: p.buffer.length, uploadedById: actor.sub },
+      select: { id: true, kind: true, createdAt: true },
+    });
+    created.push({ ...row, createdAt: row.createdAt.toISOString() });
+  }
+  return created;
+}
+
+export async function findBranchEngineer(branchId: string, engineerId: string) {
+  const engineer = await prisma.user.findFirst({
+    where: { id: engineerId, role: ROLES.ENGINEER, isActive: true, branchId },
+    select: { id: true, name: true },
+  });
+  if (!engineer) throw HttpError.badRequest('Invalid request', { engineerId: ['Select an active engineer of this branch'] });
+  return engineer;
+}
+
 // ─── Create ─────────────────────────────────────────────────────────────────
 
-export async function create(data: JobCreateData, actor: Actor) {
+/**
+ * Creates a job sheet together with its photos in one request, so rules that depend on both
+ * (Aadhaar required for flagged faults) are enforced and a job never exists without its photos.
+ */
+export async function create(data: JobCreateData, photos: IncomingPhotos, actor: Actor) {
   if (!actor.branchId) throw HttpError.forbidden('Only branch staff can create job sheets');
+  const faultIds = data.faults.map((f) => f.faultId);
+  const priceIds = data.faults.flatMap((f) => (f.priceId ? [f.priceId] : []));
 
-  const [branch, model, faultCount] = await Promise.all([
+  const [branch, model, faultRows, priceRows] = await Promise.all([
     prisma.branch.findUnique({ where: { id: actor.branchId }, select: { id: true, code: true } }),
     prisma.deviceModel.findUnique({ where: { id: data.deviceModelId }, select: { brandId: true, isActive: true } }),
-    prisma.fault.count({ where: { id: { in: data.faultIds }, isActive: true } }),
+    prisma.fault.findMany({ where: { id: { in: faultIds }, isActive: true }, select: { id: true, name: true, requiresIdProof: true } }),
+    prisma.servicePrice.findMany({
+      where: { id: { in: priceIds } },
+      select: { id: true, faultId: true, deviceModelId: true, label: true, price: true },
+    }),
   ]);
   if (!branch) throw HttpError.forbidden('Your branch was not found');
   if (!model || !model.isActive || model.brandId !== data.brandId) {
     throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
   }
-  if (faultCount !== new Set(data.faultIds).size) {
-    throw HttpError.badRequest('Invalid request', { faultIds: ['One or more selected faults are invalid'] });
+  if (faultRows.length !== faultIds.length) {
+    throw HttpError.badRequest('Invalid request', { faults: ['One or more selected faults are invalid'] });
   }
 
-  const { customer, faultIds, ...jobFields } = data;
-
-  return prisma.$transaction(async (tx) => {
-    // Customers are matched by mobile number; latest details from the counter win.
-    const { phone, ...customerFields } = customer;
-    const savedCustomer = await tx.customer.upsert({
-      where: { phone },
-      create: customer,
-      update: Object.fromEntries(Object.entries(customerFields).filter(([, v]) => v !== undefined && v !== null)),
-      select: { id: true },
+  // Anti-theft rule: some faults (e.g. software unlock) require the customer's ID proof.
+  const needsId = faultRows.filter((f) => f.requiresIdProof);
+  if (needsId.length && !photos.ID_PROOF?.length) {
+    throw HttpError.badRequest('Invalid request', {
+      idProof: [`Aadhaar / ID proof photo is required for: ${needsId.map((f) => f.name).join(', ')}`],
     });
+  }
 
-    const jobNumber = await nextJobNumber(tx, branch);
-    const job = await tx.job.create({
-      data: {
-        ...jobFields,
+  // Price options are looked up server-side; the client only sends which option was chosen.
+  const priceById = new Map(priceRows.map((p) => [p.id, p]));
+  const lines = data.faults.map(({ faultId, priceId }) => {
+    if (!priceId) return { faultId, priceLabel: null, price: null };
+    const option = priceById.get(priceId);
+    if (!option || option.faultId !== faultId || option.deviceModelId !== data.deviceModelId) {
+      throw HttpError.badRequest('Invalid request', { faults: ['A selected price is not valid for this model'] });
+    }
+    return { faultId, priceLabel: option.label, price: option.price };
+  });
+  const priced = lines.filter((l) => l.price !== null);
+  const estimatedAmount = priced.length ? priced.reduce((sum, l) => sum + l.price!.toNumber(), 0) : null;
+
+  const engineer = data.engineerId ? await findBranchEngineer(branch.id, data.engineerId) : null;
+  const prepared = preparePhotos(photos);
+  const { customer, faults: _faults, engineerId: _e, advance, ...jobFields } = data;
+
+  return withStoredPhotos(prepared, () =>
+    prisma.$transaction(async (tx) => {
+      // Customers are matched by mobile number; latest details from the counter win.
+      const { phone, ...customerFields } = customer;
+      const savedCustomer = await tx.customer.upsert({
+        where: { phone },
+        create: customer,
+        update: Object.fromEntries(Object.entries(customerFields).filter(([, v]) => v !== undefined && v !== null)),
+        select: { id: true },
+      });
+
+      const jobNumber = await nextJobNumber(tx, branch);
+      const job = await tx.job.create({
+        data: {
+          ...jobFields,
+          jobNumber,
+          estimatedAmount,
+          branchId: branch.id,
+          customerId: savedCustomer.id,
+          createdById: actor.sub,
+          ...(engineer && { assignedEngineerId: engineer.id, assignedAt: new Date(), status: 'ASSIGNED' as const }),
+          faults: { create: lines },
+        },
+        select: { id: true, jobNumber: true },
+      });
+
+      await createPhotoRows(tx, job.id, prepared, actor);
+
+      const audit = (action: string, metadata: Prisma.InputJsonValue) =>
+        recordAudit({ actorId: actor.sub, action, entityType: 'job', entityId: job.id, branchId: branch.id, metadata, ip: actor.ip }, tx);
+
+      await audit('job.created', {
         jobNumber,
-        branchId: branch.id,
-        customerId: savedCustomer.id,
-        createdById: actor.sub,
-        faults: { create: [...new Set(faultIds)].map((faultId) => ({ faultId })) },
-      },
-      select: { id: true, jobNumber: true },
-    });
+        estimatedAmount,
+        photos: prepared.reduce<Record<string, number>>((acc, p) => ({ ...acc, [p.kind]: (acc[p.kind] ?? 0) + 1 }), {}),
+      });
+      if (engineer) await audit('job.assigned', { engineer });
+      if (advance) {
+        await tx.payment.create({
+          data: {
+            jobId: job.id,
+            branchId: branch.id,
+            kind: 'ADVANCE',
+            mode: advance.mode,
+            amount: advance.amount,
+            reference: advance.reference,
+            receivedById: actor.sub,
+          },
+        });
+        await audit('payment.received', { kind: 'ADVANCE', mode: advance.mode, amount: advance.amount });
+      }
+      return job;
+    }),
+  );
+}
 
+// ─── Device details ─────────────────────────────────────────────────────────
+
+/** Fill in / correct IMEI and serial after intake (e.g. a dead phone that now powers on). */
+export async function updateDevice(id: string, data: JobDeviceUpdateData, actor: Actor) {
+  const job = await loadForAccess(id, actor);
+  // IMEI is printed on the invoice; it is frozen once the phone is handed back.
+  if (job.status === 'DELIVERED') throw HttpError.conflict('This job is delivered — device details can no longer be changed');
+  const before = await prisma.job.findUniqueOrThrow({ where: { id }, select: { imei: true, serialNumber: true } });
+  return prisma.$transaction(async (tx) => {
+    const after = await tx.job.update({ where: { id }, data, select: { imei: true, serialNumber: true } });
     await recordAudit(
       {
         actorId: actor.sub,
-        action: 'job.created',
+        action: 'job.device_updated',
         entityType: 'job',
-        entityId: job.id,
-        branchId: branch.id,
-        metadata: { jobNumber },
+        entityId: id,
+        branchId: job.branchId,
+        metadata: { from: before, to: after },
         ip: actor.ip,
       },
       tx,
     );
-    return job;
+    return after;
   });
 }
 
@@ -116,6 +251,11 @@ const listSelect = {
   deviceModel: { select: { name: true } },
   branch: { select: { id: true, code: true, name: true } },
   assignedEngineer: { select: { id: true, name: true } },
+  assignedAt: true,
+  quotedAmount: true,
+  sparePart: true,
+  transfers: { where: { status: 'PENDING' }, select: { id: true } },
+  payments: { select: { kind: true, amount: true } },
   faults: { select: { fault: { select: { name: true } } } },
 } satisfies Prisma.JobSelect;
 
@@ -156,6 +296,11 @@ export async function list(query: JobListQuery, actor: Actor) {
     faults: j.faults.map((f) => f.fault.name),
     branch: j.branch,
     assignedEngineer: j.assignedEngineer,
+    assignedAt: j.assignedAt?.toISOString() ?? null,
+    quotedAmount: j.quotedAmount?.toNumber() ?? null,
+    sparePart: j.sparePart,
+    hasPendingTransfer: j.transfers.length > 0,
+    paid: roundMoney(j.payments.reduce((sum, p) => sum + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0)),
   }));
   return toPage(items, total, query);
 }
@@ -179,33 +324,128 @@ const detailSelect = {
   createdBy: { select: { id: true, name: true } },
   assignedEngineer: { select: { id: true, name: true } },
   assignedAt: true,
-  faults: { select: { fault: { select: { id: true, name: true } } }, orderBy: { fault: { name: 'asc' } } },
+  diagnosisNotes: true,
+  diagnosedAt: true,
+  quotedAmount: true,
+  approvedAmount: true,
+  approvedAt: true,
+  approvedBy: { select: { id: true, name: true } },
+  customerResponse: true,
+  repairedAt: true,
+  readyAt: true,
+  deliveredAt: true,
+  deliveredTo: true,
+  deliveryNote: true,
+  deliveredBy: { select: { id: true, name: true } },
+  invoice: { select: { id: true, invoiceNumber: true, total: true } },
+  sparePart: true,
+  spareRequestedAt: true,
+  rwrReason: true,
+  rwrNote: true,
+  rwrAt: true,
+  transfers: {
+    where: { status: 'PENDING' },
+    select: {
+      id: true,
+      reason: true,
+      createdAt: true,
+      fromEngineer: { select: { id: true, name: true } },
+      toEngineer: { select: { id: true, name: true } },
+    },
+    take: 1,
+  },
+  parts: { select: jobPartSelect, orderBy: { requestedAt: 'asc' } },
+  estimateLines: {
+    select: {
+      id: true,
+      description: true,
+      priceLabel: true,
+      amount: true,
+      fault: { select: { id: true, name: true } },
+      part: { select: { id: true, code: true, name: true } },
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
+  estimatedAmount: true,
+  faults: {
+    select: { priceLabel: true, price: true, fault: { select: { id: true, name: true } } },
+    orderBy: { fault: { name: 'asc' } },
+  },
+  payments: {
+    select: { id: true, kind: true, mode: true, amount: true, reference: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  },
   photos: { select: { id: true, kind: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.JobSelect;
 
 /** Loads a job's branch and enforces branch isolation. */
-async function loadForAccess(id: string, actor: Actor) {
+export async function loadForAccess(id: string, actor: Actor) {
   const job = await prisma.job.findUnique({
     where: { id },
     select: { id: true, branchId: true, status: true, assignedEngineerId: true },
   });
   if (!job) throw HttpError.notFound('Job not found');
   assertBranchAccess(actor, job.branchId);
-  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub) throw HttpError.forbidden('This job is not assigned to you');
+  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub) {
+    // The receiving engineer may look at a job offered to them before accepting.
+    const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
+    if (!offered) throw HttpError.forbidden('This job is not assigned to you');
+  }
   return job;
 }
 
 export async function get(id: string, actor: Actor): Promise<JobDto> {
   await loadForAccess(id, actor);
   const j = await prisma.job.findUniqueOrThrow({ where: { id }, select: detailSelect });
-  const { deviceModel, faults, photos, createdAt, assignedAt, ...rest } = j;
+  const {
+    deviceModel,
+    faults,
+    photos,
+    payments,
+    createdAt,
+    assignedAt,
+    estimatedAmount,
+    diagnosedAt,
+    quotedAmount,
+    approvedAmount,
+    approvedAt,
+    repairedAt,
+    readyAt,
+    estimateLines,
+    spareRequestedAt,
+    rwrAt,
+    transfers,
+    parts,
+    deliveredAt,
+    invoice,
+    ...rest
+  } = j;
+  const pending = transfers[0];
+  const iso = (d: Date | null) => d?.toISOString() ?? null;
   const visiblePhotos = isEngineer(actor) ? photos.filter((p) => ENGINEER_VISIBLE_PHOTO_KINDS.includes(p.kind)) : photos;
   return {
     ...rest,
     createdAt: createdAt.toISOString(),
-    assignedAt: assignedAt?.toISOString() ?? null,
+    assignedAt: iso(assignedAt),
+    diagnosedAt: iso(diagnosedAt),
+    approvedAt: iso(approvedAt),
+    repairedAt: iso(repairedAt),
+    readyAt: iso(readyAt),
+    spareRequestedAt: iso(spareRequestedAt),
+    rwrAt: iso(rwrAt),
+    deliveredAt: iso(deliveredAt),
+    invoice: invoice && { ...invoice, total: invoice.total.toNumber() },
+    pendingTransfer: pending
+      ? { id: pending.id, from: pending.fromEngineer, to: pending.toEngineer, reason: pending.reason, createdAt: pending.createdAt.toISOString() }
+      : null,
     model: deviceModel,
-    faults: faults.map((f) => f.fault),
+    estimatedAmount: estimatedAmount?.toNumber() ?? null,
+    quotedAmount: quotedAmount?.toNumber() ?? null,
+    approvedAmount: approvedAmount?.toNumber() ?? null,
+    estimateLines: estimateLines.map((l) => ({ ...l, amount: l.amount.toNumber() })),
+    parts: parts.map(toJobPartDto),
+    faults: faults.map((f) => ({ ...f.fault, priceLabel: f.priceLabel, price: f.price?.toNumber() ?? null })),
+    payments: payments.map((p) => ({ ...p, amount: p.amount.toNumber(), createdAt: p.createdAt.toISOString() })),
     photos: visiblePhotos.map((p) => ({ ...p, createdAt: p.createdAt.toISOString() })),
   };
 }
@@ -225,29 +465,11 @@ export async function history(id: string, actor: Actor): Promise<JobHistoryEntry
 export async function addPhotos(jobId: string, kind: PhotoKind, files: Express.Multer.File[], actor: Actor) {
   const job = await loadForAccess(jobId, actor);
   if (!files.length) throw HttpError.badRequest('No photos uploaded');
+  const prepared = preparePhotos({ [kind]: files });
 
-  // Validate every file before storing any of them.
-  const prepared = files.map((f) => {
-    const type = detectImageType(f.buffer);
-    if (!type) throw HttpError.badRequest(`"${f.originalname}" is not a JPEG, PNG or WebP image`);
-    return { buffer: f.buffer, ...type, key: `jobs/${jobId}/${randomUUID()}.${type.ext}` };
-  });
-
-  const stored: string[] = [];
-  try {
-    for (const p of prepared) {
-      await storage.put(p.key, p.buffer);
-      stored.push(p.key);
-    }
-    return await prisma.$transaction(async (tx) => {
-      const created: JobPhotoDto[] = [];
-      for (const p of prepared) {
-        const row = await tx.jobPhoto.create({
-          data: { jobId, kind, storageKey: p.key, mimeType: p.mime, sizeBytes: p.buffer.length, uploadedById: actor.sub },
-          select: { id: true, kind: true, createdAt: true },
-        });
-        created.push({ ...row, createdAt: row.createdAt.toISOString() });
-      }
+  return withStoredPhotos(prepared, () =>
+    prisma.$transaction(async (tx) => {
+      const created = await createPhotoRows(tx, jobId, prepared, actor);
       await recordAudit(
         {
           actorId: actor.sub,
@@ -261,12 +483,8 @@ export async function addPhotos(jobId: string, kind: PhotoKind, files: Express.M
         tx,
       );
       return created;
-    });
-  } catch (err) {
-    // Don't leave orphaned files behind if the DB write failed.
-    await Promise.all(stored.map((k) => storage.delete(k).catch((e) => logger.warn({ err: e, key: k }, 'cleanup failed'))));
-    throw err;
-  }
+    }),
+  );
 }
 
 export async function getPhoto(jobId: string, photoId: string, actor: Actor) {
@@ -307,11 +525,7 @@ export async function assign(jobId: string, engineerId: string, actor: Actor) {
   }
   if (job.assignedEngineerId === engineerId) throw HttpError.badRequest('Job is already assigned to this engineer');
 
-  const engineer = await prisma.user.findFirst({
-    where: { id: engineerId, role: ROLES.ENGINEER, isActive: true, branchId: job.branchId },
-    select: { id: true, name: true },
-  });
-  if (!engineer) throw HttpError.badRequest('Invalid request', { engineerId: ['Select an active engineer of this branch'] });
+  const engineer = await findBranchEngineer(job.branchId, engineerId);
 
   return prisma.$transaction(async (tx) => {
     // Guard against a concurrent assignment/status change since we read the job.
@@ -320,6 +534,7 @@ export async function assign(jobId: string, engineerId: string, actor: Actor) {
       data: { assignedEngineerId: engineer.id, assignedAt: new Date(), status: 'ASSIGNED' },
     });
     if (count === 0) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+    await tx.jobTransfer.updateMany({ where: { jobId, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
 
     const previous = job.assignedEngineerId
       ? await tx.user.findUnique({ where: { id: job.assignedEngineerId }, select: { id: true, name: true } })

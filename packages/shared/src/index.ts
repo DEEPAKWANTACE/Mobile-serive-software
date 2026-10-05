@@ -5,3 +5,6 @@ export * from './schemas/locations.js';
 export * from './schemas/users.js';
 export * from './schemas/catalog.js';
 export * from './schemas/jobs.js';
+export * from './schemas/aadhaar.js';
+export * from './schemas/inventory.js';
+export * from './schemas/billing.js';

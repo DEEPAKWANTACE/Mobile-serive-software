@@ -1,20 +1,84 @@
 import { z } from 'zod';
 import { listQuerySchema, optionalText } from './common.js';
+import type { JobPartDto } from './inventory.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const JOB_STATUSES = ['RECEIVED', 'ASSIGNED'] as const;
+export const JOB_STATUSES = [
+  'RECEIVED',
+  'ASSIGNED',
+  'AWAITING_APPROVAL',
+  'IN_REPAIR',
+  'CUSTOMER_REJECTED',
+  'REPAIRED',
+  'TESTING',
+  'READY_FOR_DELIVERY',
+  'SPARE_PENDING',
+  'RWR',
+  'DELIVERED',
+] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   RECEIVED: 'Awaiting assignment',
-  ASSIGNED: 'Assigned',
+  ASSIGNED: 'Pending diagnosis',
+  AWAITING_APPROVAL: 'Awaiting customer approval',
+  IN_REPAIR: 'Approved – in repair',
+  CUSTOMER_REJECTED: 'Customer rejected',
+  REPAIRED: 'Repaired (done)',
+  TESTING: 'Testing',
+  READY_FOR_DELIVERY: 'Ready – returned OK',
+  SPARE_PENDING: 'Spare not available',
+  RWR: 'Returned without repair (RWR)',
+  DELIVERED: 'Delivered',
 };
 
 /** Statuses in which the engineer can still be (re)assigned. */
 export const ASSIGNABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED'];
 
-/** Statuses that count as an engineer's open workload. Extended as workflow steps are added. */
-export const ENGINEER_OPEN_STATUSES: readonly JobStatus[] = ['ASSIGNED'];
+/** Statuses that count as an engineer's open workload (phone is with the engineer). */
+export const ENGINEER_OPEN_STATUSES: readonly JobStatus[] = [
+  'ASSIGNED',
+  'AWAITING_APPROVAL',
+  'IN_REPAIR',
+  'REPAIRED',
+  'TESTING',
+  'SPARE_PENDING',
+];
+
+/** Engineer can hand the job to another engineer in these statuses. */
+export const TRANSFERABLE_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'SPARE_PENDING'];
+
+/** Engineer can put the job on hold for a spare part from these statuses. */
+export const SPARE_HOLD_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR'];
+
+/** Engineer can return the phone without repair from these statuses. */
+export const RWR_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR', 'SPARE_PENDING', 'CUSTOMER_REJECTED', 'TESTING'];
+
+export const RWR_REASONS = ['SPARE_NOT_AVAILABLE', 'NOT_REPAIRABLE', 'CUSTOMER_REJECTED', 'OTHER'] as const;
+export type RwrReason = (typeof RWR_REASONS)[number];
+export const RWR_REASON_LABELS: Record<RwrReason, string> = {
+  SPARE_NOT_AVAILABLE: 'Spare part not available',
+  NOT_REPAIRABLE: 'Not repairable / already tampered',
+  CUSTOMER_REJECTED: 'Customer rejected the estimate',
+  OTHER: 'Other',
+};
+export const RWR_MIN_PHOTOS = 1;
+
+/** Engineer may (re)submit the diagnosis/quote in these statuses. */
+export const DIAGNOSABLE_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR'];
+
+/** Work-progress moves the assigned engineer can make, with the button label for each. */
+export const ENGINEER_TRANSITIONS: Partial<Record<JobStatus, { to: JobStatus; label: string; noteRequired?: boolean }[]>> = {
+  IN_REPAIR: [{ to: 'REPAIRED', label: 'Mark repaired (done)' }],
+  REPAIRED: [
+    { to: 'TESTING', label: 'Start testing' },
+    { to: 'IN_REPAIR', label: 'Back to repair', noteRequired: true },
+  ],
+  TESTING: [
+    { to: 'READY_FOR_DELIVERY', label: 'Testing OK – return to counter' },
+    { to: 'IN_REPAIR', label: 'Testing failed – back to repair', noteRequired: true },
+  ],
+};
 
 export const ACCESSORIES = [
   'Charger',
@@ -29,16 +93,23 @@ export const ACCESSORIES = [
 ] as const;
 export type Accessory = (typeof ACCESSORIES)[number];
 
-export const PHOTO_KINDS = ['CUSTOMER', 'ID_PROOF', 'DEVICE'] as const;
+export const PHOTO_KINDS = ['CUSTOMER', 'ID_PROOF', 'DEVICE', 'RWR'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
 export const PHOTO_KIND_LABELS: Record<PhotoKind, string> = {
   CUSTOMER: 'Customer photo',
   ID_PROOF: 'Aadhaar / ID proof',
   DEVICE: 'Phone photos',
+  RWR: 'RWR / motherboard photos',
 };
+/** Photo kinds the counter uploads at intake (RWR photos come only with an RWR). */
+export const INTAKE_PHOTO_KINDS: readonly PhotoKind[] = ['CUSTOMER', 'ID_PROOF', 'DEVICE'];
 
 /** Engineers only need device photos; customer photo and ID proof are hidden from them. */
-export const ENGINEER_VISIBLE_PHOTO_KINDS: readonly PhotoKind[] = ['DEVICE'];
+export const ENGINEER_VISIBLE_PHOTO_KINDS: readonly PhotoKind[] = ['DEVICE', 'RWR'];
+
+export const PAYMENT_MODES = ['CASH', 'UPI', 'CARD'] as const;
+export type PaymentMode = (typeof PAYMENT_MODES)[number];
+export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' };
 
 export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 export const PHOTO_MAX_PER_UPLOAD = 10;
@@ -75,21 +146,42 @@ export const jobCustomerSchema = z.object({
   address: optionalText(300),
 });
 
+const imeiField = optionalText(15).refine((v) => !v || isValidImei(v), 'Invalid IMEI (must be 15 digits)');
+const serialField = optionalText(30).refine((v) => !v || /^[A-Za-z0-9-]{4,30}$/.test(v), 'Invalid serial number');
+
+/**
+ * Job sheet. IMEI/serial are optional at intake (a dead phone may not show them) and are
+ * enforced at delivery instead.
+ */
 export const jobCreateSchema = z
   .object({
     customer: jobCustomerSchema,
     brandId: z.uuid('Select a brand'),
     deviceModelId: z.uuid('Select a model'),
-    imei: optionalText(15).refine((v) => !v || isValidImei(v), 'Invalid IMEI (must be 15 digits)'),
-    serialNumber: optionalText(30).refine((v) => !v || /^[A-Za-z0-9-]{4,30}$/.test(v), 'Invalid serial number'),
+    imei: imeiField,
+    serialNumber: serialField,
     color: optionalText(30),
-    faultIds: z.array(z.uuid()).min(1, 'Select at least one fault').max(20),
+    /** Each reported fault, optionally with the chosen price option (null = cost to be decided). */
+    faults: z
+      .array(z.object({ faultId: z.uuid(), priceId: z.uuid().nullish() }))
+      .min(1, 'Select at least one fault')
+      .max(20)
+      .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault'),
     customerComplaint: optionalText(1000),
     accessories: z.array(z.enum(ACCESSORIES)).max(ACCESSORIES.length).default([]),
     accessoriesOther: optionalText(200),
     conditionNotes: optionalText(1000),
+    /** Optional: assign straight away at intake. */
+    engineerId: z.uuid().nullish(),
+    advance: z
+      .object({
+        amount: z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
+        mode: z.enum(PAYMENT_MODES),
+        reference: optionalText(60),
+      })
+      .nullish(),
   })
-  .refine((v) => v.imei || v.serialNumber, { message: 'Enter IMEI or serial number', path: ['imei'] });
+  .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] });
 
 export type JobCreateInput = z.input<typeof jobCreateSchema>;
 export type JobCreateData = z.output<typeof jobCreateSchema>;
@@ -111,9 +203,110 @@ export const engineerListQuerySchema = z.object({ branchId: z.uuid().optional() 
 
 export const jobStatsQuerySchema = z.object({ branchId: z.uuid().optional() });
 
+// ─── Diagnosis, approval, work status ───────────────────────────────────────
+
+/**
+ * One quote line: a fault from the master (optionally with one of the model's price options),
+ * or a custom item. Amount is taken from the price option when one is chosen.
+ */
+export const estimateLineSchema = z
+  .object({
+    faultId: z.uuid().nullish(),
+    priceId: z.uuid().nullish(),
+    partId: z.uuid().nullish(),
+    description: optionalText(200),
+    // Blank input means "not entered" (not ₹0); type 0 explicitly for a free item.
+    amount: z
+      .preprocess(
+        (v) => (v === '' || v === null || v === undefined ? null : v),
+        z.coerce.number('Enter amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullable(),
+      )
+      .optional(),
+  })
+  .refine((l) => l.faultId || l.partId || l.description, { message: 'Select a fault or describe the work', path: ['description'] })
+  .refine((l) => l.priceId || l.partId || (l.amount !== null && l.amount !== undefined), { message: 'Enter amount', path: ['amount'] });
+
+export const diagnosisSchema = z.object({
+  notes: z.string().trim().min(3, 'Describe what you found').max(2000),
+  lines: z.array(estimateLineSchema).min(1, 'Add at least one item').max(30),
+});
+export type DiagnosisInput = z.input<typeof diagnosisSchema>;
+export type DiagnosisData = z.output<typeof diagnosisSchema>;
+
+export const approvalSchema = z
+  .object({
+    decision: z.enum(['APPROVED', 'REJECTED']),
+    note: optionalText(500),
+  })
+  .refine((v) => v.decision === 'APPROVED' || v.note, { message: 'Enter the customer\'s reason', path: ['note'] });
+export type ApprovalInput = z.input<typeof approvalSchema>;
+export type ApprovalData = z.output<typeof approvalSchema>;
+
+export const statusChangeSchema = z.object({
+  status: z.enum(JOB_STATUSES),
+  note: optionalText(500),
+});
+export type StatusChangeData = z.output<typeof statusChangeSchema>;
+
+// ─── Transfer, spare hold, RWR ──────────────────────────────────────────────
+
+export const transferRequestSchema = z.object({
+  toEngineerId: z.uuid('Select an engineer'),
+  reason: z.string().trim().min(3, 'Enter a reason').max(500),
+});
+export type TransferRequestInput = z.input<typeof transferRequestSchema>;
+export type TransferRequestData = z.output<typeof transferRequestSchema>;
+
+export const transferResponseSchema = z
+  .object({ decision: z.enum(['ACCEPTED', 'REJECTED']), note: optionalText(500) })
+  .refine((v) => v.decision === 'ACCEPTED' || v.note, { message: 'Enter a reason', path: ['note'] });
+export type TransferResponseData = z.output<typeof transferResponseSchema>;
+
+export const transferListQuerySchema = z.object({
+  direction: z.enum(['incoming', 'outgoing', 'all']).default('incoming'),
+  status: z.enum(['PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED']).default('PENDING'),
+});
+export type TransferListQuery = z.output<typeof transferListQuerySchema>;
+
+export const spareHoldSchema = z.object({
+  part: z.string().trim().min(2, 'Enter the part needed').max(200),
+  note: optionalText(500),
+});
+export type SpareHoldInput = z.input<typeof spareHoldSchema>;
+export type SpareHoldData = z.output<typeof spareHoldSchema>;
+
+export const spareReceivedSchema = z.object({ note: optionalText(500) });
+
+export const rwrSchema = z.object({
+  reason: z.enum(RWR_REASONS, 'Select a reason'),
+  note: z.string().trim().min(5, 'Explain why the phone is returned unrepaired').max(1000),
+});
+export type RwrInput = z.input<typeof rwrSchema>;
+export type RwrData = z.output<typeof rwrSchema>;
+
+export type TransferDto = {
+  id: string;
+  job: { id: string; jobNumber: string; device: string; status: JobStatus };
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  reason: string;
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+  responseNote: string | null;
+  heldSince: string;
+  createdAt: string;
+  respondedAt: string | null;
+};
+
 export const customerLookupQuerySchema = z.object({ phone: mobileNumber });
 
-export const photoUploadSchema = z.object({ kind: z.enum(PHOTO_KINDS) });
+export const photoUploadSchema = z.object({ kind: z.enum(['CUSTOMER', 'ID_PROOF', 'DEVICE']) });
+
+/** Update IMEI / serial later (e.g. once a dead phone powers on). */
+export const jobDeviceUpdateSchema = z
+  .object({ imei: imeiField, serialNumber: serialField })
+  .refine((v) => v.imei !== undefined || v.serialNumber !== undefined, 'Nothing to update');
+export type JobDeviceUpdateInput = z.input<typeof jobDeviceUpdateSchema>;
+export type JobDeviceUpdateData = z.output<typeof jobDeviceUpdateSchema>;
 
 // ─── DTOs ───────────────────────────────────────────────────────────────────
 
@@ -137,6 +330,12 @@ export type JobListItemDto = {
   faults: string[];
   branch: { id: string; code: string; name: string };
   assignedEngineer: { id: string; name: string } | null;
+  assignedAt: string | null;
+  quotedAmount: number | null;
+  sparePart: string | null;
+  hasPendingTransfer: boolean;
+  /** Net amount received so far (advances − refunds). */
+  paid: number;
 };
 
 export type JobPhotoDto = { id: string; kind: PhotoKind; createdAt: string };
@@ -153,7 +352,9 @@ export type JobDto = {
   imei: string | null;
   serialNumber: string | null;
   color: string | null;
-  faults: { id: string; name: string }[];
+  faults: { id: string; name: string; priceLabel: string | null; price: number | null }[];
+  estimatedAmount: number | null;
+  payments: { id: string; kind: 'ADVANCE' | 'FINAL' | 'REFUND'; mode: PaymentMode; amount: number; reference: string | null; createdAt: string }[];
   customerComplaint: string | null;
   accessories: string[];
   accessoriesOther: string | null;
@@ -161,6 +362,35 @@ export type JobDto = {
   createdBy: { id: string; name: string };
   assignedEngineer: { id: string; name: string } | null;
   assignedAt: string | null;
+  diagnosisNotes: string | null;
+  diagnosedAt: string | null;
+  quotedAmount: number | null;
+  approvedAmount: number | null;
+  approvedAt: string | null;
+  approvedBy: { id: string; name: string } | null;
+  customerResponse: string | null;
+  repairedAt: string | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  deliveredTo: string | null;
+  deliveryNote: string | null;
+  deliveredBy: { id: string; name: string } | null;
+  invoice: { id: string; invoiceNumber: string; total: number } | null;
+  sparePart: string | null;
+  spareRequestedAt: string | null;
+  rwrReason: RwrReason | null;
+  rwrNote: string | null;
+  rwrAt: string | null;
+  pendingTransfer: { id: string; from: { id: string; name: string }; to: { id: string; name: string }; reason: string; createdAt: string } | null;
+  parts: JobPartDto[];
+  estimateLines: {
+    id: string;
+    fault: { id: string; name: string } | null;
+    part: { id: string; code: string; name: string } | null;
+    description: string | null;
+    priceLabel: string | null;
+    amount: number;
+  }[];
   photos: JobPhotoDto[];
 };
 

@@ -41,7 +41,7 @@ export function JobsPage() {
     {
       header: 'Job no.',
       cell: (j) => (
-        <Link to={`/jobs/${j.id}`} className="font-mono text-sm font-semibold text-brand-600 hover:underline">
+        <Link to={`/jobs/${j.id}`} className="font-mono text-sm font-semibold whitespace-nowrap text-brand-600 hover:underline">
           {j.jobNumber}
         </Link>
       ),
@@ -78,7 +78,15 @@ export function JobsPage() {
           },
         ]),
     ...(isSuperAdmin ? [{ header: 'Branch', cell: (j: JobListItemDto) => j.branch.code }] : []),
-    { header: 'Status', cell: (j) => <JobStatusBadge status={j.status} /> },
+    {
+      header: 'Status',
+      cell: (j) => (
+        <span className="flex items-center gap-1.5">
+          <JobStatusBadge status={j.status} />
+          {j.hasPendingTransfer && <span title="Transfer requested">🔁</span>}
+        </span>
+      ),
+    },
   ];
 
   return (

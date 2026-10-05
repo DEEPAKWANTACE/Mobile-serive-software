@@ -10,7 +10,7 @@ type Schemas = { body?: z.ZodType; query?: z.ZodType; params?: z.ZodType };
 export const validate =
   (schemas: Schemas): RequestHandler =>
   (req, res, next) => {
-    if (schemas.body) req.body = schemas.body.parse(req.body);
+    if (schemas.body) req.body = schemas.body.parse(req.body ?? {});
     if (schemas.params) req.params = schemas.params.parse(req.params) as typeof req.params;
     if (schemas.query) res.locals.query = schemas.query.parse(req.query);
     next();

@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import multer from 'multer';
 import {
   idParamSchema,
+  PHOTO_MAX_BYTES,
   resetPasswordSchema,
   ROLES,
   userCreateSchema,
@@ -24,3 +26,8 @@ userRoutes.post(
   validate({ params: idParamSchema, body: resetPasswordSchema }),
   controller.resetPassword,
 );
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: PHOTO_MAX_BYTES, files: 1 } });
+
+userRoutes.put('/:id/aadhaar-photo', validate({ params: idParamSchema }), upload.single('photo'), controller.setAadhaarPhoto);
+userRoutes.get('/:id/aadhaar-photo', validate({ params: idParamSchema }), controller.getAadhaarPhoto);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ROLE_VALUES, ROLES, type Role } from '../roles.js';
 import { listQuerySchema, optionalText } from './common.js';
+import { isValidAadhaar } from './aadhaar.js';
 
 const password = z.string().min(8, 'Password must be at least 8 characters').max(128);
 
@@ -13,6 +14,10 @@ const userFields = {
     .regex(/^[a-z0-9._]{3,30}$/, '3–30 characters: letters, digits, dot or underscore'),
   phone: optionalText(10).refine((v) => !v || /^[6-9]\d{9}$/.test(v), 'Enter a valid 10-digit mobile number'),
   email: optionalText(150).refine((v) => !v || z.email().safeParse(v).success, 'Invalid email'),
+  address: optionalText(300),
+  aadhaarNumber: optionalText(14)
+    .transform((v) => v?.replace(/\s/g, '') || null)
+    .refine((v) => !v || isValidAadhaar(v), 'Enter a valid 12-digit Aadhaar number'),
   role: z.enum(ROLE_VALUES, 'Select a role'),
   /** Required for every role except Super Admin. */
   branchId: z.uuid('Select a branch').nullish(),
@@ -49,6 +54,10 @@ export type UserDto = {
   phone: string | null;
   email: string | null;
   role: Role;
+  address: string | null;
+  /** Full number for managers who can edit this user; otherwise masked (XXXX XXXX 1234). */
+  aadhaarNumber: string | null;
+  hasAadhaarPhoto: boolean;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;

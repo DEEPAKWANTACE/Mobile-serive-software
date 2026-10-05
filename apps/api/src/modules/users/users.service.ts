@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import {
   BRANCH_STAFF_ROLES,
+  maskAadhaar,
   ROLES,
   type Role,
   type UserCreateData,
@@ -11,7 +13,9 @@ import type { Prisma } from '../../generated/prisma/client.ts';
 import { branchScope } from '../../lib/access.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
+import { detectImageType } from '../../lib/image-type.ts';
 import { hashPassword } from '../../lib/password.ts';
+import { storage } from '../../lib/storage.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
@@ -23,6 +27,9 @@ const select = {
   phone: true,
   email: true,
   role: true,
+  address: true,
+  aadhaarNumber: true,
+  aadhaarPhotoKey: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -31,11 +38,18 @@ const select = {
 
 type Row = Prisma.UserGetPayload<{ select: typeof select }>;
 
-const toDto = (u: Row): UserDto => ({
+/** Full Aadhaar only when the viewer may manage this user (they need it to edit); masked otherwise. */
+const toDto = ({ aadhaarPhotoKey, ...u }: Row, actor?: Actor): UserDto => ({
   ...u,
+  aadhaarNumber: u.aadhaarNumber && (actor && canManage(actor, u) ? u.aadhaarNumber : maskAadhaar(u.aadhaarNumber)),
+  hasAadhaarPhoto: !!aadhaarPhotoKey,
   lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
   createdAt: u.createdAt.toISOString(),
 });
+
+const canManage = (actor: Actor, target: { role: Role; branch: { id: string } | null }) =>
+  actor.role === ROLES.SUPER_ADMIN ||
+  (BRANCH_STAFF_ROLES.includes(target.role) && target.branch?.id === actor.branchId);
 
 const isSuperAdmin = (actor: Actor) => actor.role === ROLES.SUPER_ADMIN;
 
@@ -72,7 +86,7 @@ export async function list(query: UserListQuery, actor: Actor) {
     prisma.user.findMany({ where, select, orderBy: [{ isActive: 'desc' }, { name: 'asc' }], ...pageArgs(query) }),
     prisma.user.count({ where }),
   ]);
-  return toPage(rows.map(toDto), total, query);
+  return toPage(rows.map((r) => toDto(r, actor)), total, query);
 }
 
 export async function create(data: UserCreateData, actor: Actor) {
@@ -97,7 +111,7 @@ export async function create(data: UserCreateData, actor: Actor) {
       },
       tx,
     );
-    return toDto(row);
+    return toDto(row, actor);
   });
 }
 
@@ -134,7 +148,7 @@ export async function update(id: string, data: UserUpdateData, actor: Actor) {
       },
       tx,
     );
-    return toDto(row);
+    return toDto(row, actor);
   });
 }
 
@@ -159,4 +173,44 @@ export async function resetPassword(id: string, password: string, actor: Actor) 
       tx,
     );
   });
+}
+
+// ─── Aadhaar photo (staff KYC) ──────────────────────────────────────────────
+
+async function loadManageable(id: string, actor: Actor) {
+  const user = await prisma.user.findUnique({ where: { id }, select: { role: true, branchId: true, aadhaarPhotoKey: true } });
+  if (!user) throw HttpError.notFound('User not found');
+  assertCanManage(actor, user);
+  return user;
+}
+
+export async function setAadhaarPhoto(id: string, file: Express.Multer.File | undefined, actor: Actor) {
+  if (!file) throw HttpError.badRequest('No photo uploaded');
+  const user = await loadManageable(id, actor);
+  const type = detectImageType(file.buffer);
+  if (!type) throw HttpError.badRequest('Photo must be a JPEG, PNG or WebP image');
+
+  const key = `staff/${id}/aadhaar-${randomUUID()}.${type.ext}`;
+  await storage.put(key, file.buffer);
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { aadhaarPhotoKey: key } });
+      await recordAudit(
+        { actorId: actor.sub, action: 'user.aadhaar_photo_set', entityType: 'user', entityId: id, branchId: user.branchId, ip: actor.ip },
+        tx,
+      );
+    });
+  } catch (err) {
+    await storage.delete(key);
+    throw err;
+  }
+  if (user.aadhaarPhotoKey) await storage.delete(user.aadhaarPhotoKey).catch(() => undefined);
+}
+
+export async function getAadhaarPhoto(id: string, actor: Actor) {
+  const user = await loadManageable(id, actor);
+  if (!user.aadhaarPhotoKey) throw HttpError.notFound('No Aadhaar photo');
+  const ext = user.aadhaarPhotoKey.split('.').pop();
+  const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  return { stream: await storage.get(user.aadhaarPhotoKey), mimeType };
 }

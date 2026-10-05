@@ -56,21 +56,25 @@ model City {
 }
 
 model Branch {
-  id        String     @id @default(uuid(7)) @db.Uuid
-  cityId    String     @map("city_id") @db.Uuid
-  code      String     @unique // short code, used as job-number prefix
-  name      String
-  type      BranchType @default(SERVICE_CENTER)
-  address   String?
-  phone     String?
-  isActive  Boolean    @default(true) @map("is_active")
-  createdAt DateTime   @default(now()) @map("created_at")
-  updatedAt DateTime   @updatedAt @map("updated_at")
+  invoices       Invoice[]
+  partStocks     PartStock[]
+  stockMovements StockMovement[]
+  id             String          @id @default(uuid(7)) @db.Uuid
+  cityId         String          @map("city_id") @db.Uuid
+  code           String          @unique // short code, used as job-number prefix
+  name           String
+  type           BranchType      @default(SERVICE_CENTER)
+  address        String?
+  phone          String?
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
   city        City         @relation(fields: [cityId], references: [id])
   users       User[]
   jobs        Job[]
   jobCounters JobCounter[]
+  payments    Payment[]
 
   @@index([cityId])
   @@map("branches")
@@ -79,26 +83,39 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  name         String
-  username     String    @unique
-  phone        String?   @unique
-  email        String?   @unique
-  passwordHash String    @map("password_hash")
-  role         Role
+  jobsDelivered   Job[]           @relation("JobDeliveredBy")
+  invoicesCreated Invoice[]
+  stockMovements  StockMovement[]
+  partsRequested  JobPart[]       @relation("JobPartRequestedBy")
+  partsHandled    JobPart[]       @relation("JobPartHandledBy")
+  id              String          @id @default(uuid(7)) @db.Uuid
+  name            String
+  username        String          @unique
+  phone           String?         @unique
+  email           String?         @unique
+  passwordHash    String          @map("password_hash")
+  role            Role
+  address         String?
+  /// 12-digit Aadhaar (staff KYC). Shown masked except to managers.
+  aadhaarNumber   String?         @map("aadhaar_number")
+  aadhaarPhotoKey String?         @map("aadhaar_photo_key")
   /// Null only for global roles (SUPER_ADMIN).
-  branchId     String?   @map("branch_id") @db.Uuid
-  isActive     Boolean   @default(true) @map("is_active")
-  lastLoginAt  DateTime? @map("last_login_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  branchId        String?         @map("branch_id") @db.Uuid
+  isActive        Boolean         @default(true) @map("is_active")
+  lastLoginAt     DateTime?       @map("last_login_at")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
 
-  branch       Branch?    @relation(fields: [branchId], references: [id])
+  branch       Branch?       @relation(fields: [branchId], references: [id])
   sessions     Session[]
   auditLogs    AuditLog[]
-  jobsCreated  Job[]      @relation("JobCreatedBy")
-  jobsAssigned Job[]      @relation("JobAssignedEngineer")
+  jobsCreated  Job[]         @relation("JobCreatedBy")
+  jobsAssigned Job[]         @relation("JobAssignedEngineer")
+  jobsApproved Job[]         @relation("JobApprovedBy")
+  transfersOut JobTransfer[] @relation("TransferFrom")
+  transfersIn  JobTransfer[] @relation("TransferTo")
   jobPhotos    JobPhoto[]
+  payments     Payment[]
 
   @@index([branchId, role])
   @@map("users")
@@ -146,6 +163,7 @@ model AuditLog {
 // ─── Device catalogue & pricing ─────────────────────────────────────────────
 
 model Brand {
+  parts     Part[]
   id        String   @id @default(uuid(7)) @db.Uuid
   name      String   @unique
   isActive  Boolean  @default(true) @map("is_active")
@@ -159,6 +177,7 @@ model Brand {
 }
 
 model DeviceModel {
+  parts     Part[]
   id        String   @id @default(uuid(7)) @db.Uuid
   brandId   String   @map("brand_id") @db.Uuid
   name      String
@@ -174,26 +193,48 @@ model DeviceModel {
   @@map("device_models")
 }
 
+/// Groups faults for quicker selection, e.g. "Battery" → "Not charging", "No backup".
+model FaultCategory {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  faults Fault[]
+
+  @@map("fault_categories")
+}
+
 /// Problem / fault / service type the customer reports or the engineer diagnoses.
 model Fault {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  name        String   @unique
-  description String?
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id              String   @id @default(uuid(7)) @db.Uuid
+  categoryId      String?  @map("category_id") @db.Uuid
+  name            String   @unique
+  description     String?
+  /// Jobs with this fault (e.g. software unlock) need the customer's Aadhaar/ID photo.
+  requiresIdProof Boolean  @default(false) @map("requires_id_proof")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
-  prices    ServicePrice[]
-  jobFaults JobFault[]
+  category      FaultCategory?    @relation(fields: [categoryId], references: [id])
+  prices        ServicePrice[]
+  jobFaults     JobFault[]
+  estimateLines JobEstimateLine[]
 
+  @@index([categoryId])
   @@map("faults")
 }
 
-/// Standard repair/service price for a model + fault. Estimates copy this amount, so rows can be changed freely.
+/// Price option for a model + fault, e.g. Screen: "Copy" 1000 / "OG" 2000 / "Original" 3000.
+/// Estimates copy label and amount, so rows can be changed freely.
 model ServicePrice {
   id            String   @id @default(uuid(7)) @db.Uuid
   deviceModelId String   @map("device_model_id") @db.Uuid
   faultId       String   @map("fault_id") @db.Uuid
+  label         String   @default("Standard")
   price         Decimal  @db.Decimal(10, 2)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
@@ -201,7 +242,7 @@ model ServicePrice {
   deviceModel DeviceModel @relation(fields: [deviceModelId], references: [id], onDelete: Cascade)
   fault       Fault       @relation(fields: [faultId], references: [id])
 
-  @@unique([deviceModelId, faultId])
+  @@unique([deviceModelId, faultId, label])
   @@index([faultId])
   @@map("service_prices")
 }
@@ -227,38 +268,94 @@ model Customer {
 /// Workflow status. Values are added as each workflow module is built.
 enum JobStatus {
   RECEIVED // job sheet created by CCO, awaiting engineer assignment
-  ASSIGNED // assigned to an engineer, awaiting diagnosis
+  ASSIGNED // with engineer, pending diagnosis
+  AWAITING_APPROVAL // engineer quoted more than the customer agreed; CCO must call the customer
+  IN_REPAIR // approved (or within agreed estimate) — engineer repairing
+  CUSTOMER_REJECTED // customer declined the quote; phone to be returned unrepaired
+  REPAIRED // "Done": repaired, still with engineer
+  TESTING // engineer testing the repaired phone
+  READY_FOR_DELIVERY // "Returned OK": handed back to the counter
+  SPARE_PENDING // "Spare not available": waiting for a part
+  RWR // returned without repair (reason + photos recorded)
+  DELIVERED // handed back to the customer; job closed
+}
+
+enum RwrReason {
+  SPARE_NOT_AVAILABLE
+  NOT_REPAIRABLE // e.g. already tampered by other shops
+  CUSTOMER_REJECTED
+  OTHER
+}
+
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
 }
 
 model Job {
-  id                 String    @id @default(uuid(7)) @db.Uuid
-  jobNumber          String    @unique @map("job_number") // e.g. AND01-2610-0001
-  branchId           String    @map("branch_id") @db.Uuid
-  customerId         String    @map("customer_id") @db.Uuid
-  brandId            String    @map("brand_id") @db.Uuid
-  deviceModelId      String    @map("device_model_id") @db.Uuid
+  deliveredAt        DateTime?       @map("delivered_at")
+  deliveredById      String?         @map("delivered_by_id") @db.Uuid
+  /// Name of the person who collected the phone (customer or someone on their behalf).
+  deliveredTo        String?         @map("delivered_to")
+  deliveryNote       String?         @map("delivery_note")
+  deliveredBy        User?           @relation("JobDeliveredBy", fields: [deliveredById], references: [id])
+  invoice            Invoice?
+  parts              JobPart[]
+  stockMovements     StockMovement[]
+  id                 String          @id @default(uuid(7)) @db.Uuid
+  jobNumber          String          @unique @map("job_number") // e.g. AND01-2610-0001
+  branchId           String          @map("branch_id") @db.Uuid
+  customerId         String          @map("customer_id") @db.Uuid
+  brandId            String          @map("brand_id") @db.Uuid
+  deviceModelId      String          @map("device_model_id") @db.Uuid
   imei               String?
-  serialNumber       String?   @map("serial_number")
+  serialNumber       String?         @map("serial_number")
   color              String?
-  customerComplaint  String?   @map("customer_complaint")
-  conditionNotes     String?   @map("condition_notes")
+  customerComplaint  String?         @map("customer_complaint")
+  conditionNotes     String?         @map("condition_notes")
   accessories        String[]
-  accessoriesOther   String?   @map("accessories_other")
-  status             JobStatus @default(RECEIVED)
-  assignedEngineerId String?   @map("assigned_engineer_id") @db.Uuid
-  assignedAt         DateTime? @map("assigned_at")
-  createdById        String    @map("created_by_id") @db.Uuid
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
+  accessoriesOther   String?         @map("accessories_other")
+  /// Sum of the price options chosen at intake; null when cost is unknown (e.g. dead phone).
+  estimatedAmount    Decimal?        @map("estimated_amount") @db.Decimal(10, 2)
+  status             JobStatus       @default(RECEIVED)
+  assignedEngineerId String?         @map("assigned_engineer_id") @db.Uuid
+  assignedAt         DateTime?       @map("assigned_at")
+  diagnosisNotes     String?         @map("diagnosis_notes")
+  diagnosedAt        DateTime?       @map("diagnosed_at")
+  /// Current total of the engineer's estimate lines.
+  quotedAmount       Decimal?        @map("quoted_amount") @db.Decimal(10, 2)
+  /// Amount the customer has agreed to (intake estimate or explicit approval).
+  approvedAmount     Decimal?        @map("approved_amount") @db.Decimal(10, 2)
+  approvedAt         DateTime?       @map("approved_at")
+  approvedById       String?         @map("approved_by_id") @db.Uuid
+  customerResponse   String?         @map("customer_response")
+  repairedAt         DateTime?       @map("repaired_at")
+  readyAt            DateTime?       @map("ready_at")
+  sparePart          String?         @map("spare_part")
+  spareRequestedAt   DateTime?       @map("spare_requested_at")
+  /// Status to resume when the spare arrives.
+  statusBeforeHold   JobStatus?      @map("status_before_hold")
+  rwrReason          RwrReason?      @map("rwr_reason")
+  rwrNote            String?         @map("rwr_note")
+  rwrAt              DateTime?       @map("rwr_at")
+  createdById        String          @map("created_by_id") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
 
-  branch           Branch      @relation(fields: [branchId], references: [id])
-  customer         Customer    @relation(fields: [customerId], references: [id])
-  brand            Brand       @relation(fields: [brandId], references: [id])
-  deviceModel      DeviceModel @relation(fields: [deviceModelId], references: [id])
-  createdBy        User        @relation("JobCreatedBy", fields: [createdById], references: [id])
-  assignedEngineer User?       @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
+  branch           Branch            @relation(fields: [branchId], references: [id])
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  brand            Brand             @relation(fields: [brandId], references: [id])
+  deviceModel      DeviceModel       @relation(fields: [deviceModelId], references: [id])
+  createdBy        User              @relation("JobCreatedBy", fields: [createdById], references: [id])
+  assignedEngineer User?             @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
+  approvedBy       User?             @relation("JobApprovedBy", fields: [approvedById], references: [id])
+  estimateLines    JobEstimateLine[]
   faults           JobFault[]
   photos           JobPhoto[]
+  payments         Payment[]
+  transfers        JobTransfer[]
 
   @@index([branchId, createdAt])
   @@index([branchId, status])
@@ -270,8 +367,11 @@ model Job {
 
 /// Faults reported at intake.
 model JobFault {
-  jobId   String @map("job_id") @db.Uuid
-  faultId String @map("fault_id") @db.Uuid
+  jobId      String   @map("job_id") @db.Uuid
+  faultId    String   @map("fault_id") @db.Uuid
+  /// Snapshot of the chosen price option at intake (null = cost to be decided).
+  priceLabel String?  @map("price_label")
+  price      Decimal? @db.Decimal(10, 2)
 
   job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   fault Fault @relation(fields: [faultId], references: [id])
@@ -296,6 +396,7 @@ enum PhotoKind {
   CUSTOMER
   ID_PROOF // Aadhaar or other ID
   DEVICE
+  RWR // motherboard / internal condition proof when returned without repair
 }
 
 /// Private image stored via the storage driver; served only through an authorised endpoint.
@@ -314,4 +415,229 @@ model JobPhoto {
 
   @@index([jobId])
   @@map("job_photos")
+}
+
+// ─── Payments ───────────────────────────────────────────────────────────────
+
+enum PaymentMode {
+  CASH
+  UPI
+  CARD
+}
+
+enum PaymentKind {
+  ADVANCE // taken at intake
+  FINAL // taken at delivery
+  REFUND // money returned to the customer (stored as a positive amount)
+}
+
+/// Money received against a job. Revenue reports sum these by date/branch.
+model Payment {
+  invoiceId    String?     @map("invoice_id") @db.Uuid
+  invoice      Invoice?    @relation(fields: [invoiceId], references: [id])
+  id           String      @id @default(uuid(7)) @db.Uuid
+  jobId        String      @map("job_id") @db.Uuid
+  branchId     String      @map("branch_id") @db.Uuid
+  kind         PaymentKind
+  mode         PaymentMode
+  amount       Decimal     @db.Decimal(10, 2)
+  reference    String? // UPI / card transaction reference
+  receivedById String      @map("received_by_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at")
+
+  job        Job    @relation(fields: [jobId], references: [id])
+  branch     Branch @relation(fields: [branchId], references: [id])
+  receivedBy User   @relation(fields: [receivedById], references: [id])
+
+  @@index([jobId])
+  @@index([branchId, createdAt])
+  @@map("payments")
+}
+
+/// Engineer's diagnosis / quote line: a fault (optionally a price option) or a custom item, with its amount.
+model JobEstimateLine {
+  partId      String? @map("part_id") @db.Uuid
+  part        Part?   @relation(fields: [partId], references: [id])
+  id          String  @id @default(uuid(7)) @db.Uuid
+  jobId       String  @map("job_id") @db.Uuid
+  faultId     String? @map("fault_id") @db.Uuid
+  description String? // free text, e.g. "IC level issue"
+  priceLabel  String? @map("price_label")
+  amount      Decimal @db.Decimal(10, 2)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fault Fault? @relation(fields: [faultId], references: [id])
+
+  @@index([jobId])
+  @@map("job_estimate_lines")
+}
+
+/// Engineer-to-engineer hand-over. The job moves only when the receiving engineer accepts.
+model JobTransfer {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  jobId          String         @map("job_id") @db.Uuid
+  fromEngineerId String         @map("from_engineer_id") @db.Uuid
+  toEngineerId   String         @map("to_engineer_id") @db.Uuid
+  reason         String
+  status         TransferStatus @default(PENDING)
+  responseNote   String?        @map("response_note")
+  /// When the job reached the sending engineer (to measure how long they held it).
+  heldSince      DateTime       @map("held_since")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  respondedAt    DateTime?      @map("responded_at")
+
+  job          Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fromEngineer User @relation("TransferFrom", fields: [fromEngineerId], references: [id])
+  toEngineer   User @relation("TransferTo", fields: [toEngineerId], references: [id])
+
+  @@index([jobId, status])
+  @@index([toEngineerId, status])
+  @@map("job_transfers")
+}
+
+// ─── Spare-part inventory ───────────────────────────────────────────────────
+
+/// Spare part master. Staff refer to parts by `code` (e.g. "105" = a display), so nobody needs to know every part by name.
+model Part {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  code          String   @unique
+  name          String
+  brandId       String?  @map("brand_id") @db.Uuid
+  deviceModelId String?  @map("device_model_id") @db.Uuid
+  /// Price charged to the customer.
+  sellingPrice  Decimal  @map("selling_price") @db.Decimal(10, 2)
+  /// Purchase cost (for margin reports).
+  costPrice     Decimal? @map("cost_price") @db.Decimal(10, 2)
+  /// Highlight as low stock at or below this quantity.
+  reorderLevel  Int      @default(1) @map("reorder_level")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  brand         Brand?            @relation(fields: [brandId], references: [id])
+  deviceModel   DeviceModel?      @relation(fields: [deviceModelId], references: [id])
+  stocks        PartStock[]
+  movements     StockMovement[]
+  jobParts      JobPart[]
+  estimateLines JobEstimateLine[]
+
+  @@index([deviceModelId])
+  @@map("parts")
+}
+
+/// Current quantity of a part at a branch (kept in step with the movement ledger).
+model PartStock {
+  partId   String @map("part_id") @db.Uuid
+  branchId String @map("branch_id") @db.Uuid
+  quantity Int    @default(0)
+
+  part   Part   @relation(fields: [partId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@id([partId, branchId])
+  @@map("part_stocks")
+}
+
+enum StockMovementType {
+  RECEIPT // stock in (purchase / transfer in)
+  ISSUE // issued to a job
+  RETURN // returned from a job to stock
+  ADJUSTMENT // manual correction (count, damage, loss)
+}
+
+/// Append-only stock ledger. `quantity` is signed; `balanceAfter` is the branch quantity after this movement.
+model StockMovement {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  partId       String            @map("part_id") @db.Uuid
+  branchId     String            @map("branch_id") @db.Uuid
+  type         StockMovementType
+  quantity     Int
+  balanceAfter Int               @map("balance_after")
+  unitCost     Decimal?          @map("unit_cost") @db.Decimal(10, 2)
+  jobId        String?           @map("job_id") @db.Uuid
+  reference    String? // supplier invoice no. etc.
+  note         String?
+  createdById  String            @map("created_by_id") @db.Uuid
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  part      Part   @relation(fields: [partId], references: [id])
+  branch    Branch @relation(fields: [branchId], references: [id])
+  job       Job?   @relation(fields: [jobId], references: [id])
+  createdBy User   @relation(fields: [createdById], references: [id])
+
+  @@index([branchId, createdAt])
+  @@index([partId, branchId, createdAt])
+  @@map("stock_movements")
+}
+
+enum JobPartStatus {
+  REQUESTED // engineer asked the store
+  ISSUED // handed to engineer; stock reduced
+  NOT_AVAILABLE // store has none; job waits (can still be issued when stock arrives)
+  RETURNED // unused part back to stock
+  CANCELLED
+}
+
+/// A part requested for / used on a job.
+model JobPart {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  jobId         String        @map("job_id") @db.Uuid
+  partId        String        @map("part_id") @db.Uuid
+  quantity      Int
+  /// Selling price at the time of request.
+  unitPrice     Decimal       @map("unit_price") @db.Decimal(10, 2)
+  status        JobPartStatus @default(REQUESTED)
+  note          String?
+  requestedById String        @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime      @default(now()) @map("requested_at")
+  handledById   String?       @map("handled_by_id") @db.Uuid
+  handledAt     DateTime?     @map("handled_at")
+
+  job         Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  part        Part  @relation(fields: [partId], references: [id])
+  requestedBy User  @relation("JobPartRequestedBy", fields: [requestedById], references: [id])
+  handledBy   User? @relation("JobPartHandledBy", fields: [handledById], references: [id])
+
+  @@index([jobId])
+  @@index([status, requestedAt])
+  @@map("job_parts")
+}
+
+// ─── Billing ────────────────────────────────────────────────────────────────
+
+/// Bill raised when a job is delivered. One invoice per job; lines are a snapshot.
+model Invoice {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  invoiceNumber  String   @unique @map("invoice_number") // e.g. INV-KOR01-2610-0001
+  jobId          String   @unique @map("job_id") @db.Uuid
+  branchId       String   @map("branch_id") @db.Uuid
+  subtotal       Decimal  @db.Decimal(10, 2)
+  discount       Decimal  @default(0) @db.Decimal(10, 2)
+  discountReason String?  @map("discount_reason")
+  total          Decimal  @db.Decimal(10, 2)
+  createdById    String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  job       Job           @relation(fields: [jobId], references: [id])
+  branch    Branch        @relation(fields: [branchId], references: [id])
+  createdBy User          @relation(fields: [createdById], references: [id])
+  lines     InvoiceLine[]
+  payments  Payment[]
+
+  @@index([branchId, createdAt])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  invoiceId   String  @map("invoice_id") @db.Uuid
+  description String
+  amount      Decimal @db.Decimal(10, 2)
+  sortOrder   Int     @default(0) @map("sort_order")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
 }
