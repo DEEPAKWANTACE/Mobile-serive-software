@@ -6,6 +6,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import {
   ASSIGNABLE_STATUSES,
+  CALL_OUTCOME_LABELS,
   RWR_REASON_LABELS,
   JOB_STATUS_LABELS,
   type JobStatus,
@@ -37,6 +38,7 @@ import { uploadJobPhotos, useJob, useJobHistory } from './api';
 import { JobStatusBadge } from './JobStatusBadge';
 import { PhotoPicker } from './PhotoPicker';
 import { JobPartsCard } from './JobPartsCard';
+import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
 
 export function JobDetailPage() {
@@ -101,7 +103,10 @@ export function JobDetailPage() {
           <JobInfo job={job} />
           <Photos job={job} />
         </div>
-        <History jobId={job.id} />
+        <div className="space-y-5">
+          <JobCallsCard job={job} />
+          <History jobId={job.id} />
+        </div>
       </div>
     </div>
   );
@@ -388,6 +393,8 @@ function describe(entry: JobHistoryEntryDto) {
       return `Part request cancelled: ${meta.code} ${meta.name}`;
     case 'job.delivered':
       return `Delivered to ${meta.deliveredTo} — invoice ${meta.invoiceNumber}, total ${formatCurrency(Number(meta.total ?? 0))}${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
+    case 'job.call_logged':
+      return `Customer call: ${CALL_OUTCOME_LABELS[meta.outcome as keyof typeof CALL_OUTCOME_LABELS] ?? meta.outcome}${meta.note ? ` — “${meta.note}”` : ''}`;
     case 'job.assigned':
       return `Assigned to ${(meta.engineer as { name?: string } | undefined)?.name ?? 'engineer'}`;
     case 'job.reassigned':

@@ -1,6 +1,6 @@
 import { Link } from 'react-router';
 
-type Props = { label: string; value: number | undefined; to?: string; tone?: 'default' | 'warning' | 'info' };
+type Props = { label: string; value: number | string | undefined; to?: string; tone?: 'default' | 'warning' | 'info' };
 
 const tones = { default: 'text-slate-900', warning: 'text-amber-600', info: 'text-sky-600' };
 

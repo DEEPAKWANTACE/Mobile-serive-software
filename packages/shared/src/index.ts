@@ -8,3 +8,5 @@ export * from './schemas/jobs.js';
 export * from './schemas/aadhaar.js';
 export * from './schemas/inventory.js';
 export * from './schemas/billing.js';
+export * from './schemas/accounts.js';
+export * from './schemas/calling.js';

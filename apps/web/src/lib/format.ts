@@ -13,3 +13,12 @@ export function timeAgo(iso: string) {
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+/** Today's date in the business timezone (India), YYYY-MM-DD. */
+export const todayIso = (offsetDays = 0) => {
+  const d = new Date(Date.now() + offsetDays * 86_400_000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+};
+
+export const formatDate = (ymdOrIso: string) =>
+  new Date(ymdOrIso.length === 10 ? `${ymdOrIso}T00:00:00` : ymdOrIso).toLocaleDateString('en-IN', { dateStyle: 'medium' });

@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { authenticate } from './middleware/authenticate.ts';
+import { accountsRoutes } from './modules/accounts/accounts.routes.ts';
 import { authRoutes } from './modules/auth/auth.routes.ts';
 import { brandRoutes } from './modules/brands/brands.routes.ts';
 import { branchRoutes } from './modules/branches/branches.routes.ts';
+import { callingRoutes } from './modules/calling/calling.routes.ts';
 import { cityRoutes } from './modules/cities/cities.routes.ts';
 import { customerRoutes } from './modules/customers/customers.routes.ts';
 import { faultCategoryRoutes } from './modules/fault-categories/fault-categories.routes.ts';
@@ -36,3 +38,5 @@ apiRouter.use('/customers', customerRoutes);
 apiRouter.use('/jobs', jobRoutes);
 apiRouter.use('/parts', partRoutes);
 apiRouter.use('/inventory', inventoryRoutes);
+apiRouter.use('/accounts', accountsRoutes);
+apiRouter.use('/calling', callingRoutes);

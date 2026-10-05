@@ -56,6 +56,8 @@ model City {
 }
 
 model Branch {
+  expenses       Expense[]
+  callLogs       CallLog[]
   invoices       Invoice[]
   partStocks     PartStock[]
   stockMovements StockMovement[]
@@ -83,6 +85,9 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
+  expensesCreated Expense[]       @relation("ExpenseCreatedBy")
+  expensesVoided  Expense[]       @relation("ExpenseVoidedBy")
+  callLogs        CallLog[]
   jobsDelivered   Job[]           @relation("JobDeliveredBy")
   invoicesCreated Invoice[]
   stockMovements  StockMovement[]
@@ -295,6 +300,7 @@ enum TransferStatus {
 }
 
 model Job {
+  callLogs           CallLog[]
   deliveredAt        DateTime?       @map("delivered_at")
   deliveredById      String?         @map("delivered_by_id") @db.Uuid
   /// Name of the person who collected the phone (customer or someone on their behalf).
@@ -640,4 +646,70 @@ model InvoiceLine {
 
   @@index([invoiceId])
   @@map("invoice_lines")
+}
+
+// ─── Accounts: office expenses ──────────────────────────────────────────────
+
+/// Money paid out of the branch (tea, travel, courier…). Never deleted — voided with a reason.
+model Expense {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  branchId    String      @map("branch_id") @db.Uuid
+  category    String
+  description String
+  amount      Decimal     @db.Decimal(10, 2)
+  mode        PaymentMode
+  /// Business date the expense belongs to (YYYY-MM-DD in the business timezone).
+  expenseDate String      @map("expense_date")
+  createdById String      @map("created_by_id") @db.Uuid
+  createdAt   DateTime    @default(now()) @map("created_at")
+  voidedAt    DateTime?   @map("voided_at")
+  voidedById  String?     @map("voided_by_id") @db.Uuid
+  voidReason  String?     @map("void_reason")
+
+  branch    Branch @relation(fields: [branchId], references: [id])
+  createdBy User   @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  voidedBy  User?  @relation("ExpenseVoidedBy", fields: [voidedById], references: [id])
+
+  @@index([branchId, expenseDate])
+  @@map("expenses")
+}
+
+// ─── Customer calling ("happy calling") ─────────────────────────────────────
+
+enum CallPurpose {
+  READY_PICKUP // phone repaired, please collect
+  RWR_PICKUP // phone not repaired, please collect
+  APPROVAL // estimate approval
+  FOLLOW_UP
+  OTHER
+}
+
+enum CallOutcome {
+  WILL_COLLECT // answered, will come
+  CALL_LATER // answered, asked to call later
+  NOT_ANSWERED
+  SWITCHED_OFF
+  WRONG_NUMBER
+  OTHER
+}
+
+model CallLog {
+  id             String      @id @default(uuid(7)) @db.Uuid
+  jobId          String      @map("job_id") @db.Uuid
+  branchId       String      @map("branch_id") @db.Uuid
+  purpose        CallPurpose
+  outcome        CallOutcome
+  note           String?
+  /// When to call again / when the customer promised to come.
+  nextFollowUpAt DateTime?   @map("next_follow_up_at")
+  createdById    String      @map("created_by_id") @db.Uuid
+  createdAt      DateTime    @default(now()) @map("created_at")
+
+  job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  branch    Branch @relation(fields: [branchId], references: [id])
+  createdBy User   @relation(fields: [createdById], references: [id])
+
+  @@index([jobId, createdAt])
+  @@index([branchId, nextFollowUpAt])
+  @@map("call_logs")
 }

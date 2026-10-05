@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  callLogCreateSchema,
   deliverySchema,
   partRequestSchema,
   approvalSchema,
@@ -29,6 +30,8 @@ import { authorize } from '../../middleware/authorize.ts';
 import { multipartJson } from '../../middleware/multipart-json.ts';
 import { validate } from '../../middleware/validate.ts';
 import * as billing from '../billing/billing.controller.ts';
+import * as calling from '../calling/calling.service.ts';
+import { actorOf } from '../../lib/request-context.ts';
 import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
 
@@ -161,3 +164,11 @@ jobRoutes.post(
 jobRoutes.get('/:id/bill-preview', authorize(...assigners), validate({ params: idParamSchema }), billing.preview);
 jobRoutes.post('/:id/deliver', authorize(...assigners), validate({ params: idParamSchema, body: deliverySchema }), billing.deliver);
 jobRoutes.get('/:id/invoice', authorize(...assigners), validate({ params: idParamSchema }), billing.invoice);
+
+// ─── Customer calls ─────────────────────────────────────────────────────────
+jobRoutes.get('/:id/calls', authorize(...assigners), validate({ params: idParamSchema }), async (req, res) => {
+  res.json(await calling.jobCalls(req.params.id as string, actorOf(req)));
+});
+jobRoutes.post('/:id/calls', authorize(...assigners), validate({ params: idParamSchema, body: callLogCreateSchema }), async (req, res) => {
+  res.status(201).json(await calling.logCall(req.params.id as string, req.body, actorOf(req)));
+});

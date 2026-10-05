@@ -2,6 +2,8 @@ import { createBrowserRouter } from 'react-router';
 import { ROLES } from '@msm/shared';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { DayBookPage } from '@/features/accounts/DayBookPage';
+import { CallingPage } from '@/features/calling/CallingPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { JobDetailPage } from '@/features/jobs/JobDetailPage';
@@ -71,6 +73,13 @@ export const router = createBrowserRouter([
               { path: 'faults', element: <FaultsPage /> },
               { path: 'pricing', element: <PricingPage /> },
               { path: 'parts', element: <PartsPage /> },
+            ],
+          },
+          {
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS]} />,
+            children: [
+              { path: 'calling', element: <CallingPage /> },
+              { path: 'accounts/day-book', element: <DayBookPage /> },
             ],
           },
           {

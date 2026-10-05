@@ -8,6 +8,8 @@ import {
   ROLES,
   type JobStatus,
   type TransferDto,
+  type DayBookDto,
+  type PendingCollectionSummaryDto,
   type Paginated,
   type PartRequestDto,
   type StockRowDto,
@@ -51,7 +53,25 @@ export function DashboardPage() {
       </div>
       {user.role === ROLES.ENGINEER && <EngineerDashboard />}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
+      {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
       {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as string[]).includes(user.role) && <BranchDashboard user={user} />}
+    </div>
+  );
+}
+
+// ─── Accounts ───────────────────────────────────────────────────────────────
+
+function AccountsDashboard() {
+  const book = useQuery({ queryKey: ['accounts', 'day-book', 'today'], queryFn: () => api.get<DayBookDto>('/accounts/day-book') });
+  const pending = useQuery({ queryKey: ['calling', 'summary', 'dash'], queryFn: () => api.get<PendingCollectionSummaryDto>('/calling/summary') });
+  const money = (v?: number) => (v === undefined ? undefined : formatCurrency(v));
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <StatCard label="Received today" value={money(book.data?.received.total)} to="/accounts/day-book" tone="info" />
+      <StatCard label="Expenses today" value={money(book.data?.expenses.total)} to="/accounts/day-book" />
+      <StatCard label="Net today" value={money(book.data?.net)} to="/accounts/day-book" tone="info" />
+      <StatCard label="Cash in hand" value={money(book.data?.cashInHand)} to="/accounts/day-book" tone="warning" />
+      <StatCard label="Pending collection" value={money(pending.data?.ready.amount)} to="/calling" tone="warning" />
     </div>
   );
 }
@@ -191,6 +211,7 @@ function BranchDashboard({ user }: { user: AuthUser }) {
   const approvals = useList<JobListItemDto>('jobs', { status: 'AWAITING_APPROVAL', sort: 'oldest', pageSize: 20 });
   const spares = useList<JobListItemDto>('jobs', { status: 'SPARE_PENDING', sort: 'oldest', pageSize: 20 });
   const ready = useList<JobListItemDto>('jobs', { status: 'READY_FOR_DELIVERY', sort: 'oldest', pageSize: 50 });
+  const followUps = useQuery({ queryKey: ['calling', 'summary', 'dash'], queryFn: () => api.get<PendingCollectionSummaryDto>('/calling/summary') });
   const rwr = useList<JobListItemDto>('jobs', { status: 'RWR', sort: 'oldest', pageSize: 50 });
   const collection = [...(ready.data?.items ?? []), ...(rwr.data?.items ?? [])];
   const toCollect = collection.reduce((s, j) => s + Math.max(0, (j.status === 'RWR' ? 0 : (j.quotedAmount ?? 0)) - j.paid), 0);
@@ -259,6 +280,7 @@ function BranchDashboard({ user }: { user: AuthUser }) {
         <StatCard label="Ready – returned OK" value={by?.READY_FOR_DELIVERY} />
         <StatCard label="RWR (unrepaired)" value={by?.RWR} />
         <StatCard label="Delivered" value={by?.DELIVERED} />
+        <StatCard label="Follow-ups due" value={followUps.data?.followUpsDue} to="/calling" tone="warning" />
         <StatCard label="Customer rejected" value={by?.CUSTOMER_REJECTED} />
         <StatCard label="Total jobs" value={stats.data?.total} to="/jobs" />
       </div>

@@ -55,6 +55,8 @@ packages/
 
 `State → City → Branch (SERVICE_CENTER | MAIN_OFFICE/L4) → User (role)` plus `Session` (refresh tokens) and `AuditLog`.
 
+Accounts & calling: `Expense` (never deleted — voided with reason), `CallLog` (outcome + next follow-up).
+
 Inventory: `Part` (master, identified by a short `code`, e.g. `105`), `PartStock` (quantity per branch),
 `StockMovement` (append-only ledger: RECEIPT / ISSUE / RETURN / ADJUSTMENT with running balance) and `JobPart`
 (engineer requests by code → store issues or marks not available). All stock changes go through
@@ -131,6 +133,10 @@ Other scripts: `npm run build`, `npm run typecheck`, `npm run db:studio`.
 | GET  | /api/v1/jobs/:id/bill-preview | Super Admin, Branch Manager, CCO — bill computed from the approved estimate (repair) or nothing (RWR), with amount already paid |
 | POST | /api/v1/jobs/:id/deliver | same — `{ discount, discountReason, inspectionCharge (RWR), payments[], refund, deliveredTo, accessoriesReturned, note }`; payments must equal the balance exactly (or refund the excess); IMEI/serial required for repaired phones; creates the invoice and closes the job (DELIVERED) |
 | GET  | /api/v1/jobs/:id/invoice | same — printable invoice data |
+| GET  | /api/v1/accounts/day-book?from=&to=&branchId= | Super Admin, Branch Manager, Accounts, CCO — received / refunds / expenses by mode, net, cash in hand (business dates, `APP_TIMEZONE`) |
+| POST | /api/v1/accounts/expenses · /expenses/:id/void | add: same roles · void (with reason): Super Admin, Branch Manager, Accounts |
+| GET  | /api/v1/calling/list?list=ready\|rwr\|due\|approval · /calling/summary | Super Admin, Branch Manager, CCO, Accounts — pending collection & call lists |
+| GET/POST | /api/v1/jobs/:id/calls | Super Admin, Branch Manager, CCO — call history / log a call (outcome, note, next follow-up) |
 | PATCH | /api/v1/jobs/:id/device | job viewers — set/correct IMEI & serial (audited) |
 | GET  | /api/v1/jobs/stats | job viewers — counts by status in caller's scope |
 | GET  | /api/v1/jobs/engineers?branchId= | Super Admin (branchId required), Branch Manager, CCO — active engineers + open workload |

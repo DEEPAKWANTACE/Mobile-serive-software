@@ -21,6 +21,13 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Customers & Money',
+    items: [
+      { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
+      { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
+    ],
+  },
+  {
     title: 'Catalog',
     items: [
       { label: 'Brands', to: '/catalog/brands', roles: [ROLES.SUPER_ADMIN] },
