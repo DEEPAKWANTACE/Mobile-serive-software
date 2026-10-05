@@ -41,6 +41,7 @@ import { JobPartsCard } from './JobPartsCard';
 import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
 import { MovementsCard } from '@/features/l4/L4Actions';
+import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 
 export function JobDetailPage() {
   const { id = '' } = useParams();
@@ -74,6 +75,26 @@ export function JobDetailPage() {
           <p className="mt-1 text-sm text-slate-500">
             Received {formatDateTime(job.createdAt)} at {job.branch.name} by {job.createdBy.name}
           </p>
+          {user?.role !== ROLES.ENGINEER && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Link to={`/jobs/${job.id}/print`}>
+                <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
+              </Link>
+              <WhatsAppButton
+                phone={job.customer.phone}
+                status={job.status}
+                context={{
+                  customerName: job.customer.name,
+                  jobNumber: job.jobNumber,
+                  device: `${job.brand.name} ${job.model.name}`,
+                  branchName: job.branch.name,
+                  branchPhone: job.branch.phone,
+                  estimate: job.quotedAmount ?? job.estimatedAmount,
+                  balance: (job.quotedAmount ?? 0) - job.payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -p.amount : p.amount), 0),
+                }}
+              />
+            </div>
+          )}
         </div>
         <div className="rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200">
           <div className="text-xs text-slate-500">Engineer</div>

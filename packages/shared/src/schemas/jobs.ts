@@ -401,7 +401,7 @@ export type JobDto = {
   jobNumber: string;
   status: JobStatus;
   createdAt: string;
-  branch: { id: string; code: string; name: string };
+  branch: { id: string; code: string; name: string; address: string | null; phone: string | null };
   customer: CustomerDto;
   brand: { id: string; name: string };
   model: { id: string; name: string };

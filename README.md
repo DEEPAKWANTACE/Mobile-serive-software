@@ -59,6 +59,10 @@ L4: `Job.branchId` is the owning (customer) branch and never changes; `currentBr
 TO_BRANCH) follow the phone, and `JobMovement` logs every send/receive. Branch staff see jobs they own or physically
 hold; assignment and store work use the current branch, approval calls and delivery stay with the owner.
 
+Printing & messages: `/jobs/:id/print` prints two copies on one A4 (customer copy with contact, estimate, advance and
+terms; engineer copy without customer contact or money). Customer messages use WhatsApp click-to-chat with templates
+in `packages/shared/src/schemas/messages.ts` (no paid provider needed; an SMS/WhatsApp API can reuse the templates).
+
 Accounts & calling: `Expense` (never deleted — voided with reason), `CallLog` (outcome + next follow-up).
 
 Inventory: `Part` (master, identified by a short `code`, e.g. `105`), `PartStock` (quantity per branch),

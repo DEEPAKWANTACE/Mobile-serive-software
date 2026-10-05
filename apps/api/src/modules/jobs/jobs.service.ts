@@ -343,7 +343,7 @@ const detailSelect = {
   accessories: true,
   accessoriesOther: true,
   conditionNotes: true,
-  branch: { select: { id: true, code: true, name: true } },
+  branch: { select: { id: true, code: true, name: true, address: true, phone: true } },
   customer: { select: { id: true, name: true, phone: true, altPhone: true, email: true, address: true } },
   brand: { select: { id: true, name: true } },
   deviceModel: { select: { id: true, name: true } },

@@ -11,3 +11,4 @@ export * from './schemas/billing.js';
 export * from './schemas/accounts.js';
 export * from './schemas/calling.js';
 export * from './schemas/reports.js';
+export * from './schemas/messages.js';

@@ -9,6 +9,7 @@ import { ReportsPage } from '@/features/reports/ReportsPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { JobDetailPage } from '@/features/jobs/JobDetailPage';
+import { JobSheetPrintPage } from '@/features/jobs/JobSheetPrintPage';
 import { JobsPage } from '@/features/jobs/JobsPage';
 import { NewJobPage } from '@/features/jobs/NewJobPage';
 import { BrandsPage } from '@/features/catalog/BrandsPage';
@@ -44,7 +45,10 @@ export const router = createBrowserRouter([
               { path: ':id', element: <JobDetailPage /> },
               {
                 element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
-                children: [{ path: ':id/invoice', element: <InvoicePage /> }],
+                children: [
+                  { path: ':id/invoice', element: <InvoicePage /> },
+                  { path: ':id/print', element: <JobSheetPrintPage /> },
+                ],
               },
               {
                 element: <RequireAuth roles={[ROLES.CCO, ROLES.BRANCH_MANAGER]} />,

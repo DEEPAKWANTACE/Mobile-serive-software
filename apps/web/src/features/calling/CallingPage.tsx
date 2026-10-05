@@ -14,6 +14,7 @@ import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { api } from '@/lib/api-client';
 import { formatCurrency, formatDateTime, timeAgo } from '@/lib/format';
 import { LogCallForm } from './LogCallForm';
+import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 
 type ListKind = 'ready' | 'rwr' | 'due' | 'approval';
 const TABS: { key: ListKind; label: string }[] = [
@@ -101,9 +102,23 @@ export function CallingPage() {
       className: 'text-right',
       cell: (r) =>
         canCall && (
-          <Button size="sm" onClick={() => setCalling(r)}>
-            Log call
-          </Button>
+          <div className="flex justify-end gap-2 whitespace-nowrap">
+            <WhatsAppButton
+              phone={r.customer.phone}
+              status={r.job.status}
+              context={{
+                customerName: r.customer.name,
+                jobNumber: r.job.jobNumber,
+                device: r.job.device,
+                branchName: user?.branch?.name ?? r.job.branchCode,
+                estimate: r.balance,
+                balance: r.balance,
+              }}
+            />
+            <Button size="sm" onClick={() => setCalling(r)}>
+              Log call
+            </Button>
+          </div>
         ),
     },
   ];

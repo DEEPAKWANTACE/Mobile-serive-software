@@ -131,7 +131,10 @@ export function NewJobPage() {
       return api.post<{ id: string; jobNumber: string }>('/jobs', form);
     },
     onSuccess: (job) => {
-      toast.success(`Job sheet ${job.jobNumber} created`);
+      toast.success(`Job sheet ${job.jobNumber} created`, {
+        duration: 10000,
+        action: { label: '🖨 Print job sheet', onClick: () => navigate(`/jobs/${job.id}/print`) },
+      });
       navigate(`/jobs/${job.id}`);
     },
     onError: (err) => {
