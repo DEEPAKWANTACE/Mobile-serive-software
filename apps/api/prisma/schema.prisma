@@ -1,0 +1,317 @@
+// Foundation schema: organisation hierarchy, users/auth, audit trail.
+// Business modules (job sheets, inventory, billing, ...) are added in later migrations.
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  BRANCH_MANAGER
+  CCO
+  ENGINEER
+  STOREKEEPER
+  ACCOUNTS
+}
+
+enum BranchType {
+  SERVICE_CENTER
+  MAIN_OFFICE // L4 / central repair centre that receives transfers
+}
+
+// ─── Organisation hierarchy: State → City → Branch ──────────────────────────
+
+model State {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique
+  code      String   @unique // e.g. "MH", "DL"
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  cities City[]
+
+  @@map("states")
+}
+
+model City {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  stateId   String   @map("state_id") @db.Uuid
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  state    State    @relation(fields: [stateId], references: [id])
+  branches Branch[]
+
+  @@unique([stateId, name])
+  @@map("cities")
+}
+
+model Branch {
+  id        String     @id @default(uuid(7)) @db.Uuid
+  cityId    String     @map("city_id") @db.Uuid
+  code      String     @unique // short code, used as job-number prefix
+  name      String
+  type      BranchType @default(SERVICE_CENTER)
+  address   String?
+  phone     String?
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  city        City         @relation(fields: [cityId], references: [id])
+  users       User[]
+  jobs        Job[]
+  jobCounters JobCounter[]
+
+  @@index([cityId])
+  @@map("branches")
+}
+
+// ─── Users & authentication ─────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  name         String
+  username     String    @unique
+  phone        String?   @unique
+  email        String?   @unique
+  passwordHash String    @map("password_hash")
+  role         Role
+  /// Null only for global roles (SUPER_ADMIN).
+  branchId     String?   @map("branch_id") @db.Uuid
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  branch       Branch?    @relation(fields: [branchId], references: [id])
+  sessions     Session[]
+  auditLogs    AuditLog[]
+  jobsCreated  Job[]      @relation("JobCreatedBy")
+  jobsAssigned Job[]      @relation("JobAssignedEngineer")
+  jobPhotos    JobPhoto[]
+
+  @@index([branchId, role])
+  @@map("users")
+}
+
+/// One row per refresh token. Rotated on every refresh; reuse of a revoked token revokes the family.
+model Session {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent")
+  ip        String?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// ─── Audit trail ────────────────────────────────────────────────────────────
+
+/// Append-only log of significant actions. Job history will be built on top of this.
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String // e.g. "auth.login", "job.status_changed"
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  branchId   String?  @map("branch_id") @db.Uuid
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([branchId, createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Device catalogue & pricing ─────────────────────────────────────────────
+
+model Brand {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  models DeviceModel[]
+  jobs   Job[]
+
+  @@map("brands")
+}
+
+model DeviceModel {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  brandId   String   @map("brand_id") @db.Uuid
+  name      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  brand  Brand          @relation(fields: [brandId], references: [id])
+  prices ServicePrice[]
+  jobs   Job[]
+
+  @@unique([brandId, name])
+  @@map("device_models")
+}
+
+/// Problem / fault / service type the customer reports or the engineer diagnoses.
+model Fault {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  prices    ServicePrice[]
+  jobFaults JobFault[]
+
+  @@map("faults")
+}
+
+/// Standard repair/service price for a model + fault. Estimates copy this amount, so rows can be changed freely.
+model ServicePrice {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  deviceModelId String   @map("device_model_id") @db.Uuid
+  faultId       String   @map("fault_id") @db.Uuid
+  price         Decimal  @db.Decimal(10, 2)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  deviceModel DeviceModel @relation(fields: [deviceModelId], references: [id], onDelete: Cascade)
+  fault       Fault       @relation(fields: [faultId], references: [id])
+
+  @@unique([deviceModelId, faultId])
+  @@index([faultId])
+  @@map("service_prices")
+}
+
+// ─── Customers & job sheets ─────────────────────────────────────────────────
+
+/// Customers are shared across branches and identified by mobile number.
+model Customer {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String
+  phone     String   @unique
+  altPhone  String?  @map("alt_phone")
+  email     String?
+  address   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs Job[]
+
+  @@map("customers")
+}
+
+/// Workflow status. Values are added as each workflow module is built.
+enum JobStatus {
+  RECEIVED // job sheet created by CCO, awaiting engineer assignment
+  ASSIGNED // assigned to an engineer, awaiting diagnosis
+}
+
+model Job {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  jobNumber          String    @unique @map("job_number") // e.g. AND01-2610-0001
+  branchId           String    @map("branch_id") @db.Uuid
+  customerId         String    @map("customer_id") @db.Uuid
+  brandId            String    @map("brand_id") @db.Uuid
+  deviceModelId      String    @map("device_model_id") @db.Uuid
+  imei               String?
+  serialNumber       String?   @map("serial_number")
+  color              String?
+  customerComplaint  String?   @map("customer_complaint")
+  conditionNotes     String?   @map("condition_notes")
+  accessories        String[]
+  accessoriesOther   String?   @map("accessories_other")
+  status             JobStatus @default(RECEIVED)
+  assignedEngineerId String?   @map("assigned_engineer_id") @db.Uuid
+  assignedAt         DateTime? @map("assigned_at")
+  createdById        String    @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  branch           Branch      @relation(fields: [branchId], references: [id])
+  customer         Customer    @relation(fields: [customerId], references: [id])
+  brand            Brand       @relation(fields: [brandId], references: [id])
+  deviceModel      DeviceModel @relation(fields: [deviceModelId], references: [id])
+  createdBy        User        @relation("JobCreatedBy", fields: [createdById], references: [id])
+  assignedEngineer User?       @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
+  faults           JobFault[]
+  photos           JobPhoto[]
+
+  @@index([branchId, createdAt])
+  @@index([branchId, status])
+  @@index([customerId])
+  @@index([imei])
+  @@index([assignedEngineerId, status])
+  @@map("jobs")
+}
+
+/// Faults reported at intake.
+model JobFault {
+  jobId   String @map("job_id") @db.Uuid
+  faultId String @map("fault_id") @db.Uuid
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fault Fault @relation(fields: [faultId], references: [id])
+
+  @@id([jobId, faultId])
+  @@map("job_faults")
+}
+
+/// Per-branch, per-month running sequence used to build job numbers.
+model JobCounter {
+  branchId String @map("branch_id") @db.Uuid
+  period   String // YYMM
+  lastSeq  Int    @map("last_seq")
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@id([branchId, period])
+  @@map("job_counters")
+}
+
+enum PhotoKind {
+  CUSTOMER
+  ID_PROOF // Aadhaar or other ID
+  DEVICE
+}
+
+/// Private image stored via the storage driver; served only through an authorised endpoint.
+model JobPhoto {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  jobId        String    @map("job_id") @db.Uuid
+  kind         PhotoKind
+  storageKey   String    @unique @map("storage_key")
+  mimeType     String    @map("mime_type")
+  sizeBytes    Int       @map("size_bytes")
+  uploadedById String    @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  job        Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation(fields: [uploadedById], references: [id])
+
+  @@index([jobId])
+  @@map("job_photos")
+}

@@ -1,0 +1,27 @@
+{
+  "name": "mobile-service-management",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=@msm/api & npm run dev --workspace=@msm/web & wait",
+    "dev:api": "npm run dev --workspace=@msm/api",
+    "dev:web": "npm run dev --workspace=@msm/web",
+    "build": "npm run build --workspace=@msm/shared && npm run build --workspace=@msm/api && npm run build --workspace=@msm/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:migrate": "npm run db:migrate --workspace=@msm/api",
+    "db:seed": "npm run db:seed --workspace=@msm/api",
+    "db:studio": "npm run db:studio --workspace=@msm/api"
+  },
+  "allowScripts": {
+    "@prisma/engines@7.10.0": true,
+    "esbuild@0.28.2": true,
+    "prisma@7.10.0": true
+  }
+}
