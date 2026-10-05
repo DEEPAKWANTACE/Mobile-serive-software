@@ -148,6 +148,11 @@ Other scripts: `npm run build`, `npm run typecheck`, `npm run db:studio`.
 | POST | /api/v1/jobs/:id/l4/send · /l4/receive · /l4/send-back | send: owning branch / assigned engineer → a MAIN_OFFICE · receive: destination branch · send back: L4 once Ready/RWR |
 | GET  | /api/v1/jobs/l4/movements?view=incoming\|outgoing\|all | Super Admin, Branch Manager, CCO |
 | GET  | /api/v1/reports?from=&to=&stateId=&cityId=&branchId= | Super Admin (any scope), Branch Manager & Accounts (own branch) — summary + branch / engineer / CCO tables |
+| PATCH | /api/v1/jobs/:id | Super Admin, owning Branch Manager / CCO — correct the job sheet (device & faults only before diagnosis; not after delivery; diff audited) |
+| DELETE | /api/v1/jobs/:id/photos/:photoId | same — `{ reason }`; RWR photos and the last required ID proof are protected |
+| GET  | /api/v1/jobs/imei-check?imei=&excludeJobId= | job viewers — open jobs and earlier repairs with the same IMEI, all branches |
+| GET/POST | /api/v1/inventory/transfers · /transfers/:id/receive · /cancel | store roles — branch-to-branch stock (out on send, in on receive, back on cancel) |
+| GET/PUT | /api/v1/settings/shop · /settings/shop/logo | read: any signed-in user · change: Super Admin — shop name, legal name, GSTIN, address, logo, invoice terms |
 | PATCH | /api/v1/jobs/:id/device | job viewers — set/correct IMEI & serial (audited) |
 | GET  | /api/v1/jobs/stats | job viewers — counts by status in caller's scope |
 | GET  | /api/v1/jobs/engineers?branchId= | Super Admin (branchId required), Branch Manager, CCO — active engineers + open workload |

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { Paginated, PartLookupDto, StockRowDto } from '@msm/shared';
+import type { BranchDto, Paginated, PartLookupDto, StockRowDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Field, inputClass } from '@/components/ui/Field';
@@ -11,12 +11,12 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { api, ApiError } from '@/lib/api-client';
-import { toQueryString } from '@/lib/crud';
+import { toQueryString, useOptions } from '@/lib/crud';
 import { formatCurrency } from '@/lib/format';
 import { PartCodeInput } from './PartCodeInput';
 import { useStoreBranch } from './useStoreBranch';
 
-type Dialog = { kind: 'receive' | 'adjust'; part?: StockRowDto['part'] } | null;
+type Dialog = { kind: 'receive' | 'adjust' | 'transfer'; part?: StockRowDto['part'] } | null;
 
 export function StockPage() {
   const { branchId, picker, needsBranch } = useStoreBranch();
@@ -56,6 +56,11 @@ export function StockPage() {
           <Button variant="link" onClick={() => setDialog({ kind: 'adjust', part: r.part })}>
             Adjust
           </Button>
+          {r.quantity > 0 && (
+            <Button variant="link" onClick={() => setDialog({ kind: 'transfer', part: r.part })}>
+              Send to branch
+            </Button>
+          )}
         </div>
       ),
     },
@@ -88,8 +93,11 @@ export function StockPage() {
           {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
         </>
       )}
-      <Modal open={!!dialog} onClose={() => setDialog(null)} title={dialog?.kind === 'adjust' ? 'Adjust stock' : 'Stock in'} size="sm">
-        {dialog && <StockForm kind={dialog.kind} part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
+      <Modal open={!!dialog && dialog.kind !== 'transfer'} onClose={() => setDialog(null)} title={dialog?.kind === 'adjust' ? 'Adjust stock' : 'Stock in'} size="sm">
+        {dialog && dialog.kind !== 'transfer' && <StockForm kind={dialog.kind} part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
+      </Modal>
+      <Modal open={dialog?.kind === 'transfer'} onClose={() => setDialog(null)} title="Send parts to another branch" size="sm">
+        {dialog?.kind === 'transfer' && dialog.part && <TransferForm part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
       </Modal>
     </div>
   );
@@ -161,6 +169,50 @@ function StockForm({ kind, part: initial, branchId, onDone }: { kind: 'receive' 
         <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} />
       </Field>
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel={kind === 'adjust' ? 'Save adjustment' : 'Add to stock'} />
+    </form>
+  );
+}
+
+function TransferForm({ part, branchId, onDone }: { part: StockRowDto['part']; branchId: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const { items: branches } = useOptions<BranchDto>('branches');
+  const [to, setTo] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [note, setNote] = useState('');
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const send = useMutation({
+    mutationFn: () => api.post('/inventory/transfers', { fromBranchId: branchId, toBranchId: to, partId: part.id, quantity, note: note || null }),
+    onSuccess: () => {
+      toast.success(`${part.code} sent — the other branch must receive it`);
+      void queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      onDone();
+    },
+    onError: (err) => {
+      const d = err instanceof ApiError ? (err.details as Record<string, string[]> | undefined) : undefined;
+      if (d) setErrors(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v?.[0]])));
+      else toast.error(err.message);
+    },
+  });
+  return (
+    <form onSubmit={(e) => (e.preventDefault(), send.mutate())} className="space-y-4">
+      <p className="text-sm">
+        <span className="font-mono font-semibold">{part.code}</span> · {part.name}
+      </p>
+      <Field label="To branch" required error={errors.toBranchId}>
+        <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
+          <option value="">Select branch</option>
+          {branches.filter((b) => b.id !== branchId).map((b) => (
+            <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Quantity" required error={errors.quantity}>
+        <input value={quantity} onChange={(e) => setQuantity(e.target.value)} inputMode="numeric" className={inputClass} />
+      </Field>
+      <Field label="Note">
+        <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="e.g. Urgent for job WHF01-2610-0003" />
+      </Field>
+      <FormActions onCancel={onDone} loading={send.isPending} submitLabel="Send" />
     </form>
   );
 }

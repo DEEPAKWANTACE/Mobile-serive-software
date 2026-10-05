@@ -30,6 +30,7 @@ import { useOptions } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { formatCurrency } from '@/lib/format';
 import { compressImage } from '@/lib/image';
+import { ImeiWarning } from './ImeiWarning';
 import { PhotoPicker } from './PhotoPicker';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
@@ -220,6 +221,9 @@ export function NewJobPage() {
           <Field label="IMEI" {...err(errors.imei?.message)} hint="Optional now (dead phone) — required before delivery. Dial *#06#">
             <input {...register('imei')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
           </Field>
+          <div className="sm:col-span-2 -mt-2 empty:hidden">
+            <ImeiWarning imei={watch('imei')} />
+          </div>
           <Field label="Serial number" {...err(errors.serialNumber?.message)}>
             <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
           </Field>
@@ -391,7 +395,7 @@ type PickerProps = {
   modelChosen: boolean;
 };
 
-function FaultPicker({ faults, value, onChange, optionsByFault, modelChosen }: PickerProps) {
+export function FaultPicker({ faults, value, onChange, optionsByFault, modelChosen }: PickerProps) {
   const categories = useMemo(() => {
     const m = new Map<string, { name: string; faults: FaultDto[] }>();
     for (const f of faults) {

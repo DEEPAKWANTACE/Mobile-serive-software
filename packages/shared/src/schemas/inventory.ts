@@ -93,13 +93,15 @@ export const stockAdjustmentSchema = z.object({
 export type StockAdjustmentInput = z.input<typeof stockAdjustmentSchema>;
 export type StockAdjustmentData = z.output<typeof stockAdjustmentSchema>;
 
-export const STOCK_MOVEMENT_TYPES = ['RECEIPT', 'ISSUE', 'RETURN', 'ADJUSTMENT'] as const;
+export const STOCK_MOVEMENT_TYPES = ['RECEIPT', 'ISSUE', 'RETURN', 'ADJUSTMENT', 'TRANSFER_OUT', 'TRANSFER_IN'] as const;
 export type StockMovementType = (typeof STOCK_MOVEMENT_TYPES)[number];
 export const STOCK_MOVEMENT_LABELS: Record<StockMovementType, string> = {
   RECEIPT: 'Stock in',
   ISSUE: 'Issued to job',
   RETURN: 'Returned from job',
   ADJUSTMENT: 'Adjustment',
+  TRANSFER_OUT: 'Sent to branch',
+  TRANSFER_IN: 'Received from branch',
 };
 
 export const movementListQuerySchema = listQuerySchema.extend({
@@ -171,4 +173,35 @@ export type JobPartDto = {
 export type PartRequestDto = JobPartDto & {
   job: { id: string; jobNumber: string; device: string; status: string; engineer: string | null };
   stock: number;
+};
+
+// ─── Stock transfers between branches ───────────────────────────────────────
+
+export const stockTransferCreateSchema = z.object({
+  fromBranchId: z.uuid().nullish(), // required for Super Admin
+  toBranchId: z.uuid('Select the receiving branch'),
+  partId: z.uuid('Select a part'),
+  quantity: z.coerce.number('Enter quantity').int('Whole number').min(1, 'At least 1').max(100_000),
+  note: optionalText(300),
+});
+export type StockTransferCreateData = z.output<typeof stockTransferCreateSchema>;
+
+export const stockTransferListQuerySchema = z.object({
+  view: z.enum(['incoming', 'outgoing', 'all']).default('incoming'),
+  branchId: z.uuid().optional(),
+});
+export type StockTransferListQuery = z.output<typeof stockTransferListQuerySchema>;
+
+export type StockTransferDto = {
+  id: string;
+  part: { id: string; code: string; name: string };
+  from: { id: string; code: string; name: string };
+  to: { id: string; code: string; name: string };
+  quantity: number;
+  status: 'SENT' | 'RECEIVED' | 'CANCELLED';
+  note: string | null;
+  sentBy: string;
+  sentAt: string;
+  receivedBy: string | null;
+  receivedAt: string | null;
 };

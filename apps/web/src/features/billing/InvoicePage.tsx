@@ -4,10 +4,13 @@ import { PAYMENT_MODE_LABELS, RWR_REASON_LABELS, type InvoiceDto, type RwrReason
 import { Button } from '@/components/ui/Button';
 import { api } from '@/lib/api-client';
 import { formatCurrency, formatDateTime } from '@/lib/format';
+import { ShopHeader } from '@/features/settings/ShopHeader';
+import { useShopSettings } from '@/features/settings/useShopSettings';
 
 /** Printable invoice (A5/A4). Sidebar and header are hidden when printing. */
 export function InvoicePage() {
   const { id = '' } = useParams();
+  const { data: shop } = useShopSettings();
   const { data: inv, isLoading, error } = useQuery({ queryKey: ['jobs', id, 'invoice'], queryFn: () => api.get<InvoiceDto>(`/jobs/${id}/invoice`) });
 
   if (isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
@@ -27,11 +30,7 @@ export function InvoicePage() {
 
       <article className="rounded-lg bg-white p-8 text-sm ring-1 ring-slate-200 print:rounded-none print:p-0 print:ring-0">
         <header className="flex items-start justify-between border-b border-slate-200 pb-4">
-          <div>
-            <h1 className="text-lg font-bold">{inv.branch.name}</h1>
-            {inv.branch.address && <p className="text-slate-600">{inv.branch.address}</p>}
-            {inv.branch.phone && <p className="text-slate-600">Ph: {inv.branch.phone}</p>}
-          </div>
+          <ShopHeader branch={inv.branch} />
           <div className="text-right">
             <div className="text-base font-semibold">INVOICE</div>
             <div className="font-mono">{inv.invoiceNumber}</div>
@@ -124,6 +123,7 @@ export function InvoicePage() {
           </ul>
         </section>
 
+        {shop?.invoiceTerms && <p className="mt-4 text-xs whitespace-pre-line text-slate-600">{shop.invoiceTerms}</p>}
         <footer className="mt-8 flex justify-between text-xs text-slate-500">
           <span>
             Delivered to {inv.job.deliveredTo} · billed by {inv.createdBy.name}

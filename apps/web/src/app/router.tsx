@@ -21,6 +21,8 @@ import { PricingPage } from '@/features/catalog/PricingPage';
 import { PartRequestsPage } from '@/features/inventory/PartRequestsPage';
 import { StockLedgerPage } from '@/features/inventory/StockLedgerPage';
 import { StockPage } from '@/features/inventory/StockPage';
+import { StockTransfersPage } from '@/features/inventory/StockTransfersPage';
+import { ShopSettingsPage } from '@/features/settings/ShopSettingsPage';
 import { RequireAuth } from '@/features/auth/RequireAuth';
 import { BranchesPage } from '@/features/masters/BranchesPage';
 import { CitiesPage } from '@/features/masters/CitiesPage';
@@ -94,12 +96,17 @@ export const router = createBrowserRouter([
             children: [{ path: 'reports', element: <ReportsPage /> }],
           },
           {
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,
+            children: [{ path: 'settings/shop', element: <ShopSettingsPage /> }],
+          },
+          {
             path: 'store',
             element: <RequireAuth roles={[ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN]} />,
             children: [
               { path: 'requests', element: <PartRequestsPage /> },
               { path: 'stock', element: <StockPage /> },
               { path: 'ledger', element: <StockLedgerPage /> },
+              { path: 'transfers', element: <StockTransfersPage /> },
             ],
           },
         ],

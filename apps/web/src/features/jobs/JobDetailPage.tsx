@@ -40,6 +40,8 @@ import { PhotoPicker } from './PhotoPicker';
 import { JobPartsCard } from './JobPartsCard';
 import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
+import { EditJobForm } from './EditJobForm';
+import { ImeiWarning } from './ImeiWarning';
 import { MovementsCard } from '@/features/l4/L4Actions';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 
@@ -48,6 +50,7 @@ export function JobDetailPage() {
   const { user } = useAuth();
   const { data: job, isLoading, error } = useJob(id);
   const [assigning, setAssigning] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   if (isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   if (error || !job) {
@@ -80,6 +83,11 @@ export function JobDetailPage() {
               <Link to={`/jobs/${job.id}/print`}>
                 <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
               </Link>
+              {job.status !== 'DELIVERED' && (!user?.branch || user.branch.id === job.branch.id) && (
+                <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+                  ✏️ Edit job sheet
+                </Button>
+              )}
               <WhatsAppButton
                 phone={job.customer.phone}
                 status={job.status}
@@ -112,6 +120,9 @@ export function JobDetailPage() {
           {job.assignedAt && <div className="mt-0.5 text-xs text-slate-500">since {formatDateTime(job.assignedAt)}</div>}
         </div>
       </div>
+      <Modal open={editing} onClose={() => setEditing(false)} title={`Edit job sheet ${job.jobNumber}`} size="lg">
+        {editing && <EditJobForm job={job} onDone={() => setEditing(false)} />}
+      </Modal>
       <AssignEngineerDialog
         job={
           assigning
@@ -247,7 +258,7 @@ function Estimate({ job }: { job: JobDto }) {
 
 function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
-  const { register, handleSubmit, setError, formState: { errors } } = useForm<JobDeviceUpdateInput, unknown, JobDeviceUpdateData>({
+  const { register, handleSubmit, setError, watch, formState: { errors } } = useForm<JobDeviceUpdateInput, unknown, JobDeviceUpdateData>({
     resolver: zodResolver(jobDeviceUpdateSchema),
     defaultValues: { imei: job.imei ?? '', serialNumber: job.serialNumber ?? '' },
   });
@@ -266,6 +277,7 @@ function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
       <Field label="IMEI" error={errors.imei?.message} hint="15 digits — dial *#06#">
         <input {...register('imei')} inputMode="numeric" maxLength={15} autoFocus className={`${inputClass} font-mono`} />
       </Field>
+      <ImeiWarning imei={watch('imei')} excludeJobId={job.id} />
       <Field label="Serial number" error={errors.serialNumber?.message}>
         <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
       </Field>
@@ -280,6 +292,8 @@ function Photos({ job }: { job: JobDto }) {
   // Engineers only get device photos from the API, so don't show empty customer/ID sections.
   const kinds = user?.role === ROLES.ENGINEER ? ENGINEER_VISIBLE_PHOTO_KINDS : PHOTO_KINDS;
   const [viewing, setViewing] = useState<JobPhotoDto | null>(null);
+  const [removing, setRemoving] = useState<JobPhotoDto | null>(null);
+  const canRemove = canUpload && job.status !== 'DELIVERED' && (!user?.branch || user.branch.id === job.branch.id);
   const [adding, setAdding] = useState<PhotoKind | null>(null);
   const src = (p: JobPhotoDto) => `/jobs/${job.id}/photos/${p.id}`;
 
@@ -302,9 +316,22 @@ function Photos({ job }: { job: JobDto }) {
               {list.length ? (
                 <div className="flex flex-wrap gap-2">
                   {list.map((p) => (
-                    <button key={p.id} type="button" onClick={() => setViewing(p)} className="overflow-hidden rounded-md ring-1 ring-slate-200">
-                      <AuthImage src={src(p)} alt={PHOTO_KIND_LABELS[kind]} className="size-24 object-cover" />
-                    </button>
+                    <div key={p.id} className="relative">
+                      <button type="button" onClick={() => setViewing(p)} className="overflow-hidden rounded-md ring-1 ring-slate-200">
+                        <AuthImage src={src(p)} alt={PHOTO_KIND_LABELS[kind]} className="size-24 object-cover" />
+                      </button>
+                      {canRemove && kind !== 'RWR' && (
+                        <button
+                          type="button"
+                          onClick={() => setRemoving(p)}
+                          aria-label="Remove photo"
+                          title="Remove wrong photo"
+                          className="absolute top-1 right-1 rounded-full bg-white/90 px-1.5 text-xs shadow hover:bg-red-50"
+                        >
+                          🗑
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -318,10 +345,39 @@ function Photos({ job }: { job: JobDto }) {
       <Modal open={!!viewing} onClose={() => setViewing(null)} title={viewing ? PHOTO_KIND_LABELS[viewing.kind] : ''} size="lg">
         {viewing && <AuthImage src={src(viewing)} alt="" className="mx-auto max-h-[70vh] w-auto rounded" />}
       </Modal>
+      <Modal open={!!removing} onClose={() => setRemoving(null)} title="Remove photo" size="sm">
+        {removing && <RemovePhotoForm jobId={job.id} photo={removing} onDone={() => setRemoving(null)} />}
+      </Modal>
       <Modal open={!!adding} onClose={() => setAdding(null)} title={adding ? `Add photos — ${PHOTO_KIND_LABELS[adding]}` : ''}>
         {adding && <AddPhotos jobId={job.id} kind={adding} onDone={() => setAdding(null)} />}
       </Modal>
     </Card>
+  );
+}
+
+function RemovePhotoForm({ jobId, photo, onDone }: { jobId: string; photo: JobPhotoDto; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState('');
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/jobs/${jobId}/photos/${photo.id}`, { body: { reason } }),
+    onSuccess: () => {
+      toast.success('Photo removed');
+      void queryClient.invalidateQueries({ queryKey: ['jobs', jobId] });
+      onDone();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  return (
+    <form onSubmit={(e) => (e.preventDefault(), remove.mutate())} className="space-y-4">
+      <AuthImage src={`/jobs/${jobId}/photos/${photo.id}`} alt="" className="mx-auto h-32 rounded" />
+      <Field label="Reason" required>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} autoFocus className={inputClass} placeholder="e.g. Wrong customer's Aadhaar" />
+      </Field>
+      <div className="flex justify-end gap-2">
+        <Button variant="secondary" onClick={onDone}>Cancel</Button>
+        <Button type="submit" variant="danger" disabled={reason.trim().length < 3} loading={remove.isPending}>Remove photo</Button>
+      </div>
+    </form>
   );
 }
 
@@ -429,6 +485,12 @@ function describe(entry: JobHistoryEntryDto) {
       return `Sent back from L4${meta.note ? ` — “${meta.note}”` : ''}`;
     case 'job.received_from_l4':
       return `Received back at branch from L4${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.edited': {
+      const fields = Object.keys((meta.changes ?? {}) as object).map((f) => f.replace('customer.', 'customer ').replace(/([A-Z])/g, ' $1').toLowerCase());
+      return `Job sheet edited: ${fields.join(', ')}`;
+    }
+    case 'job.photo_deleted':
+      return `Photo removed (${PHOTO_KIND_LABELS[meta.kind as PhotoKind] ?? meta.kind}) — “${meta.reason ?? ''}”`;
     case 'job.assigned':
       return `Assigned to ${(meta.engineer as { name?: string } | undefined)?.name ?? 'engineer'}`;
     case 'job.reassigned':

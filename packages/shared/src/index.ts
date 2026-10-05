@@ -12,3 +12,4 @@ export * from './schemas/accounts.js';
 export * from './schemas/calling.js';
 export * from './schemas/reports.js';
 export * from './schemas/messages.js';
+export * from './schemas/settings.js';

@@ -4,6 +4,7 @@ import { PAYMENT_MODE_LABELS, type JobDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDateTime } from '@/lib/format';
 import { useJob } from './api';
+import { ShopHeader } from '@/features/settings/ShopHeader';
 
 /** Two copies on one A4 sheet: customer copy (with contact & money) and engineer copy (goes with the phone). */
 export function JobSheetPrintPage() {
@@ -45,11 +46,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'engineer' }) {
   return (
     <article className="rounded-lg bg-white p-6 text-[13px] leading-snug ring-1 ring-slate-200 print:break-inside-avoid print:rounded-none print:p-2 print:ring-0">
       <header className="flex items-start justify-between border-b border-slate-300 pb-2">
-        <div>
-          <div className="text-base font-bold">{job.branch.name}</div>
-          {job.branch.address && <div className="text-slate-600">{job.branch.address}</div>}
-          {job.branch.phone && <div className="text-slate-600">Ph: {job.branch.phone}</div>}
-        </div>
+        <ShopHeader branch={job.branch} />
         <div className="text-right">
           <div className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{isCustomer ? 'Customer copy' : 'Engineer copy'}</div>
           <div className="font-mono text-xl font-bold">{job.jobNumber}</div>

@@ -45,6 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Part Requests', to: '/store/requests', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Stock', to: '/store/stock', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Stock Transfers', to: '/store/transfers', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Stock Ledger', to: '/store/ledger', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
     ],
   },
@@ -52,6 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Administration',
     items: [
       { label: 'Staff', to: '/staff', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Shop Settings', to: '/settings/shop', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Branches', to: '/masters/branches', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Cities', to: '/masters/cities', roles: [ROLES.SUPER_ADMIN] },
       { label: 'States', to: '/masters/states', roles: [ROLES.SUPER_ADMIN] },

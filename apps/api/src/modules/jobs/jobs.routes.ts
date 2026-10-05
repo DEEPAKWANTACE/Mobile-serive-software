@@ -2,6 +2,9 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  imeiCheckQuerySchema,
+  jobEditSchema,
+  photoDeleteSchema,
   movementListQuerySchemaL4,
   movementNoteSchema,
   sendToL4Schema,
@@ -39,6 +42,7 @@ import { actorOf } from '../../lib/request-context.ts';
 import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
 import * as l4 from './l4.service.ts';
+import * as editing from './edit.service.ts';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -75,6 +79,10 @@ jobRoutes.get('/engineers', authorize(...viewers), validate({ query: engineerLis
 // Transfers (static paths before "/:id")
 const transferParams = z.object({ transferId: z.uuid() });
 jobRoutes.get('/transfers', authorize(...viewers), validate({ query: transferListQuerySchema }), controller.listTransfers);
+jobRoutes.get('/imei-check', authorize(...viewers), validate({ query: imeiCheckQuerySchema }), async (_req, res) => {
+  const q = res.locals.query as { imei: string; excludeJobId?: string };
+  res.json(await editing.imeiCheck(q.imei, q.excludeJobId));
+});
 jobRoutes.get('/l4/movements', authorize(...assigners), validate({ query: movementListQuerySchemaL4 }), async (req, res) => {
   res.json(await l4.listMovements(res.locals.query as L4MovementListQuery, actorOf(req)));
 });
@@ -194,3 +202,17 @@ jobRoutes.post('/:id/l4/send-back', authorize(...viewers), validate({ params: id
   await l4.sendBack(req.params.id as string, req.body.note, actorOf(req));
   res.status(204).end();
 });
+
+// ─── Corrections ────────────────────────────────────────────────────────────
+jobRoutes.patch('/:id', authorize(...assigners), validate({ params: idParamSchema, body: jobEditSchema }), async (req, res) => {
+  res.json(await editing.edit(req.params.id as string, req.body, actorOf(req)));
+});
+jobRoutes.delete(
+  '/:id/photos/:photoId',
+  authorize(...assigners),
+  validate({ params: photoParams, body: photoDeleteSchema }),
+  async (req, res) => {
+    await editing.deletePhoto(req.params.id as string, req.params.photoId as string, req.body.reason, actorOf(req));
+    res.status(204).end();
+  },
+);

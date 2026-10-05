@@ -9,10 +9,15 @@ import {
   stockAdjustmentSchema,
   stockListQuerySchema,
   stockReceiptSchema,
+  stockTransferCreateSchema,
+  stockTransferListQuerySchema,
+  type StockTransferListQuery,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
 import * as controller from './inventory.controller.ts';
+import * as transfers from './transfers.service.ts';
+import { actorOf } from '../../lib/request-context.ts';
 
 export const inventoryRoutes = Router();
 
@@ -44,3 +49,17 @@ inventoryRoutes.post(
   validate({ params: idParamSchema }),
   controller.cancel,
 );
+
+// Stock transfers between branches
+inventoryRoutes.get('/transfers', store, validate({ query: stockTransferListQuerySchema }), async (req, res) => {
+  res.json(await transfers.list(res.locals.query as StockTransferListQuery, actorOf(req)));
+});
+inventoryRoutes.post('/transfers', store, validate({ body: stockTransferCreateSchema }), async (req, res) => {
+  res.status(201).json(await transfers.send(req.body, actorOf(req)));
+});
+inventoryRoutes.post('/transfers/:id/receive', store, validate({ params: idParamSchema }), async (req, res) => {
+  res.json(await transfers.receive(req.params.id as string, actorOf(req)));
+});
+inventoryRoutes.post('/transfers/:id/cancel', store, validate({ params: idParamSchema }), async (req, res) => {
+  res.json(await transfers.cancel(req.params.id as string, actorOf(req)));
+});

@@ -87,6 +87,7 @@ function StoreDashboard() {
     queryKey: ['inventory', 'stock', 'low-dash'],
     queryFn: () => api.get<Paginated<StockRowDto>>('/inventory/stock?lowOnly=true&pageSize=200'),
   });
+  const incoming = useQuery({ queryKey: ['inventory', 'transfers', 'incoming', 'dash'], queryFn: () => api.get<unknown[]>('/inventory/transfers?view=incoming') });
   const pending = requests.data?.filter((r) => r.status === 'REQUESTED').length;
   const waiting = requests.data?.filter((r) => r.status === 'NOT_AVAILABLE').length;
 
@@ -96,6 +97,7 @@ function StoreDashboard() {
         <StatCard label="Part requests to handle" value={pending} to="/store/requests" tone="warning" />
         <StatCard label="Waiting for stock" value={waiting} to="/store/requests" />
         <StatCard label="Low-stock parts" value={low.data?.total} to="/store/stock" tone="warning" />
+        <StatCard label="Parts to receive (transfers)" value={incoming.data?.length} to="/store/transfers" tone="info" />
       </div>
       {!!low.data?.items.length && (
         <Card title="Low stock — reorder">

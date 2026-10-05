@@ -15,6 +15,7 @@ import { jobRoutes } from './modules/jobs/jobs.routes.ts';
 import { modelRoutes } from './modules/models/models.routes.ts';
 import { partRoutes } from './modules/parts/parts.routes.ts';
 import { reportRoutes } from './modules/reports/reports.routes.ts';
+import { settingsRoutes } from './modules/settings/settings.routes.ts';
 import { stateRoutes } from './modules/states/states.routes.ts';
 import { userRoutes } from './modules/users/users.routes.ts';
 
@@ -42,3 +43,4 @@ apiRouter.use('/inventory', inventoryRoutes);
 apiRouter.use('/accounts', accountsRoutes);
 apiRouter.use('/calling', callingRoutes);
 apiRouter.use('/reports', reportRoutes);
+apiRouter.use('/settings', settingsRoutes);

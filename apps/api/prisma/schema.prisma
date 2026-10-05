@@ -56,24 +56,26 @@ model City {
 }
 
 model Branch {
-  jobsHere       Job[]           @relation("JobCurrentBranch")
-  movementsOut   JobMovement[]   @relation("MovementFrom")
-  movementsIn    JobMovement[]   @relation("MovementTo")
-  expenses       Expense[]
-  callLogs       CallLog[]
-  invoices       Invoice[]
-  partStocks     PartStock[]
-  stockMovements StockMovement[]
-  id             String          @id @default(uuid(7)) @db.Uuid
-  cityId         String          @map("city_id") @db.Uuid
-  code           String          @unique // short code, used as job-number prefix
-  name           String
-  type           BranchType      @default(SERVICE_CENTER)
-  address        String?
-  phone          String?
-  isActive       Boolean         @default(true) @map("is_active")
-  createdAt      DateTime        @default(now()) @map("created_at")
-  updatedAt      DateTime        @updatedAt @map("updated_at")
+  stockTransfersOut StockTransfer[] @relation("StockTransferFrom")
+  stockTransfersIn  StockTransfer[] @relation("StockTransferTo")
+  jobsHere          Job[]           @relation("JobCurrentBranch")
+  movementsOut      JobMovement[]   @relation("MovementFrom")
+  movementsIn       JobMovement[]   @relation("MovementTo")
+  expenses          Expense[]
+  callLogs          CallLog[]
+  invoices          Invoice[]
+  partStocks        PartStock[]
+  stockMovements    StockMovement[]
+  id                String          @id @default(uuid(7)) @db.Uuid
+  cityId            String          @map("city_id") @db.Uuid
+  code              String          @unique // short code, used as job-number prefix
+  name              String
+  type              BranchType      @default(SERVICE_CENTER)
+  address           String?
+  phone             String?
+  isActive          Boolean         @default(true) @map("is_active")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
   city        City         @relation(fields: [cityId], references: [id])
   users       User[]
@@ -88,33 +90,35 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
-  movementsSent     JobMovement[]   @relation("MovementSentBy")
-  movementsReceived JobMovement[]   @relation("MovementReceivedBy")
-  expensesCreated   Expense[]       @relation("ExpenseCreatedBy")
-  expensesVoided    Expense[]       @relation("ExpenseVoidedBy")
-  callLogs          CallLog[]
-  jobsDelivered     Job[]           @relation("JobDeliveredBy")
-  invoicesCreated   Invoice[]
-  stockMovements    StockMovement[]
-  partsRequested    JobPart[]       @relation("JobPartRequestedBy")
-  partsHandled      JobPart[]       @relation("JobPartHandledBy")
-  id                String          @id @default(uuid(7)) @db.Uuid
-  name              String
-  username          String          @unique
-  phone             String?         @unique
-  email             String?         @unique
-  passwordHash      String          @map("password_hash")
-  role              Role
-  address           String?
+  stockTransfersSent     StockTransfer[] @relation("StockTransferSentBy")
+  stockTransfersReceived StockTransfer[] @relation("StockTransferReceivedBy")
+  movementsSent          JobMovement[]   @relation("MovementSentBy")
+  movementsReceived      JobMovement[]   @relation("MovementReceivedBy")
+  expensesCreated        Expense[]       @relation("ExpenseCreatedBy")
+  expensesVoided         Expense[]       @relation("ExpenseVoidedBy")
+  callLogs               CallLog[]
+  jobsDelivered          Job[]           @relation("JobDeliveredBy")
+  invoicesCreated        Invoice[]
+  stockMovements         StockMovement[]
+  partsRequested         JobPart[]       @relation("JobPartRequestedBy")
+  partsHandled           JobPart[]       @relation("JobPartHandledBy")
+  id                     String          @id @default(uuid(7)) @db.Uuid
+  name                   String
+  username               String          @unique
+  phone                  String?         @unique
+  email                  String?         @unique
+  passwordHash           String          @map("password_hash")
+  role                   Role
+  address                String?
   /// 12-digit Aadhaar (staff KYC). Shown masked except to managers.
-  aadhaarNumber     String?         @map("aadhaar_number")
-  aadhaarPhotoKey   String?         @map("aadhaar_photo_key")
+  aadhaarNumber          String?         @map("aadhaar_number")
+  aadhaarPhotoKey        String?         @map("aadhaar_photo_key")
   /// Null only for global roles (SUPER_ADMIN).
-  branchId          String?         @map("branch_id") @db.Uuid
-  isActive          Boolean         @default(true) @map("is_active")
-  lastLoginAt       DateTime?       @map("last_login_at")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  branchId               String?         @map("branch_id") @db.Uuid
+  isActive               Boolean         @default(true) @map("is_active")
+  lastLoginAt            DateTime?       @map("last_login_at")
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
 
   branch       Branch?       @relation(fields: [branchId], references: [id])
   sessions     Session[]
@@ -524,20 +528,21 @@ model JobTransfer {
 
 /// Spare part master. Staff refer to parts by `code` (e.g. "105" = a display), so nobody needs to know every part by name.
 model Part {
-  id            String   @id @default(uuid(7)) @db.Uuid
-  code          String   @unique
-  name          String
-  brandId       String?  @map("brand_id") @db.Uuid
-  deviceModelId String?  @map("device_model_id") @db.Uuid
+  stockTransfers StockTransfer[]
+  id             String          @id @default(uuid(7)) @db.Uuid
+  code           String          @unique
+  name           String
+  brandId        String?         @map("brand_id") @db.Uuid
+  deviceModelId  String?         @map("device_model_id") @db.Uuid
   /// Price charged to the customer.
-  sellingPrice  Decimal  @map("selling_price") @db.Decimal(10, 2)
+  sellingPrice   Decimal         @map("selling_price") @db.Decimal(10, 2)
   /// Purchase cost (for margin reports).
-  costPrice     Decimal? @map("cost_price") @db.Decimal(10, 2)
+  costPrice      Decimal?        @map("cost_price") @db.Decimal(10, 2)
   /// Highlight as low stock at or below this quantity.
-  reorderLevel  Int      @default(1) @map("reorder_level")
-  isActive      Boolean  @default(true) @map("is_active")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  reorderLevel   Int             @default(1) @map("reorder_level")
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
 
   brand         Brand?            @relation(fields: [brandId], references: [id])
   deviceModel   DeviceModel?      @relation(fields: [deviceModelId], references: [id])
@@ -568,6 +573,8 @@ enum StockMovementType {
   ISSUE // issued to a job
   RETURN // returned from a job to stock
   ADJUSTMENT // manual correction (count, damage, loss)
+  TRANSFER_OUT // sent to another branch
+  TRANSFER_IN // received from another branch (or a cancelled transfer coming back)
 }
 
 /// Append-only stock ledger. `quantity` is signed; `balanceAfter` is the branch quantity after this movement.
@@ -763,4 +770,53 @@ model JobMovement {
   @@index([toBranchId, receivedAt])
   @@index([fromBranchId, sentAt])
   @@map("job_movements")
+}
+
+enum StockTransferStatus {
+  SENT // stock left the sending branch; in transit
+  RECEIVED
+  CANCELLED // sender cancelled before receipt; stock returned to sender
+}
+
+/// Parts moving between branch stores. Stock leaves on send and arrives on receive.
+model StockTransfer {
+  id           String              @id @default(uuid(7)) @db.Uuid
+  partId       String              @map("part_id") @db.Uuid
+  fromBranchId String              @map("from_branch_id") @db.Uuid
+  toBranchId   String              @map("to_branch_id") @db.Uuid
+  quantity     Int
+  status       StockTransferStatus @default(SENT)
+  note         String?
+  sentById     String              @map("sent_by_id") @db.Uuid
+  sentAt       DateTime            @default(now()) @map("sent_at")
+  receivedById String?             @map("received_by_id") @db.Uuid
+  receivedAt   DateTime?           @map("received_at")
+
+  part       Part   @relation(fields: [partId], references: [id])
+  fromBranch Branch @relation("StockTransferFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch @relation("StockTransferTo", fields: [toBranchId], references: [id])
+  sentBy     User   @relation("StockTransferSentBy", fields: [sentById], references: [id])
+  receivedBy User?  @relation("StockTransferReceivedBy", fields: [receivedById], references: [id])
+
+  @@index([toBranchId, status])
+  @@index([fromBranchId, status])
+  @@map("stock_transfers")
+}
+
+// ─── Shop / company settings (single row, id = "default") ───────────────────
+
+/// Business identity printed on invoices and job sheets.
+model ShopSettings {
+  id           String   @id @default("default")
+  shopName     String   @map("shop_name")
+  legalName    String?  @map("legal_name")
+  gstin        String?
+  address      String?
+  phone        String?
+  email        String?
+  logoKey      String?  @map("logo_key")
+  invoiceTerms String?  @map("invoice_terms")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("shop_settings")
 }

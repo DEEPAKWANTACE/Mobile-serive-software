@@ -191,6 +191,39 @@ export const jobCreateSchema = z
   })
   .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] });
 
+/** Device & faults can be corrected only until the engineer has diagnosed (estimate depends on them). */
+export const DEVICE_EDITABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED'];
+
+/** Correct a job sheet after saving. Omitted fields are unchanged. */
+export const jobEditSchema = z.object({
+  customer: jobCustomerSchema.partial().optional(),
+  brandId: z.uuid().optional(),
+  deviceModelId: z.uuid().optional(),
+  color: optionalText(30),
+  faults: z
+    .array(z.object({ faultId: z.uuid(), priceId: z.uuid().nullish() }))
+    .min(1, 'Select at least one fault')
+    .max(20)
+    .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault')
+    .optional(),
+  customerComplaint: optionalText(1000),
+  accessories: z.array(z.enum(ACCESSORIES)).max(ACCESSORIES.length).optional(),
+  accessoriesOther: optionalText(200),
+  conditionNotes: optionalText(1000),
+});
+export type JobEditInput = z.input<typeof jobEditSchema>;
+export type JobEditData = z.output<typeof jobEditSchema>;
+
+export const photoDeleteSchema = z.object({ reason: z.string().trim().min(3, 'Why is this photo being removed?').max(200) });
+
+export const imeiCheckQuerySchema = z.object({ imei: z.string().regex(/^\d{15}$/), excludeJobId: z.uuid().optional() });
+
+/** Other jobs with the same IMEI across all branches. */
+export type ImeiCheckDto = {
+  open: { id: string; jobNumber: string; branchCode: string; status: JobStatus; createdAt: string }[];
+  previous: { id: string; jobNumber: string; branchCode: string; deliveredAt: string | null; rwr: boolean }[];
+};
+
 export type JobCreateInput = z.input<typeof jobCreateSchema>;
 export type JobCreateData = z.output<typeof jobCreateSchema>;
 
