@@ -28,6 +28,8 @@ import { useList } from '@/lib/crud';
 import { formatCurrency, timeAgo } from '@/lib/format';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { StatCard } from './StatCard';
+import { FranchisePicker, type FranchiseSelection } from './FranchisePicker';
+import { AgeBadge, OverdueCard } from './OverdueCard';
 import { CancelTransferButton, TransferResponseButtons } from '@/features/jobs/TransferActions';
 
 const useStats = () => useQuery({ queryKey: ['jobs', 'stats'], queryFn: () => api.get<JobStatsDto>('/jobs/stats') });
@@ -54,7 +56,8 @@ export function DashboardPage() {
       {user.role === ROLES.ENGINEER && <EngineerDashboard />}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
-      {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as string[]).includes(user.role) && <BranchDashboard user={user} />}
+      {user.role === ROLES.SUPER_ADMIN && <AdminDashboard user={user} />}
+      {(user.role === ROLES.BRANCH_MANAGER || user.role === ROLES.CCO) && <BranchDashboard user={user} />}
     </div>
   );
 }
@@ -135,6 +138,7 @@ function EngineerDashboard() {
         </span>
       ),
     },
+    { header: 'Pending for', cell: (j) => <AgeBadge createdAt={j.createdAt} /> },
     { header: 'With you since', cell: (j) => <span className="text-slate-600">{j.assignedAt ? timeAgo(j.assignedAt) : '—'}</span> },
   ];
 
@@ -201,24 +205,44 @@ function EngineerDashboard() {
   );
 }
 
+// ─── Super Admin: franchise view ────────────────────────────────────────────
+
+function AdminDashboard({ user }: { user: AuthUser }) {
+  const [view, setView] = useState<FranchiseSelection>({ stateId: '', cityId: '', branchId: '' });
+  return (
+    <>
+      <FranchisePicker value={view} onChange={setView} />
+      <BranchDashboard key={view.branchId} user={user} branchId={view.branchId || undefined} />
+    </>
+  );
+}
+
 // ─── Branch manager / CCO / Super Admin ─────────────────────────────────────
 
-function BranchDashboard({ user }: { user: AuthUser }) {
-  const isSuperAdmin = user.role === ROLES.SUPER_ADMIN;
-  const stats = useStats();
+function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string }) {
+  // Super Admin looking at one branch behaves like that branch's dashboard.
+  const isSuperAdmin = user.role === ROLES.SUPER_ADMIN && !branchId;
+  const stats = useQuery({
+    queryKey: ['jobs', 'stats', branchId],
+    queryFn: () => api.get<JobStatsDto>(`/jobs/stats${branchId ? `?branchId=${branchId}` : ''}`),
+  });
   const by = stats.data?.byStatus;
-  const queue = useList<JobListItemDto>('jobs', { status: 'RECEIVED', sort: 'oldest', pageSize: 10 });
-  const approvals = useList<JobListItemDto>('jobs', { status: 'AWAITING_APPROVAL', sort: 'oldest', pageSize: 20 });
-  const spares = useList<JobListItemDto>('jobs', { status: 'SPARE_PENDING', sort: 'oldest', pageSize: 20 });
-  const ready = useList<JobListItemDto>('jobs', { status: 'READY_FOR_DELIVERY', sort: 'oldest', pageSize: 50 });
-  const followUps = useQuery({ queryKey: ['calling', 'summary', 'dash'], queryFn: () => api.get<PendingCollectionSummaryDto>('/calling/summary') });
-  const rwr = useList<JobListItemDto>('jobs', { status: 'RWR', sort: 'oldest', pageSize: 50 });
+  const queue = useList<JobListItemDto>('jobs', { status: 'RECEIVED', sort: 'oldest', pageSize: 10, here: true, branchId });
+  const approvals = useList<JobListItemDto>('jobs', { status: 'AWAITING_APPROVAL', sort: 'oldest', pageSize: 20, owned: true, branchId });
+  const spares = useList<JobListItemDto>('jobs', { status: 'SPARE_PENDING', sort: 'oldest', pageSize: 20, here: true, branchId });
+  const ready = useList<JobListItemDto>('jobs', { status: 'READY_FOR_DELIVERY', sort: 'oldest', pageSize: 50, owned: true, branchId });
+  const followUps = useQuery({
+    queryKey: ['calling', 'summary', 'dash', branchId],
+    queryFn: () => api.get<PendingCollectionSummaryDto>(`/calling/summary${branchId ? `?branchId=${branchId}` : ''}`),
+  });
+  const rwr = useList<JobListItemDto>('jobs', { status: 'RWR', sort: 'oldest', pageSize: 50, owned: true, branchId });
   const collection = [...(ready.data?.items ?? []), ...(rwr.data?.items ?? [])];
   const toCollect = collection.reduce((s, j) => s + Math.max(0, (j.status === 'RWR' ? 0 : (j.quotedAmount ?? 0)) - j.paid), 0);
+  const engineerBranch = user.branch?.id ?? branchId;
   const engineers = useQuery({
-    queryKey: ['engineers', user.branch?.id],
-    queryFn: () => api.get<EngineerWorkloadDto[]>('/jobs/engineers'),
-    enabled: !isSuperAdmin,
+    queryKey: ['engineers', engineerBranch],
+    queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers?branchId=${engineerBranch}`),
+    enabled: !!engineerBranch,
   });
   const [assigning, setAssigning] = useState<JobListItemDto | null>(null);
   const withEngineer = by ? (['ASSIGNED', 'IN_REPAIR', 'REPAIRED', 'TESTING'] as const).reduce((s, st) => s + by[st], 0) : undefined;
@@ -280,10 +304,13 @@ function BranchDashboard({ user }: { user: AuthUser }) {
         <StatCard label="Ready – returned OK" value={by?.READY_FOR_DELIVERY} />
         <StatCard label="RWR (unrepaired)" value={by?.RWR} />
         <StatCard label="Delivered" value={by?.DELIVERED} />
+        <StatCard label="At L4 / in transit" value={stats.data?.atL4} to="/l4" />
         <StatCard label="Follow-ups due" value={followUps.data?.followUpsDue} to="/calling" tone="warning" />
         <StatCard label="Customer rejected" value={by?.CUSTOMER_REJECTED} />
         <StatCard label="Total jobs" value={stats.data?.total} to="/jobs" />
       </div>
+
+      <OverdueCard branchId={branchId} />
 
       <Card
         title={`Ready for collection — call customers (${collection.length})`}
@@ -393,7 +420,7 @@ function BranchDashboard({ user }: { user: AuthUser }) {
       <AssignEngineerDialog
         job={
           assigning
-            ? { id: assigning.id, jobNumber: assigning.jobNumber, branchId: assigning.branch.id, assignedEngineerId: null }
+            ? { id: assigning.id, jobNumber: assigning.jobNumber, branchId: assigning.currentBranch.id, assignedEngineerId: null }
             : null
         }
         onClose={() => setAssigning(null)}

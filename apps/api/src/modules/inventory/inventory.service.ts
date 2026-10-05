@@ -210,7 +210,7 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
   assertStore(actor, branchId);
   const rows = await prisma.jobPart.findMany({
     where: {
-      job: { branchId },
+      job: { currentBranchId: branchId },
       status: query.status === 'open' ? { in: ['REQUESTED', 'NOT_AVAILABLE'] } : query.status,
     },
     select: {
@@ -258,7 +258,7 @@ async function loadJobPart(id: string) {
       quantity: true,
       requestedById: true,
       part: { select: { id: true, code: true, name: true } },
-      job: { select: { id: true, branchId: true, status: true, statusBeforeHold: true, assignedEngineerId: true } },
+      job: { select: { id: true, branchId: true, currentBranchId: true, status: true, statusBeforeHold: true, assignedEngineerId: true } },
     },
   });
   if (!jp) throw HttpError.notFound('Part request not found');
@@ -283,14 +283,14 @@ async function setStatus(
 /** Store hands the part to the engineer. If this was the last missing part of a waiting job, the job resumes. */
 export async function issue(id: string, note: string | null | undefined, actor: Actor) {
   const jp = await loadJobPart(id);
-  assertStore(actor, jp.job.branchId);
+  assertStore(actor, jp.job.currentBranchId);
   if (jp.status !== 'REQUESTED' && jp.status !== 'NOT_AVAILABLE') throw HttpError.conflict('This request is already closed');
 
   return prisma.$transaction(async (tx) => {
     await setStatus(tx, id, ['REQUESTED', 'NOT_AVAILABLE'], 'ISSUED', actor, note);
     const m = await applyMovement(tx, {
       partId: jp.part.id,
-      branchId: jp.job.branchId,
+      branchId: jp.job.currentBranchId,
       type: 'ISSUE',
       quantity: -jp.quantity,
       jobId: jp.job.id,
@@ -316,7 +316,7 @@ export async function issue(id: string, note: string | null | undefined, actor: 
 /** Store has none: the job waits as "Spare not available" (if it was being worked on). */
 export async function markNotAvailable(id: string, note: string | null | undefined, actor: Actor) {
   const jp = await loadJobPart(id);
-  assertStore(actor, jp.job.branchId);
+  assertStore(actor, jp.job.currentBranchId);
   if (jp.status !== 'REQUESTED') throw HttpError.conflict('Only new requests can be marked not available');
 
   return prisma.$transaction(async (tx) => {
@@ -349,14 +349,14 @@ export async function markNotAvailable(id: string, note: string | null | undefin
 /** Unused part comes back from the engineer to stock. */
 export async function returnToStock(id: string, note: string | null | undefined, actor: Actor) {
   const jp = await loadJobPart(id);
-  assertStore(actor, jp.job.branchId);
+  assertStore(actor, jp.job.currentBranchId);
   if (jp.status !== 'ISSUED') throw HttpError.conflict('Only issued parts can be returned');
 
   return prisma.$transaction(async (tx) => {
     await setStatus(tx, id, ['ISSUED'], 'RETURNED', actor, note);
     const m = await applyMovement(tx, {
       partId: jp.part.id,
-      branchId: jp.job.branchId,
+      branchId: jp.job.currentBranchId,
       type: 'RETURN',
       quantity: jp.quantity,
       jobId: jp.job.id,
@@ -383,7 +383,7 @@ export async function returnToStock(id: string, note: string | null | undefined,
 export async function cancel(id: string, actor: Actor) {
   const jp = await loadJobPart(id);
   const isStore = STORE_ROLES.includes(actor.role);
-  if (isStore) assertBranchAccess(actor, jp.job.branchId);
+  if (isStore) assertBranchAccess(actor, jp.job.currentBranchId);
   else if (!(actor.role === ROLES.ENGINEER && jp.job.assignedEngineerId === actor.sub)) throw HttpError.forbidden();
   if (jp.status !== 'REQUESTED' && jp.status !== 'NOT_AVAILABLE') throw HttpError.conflict('This request is already closed');
 

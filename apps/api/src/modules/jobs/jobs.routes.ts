@@ -2,6 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  movementListQuerySchemaL4,
+  movementNoteSchema,
+  sendToL4Schema,
+  type L4MovementListQuery,
   callLogCreateSchema,
   deliverySchema,
   partRequestSchema,
@@ -34,6 +38,7 @@ import * as calling from '../calling/calling.service.ts';
 import { actorOf } from '../../lib/request-context.ts';
 import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
+import * as l4 from './l4.service.ts';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -70,6 +75,9 @@ jobRoutes.get('/engineers', authorize(...viewers), validate({ query: engineerLis
 // Transfers (static paths before "/:id")
 const transferParams = z.object({ transferId: z.uuid() });
 jobRoutes.get('/transfers', authorize(...viewers), validate({ query: transferListQuerySchema }), controller.listTransfers);
+jobRoutes.get('/l4/movements', authorize(...assigners), validate({ query: movementListQuerySchemaL4 }), async (req, res) => {
+  res.json(await l4.listMovements(res.locals.query as L4MovementListQuery, actorOf(req)));
+});
 jobRoutes.post(
   '/transfers/:transferId/respond',
   authorize(ROLES.ENGINEER),
@@ -171,4 +179,18 @@ jobRoutes.get('/:id/calls', authorize(...assigners), validate({ params: idParamS
 });
 jobRoutes.post('/:id/calls', authorize(...assigners), validate({ params: idParamSchema, body: callLogCreateSchema }), async (req, res) => {
   res.status(201).json(await calling.logCall(req.params.id as string, req.body, actorOf(req)));
+});
+
+// ─── L4 / main office ───────────────────────────────────────────────────────
+jobRoutes.post('/:id/l4/send', authorize(...viewers), validate({ params: idParamSchema, body: sendToL4Schema }), async (req, res) => {
+  await l4.sendToL4(req.params.id as string, req.body, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/:id/l4/receive', authorize(...assigners), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+  await l4.receive(req.params.id as string, req.body.note, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/:id/l4/send-back', authorize(...viewers), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+  await l4.sendBack(req.params.id as string, req.body.note, actorOf(req));
+  res.status(204).end();
 });

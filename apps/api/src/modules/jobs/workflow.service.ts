@@ -218,7 +218,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
   const access = await loadForAccess(id, actor);
   const isManager = actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER;
   if (access.assignedEngineerId !== actor.sub && !isManager) throw HttpError.forbidden();
-  if (isManager) assertBranchAccess(actor, access.branchId);
+  if (isManager) assertBranchAccess(actor, access.currentBranchId);
   if (access.status !== 'SPARE_PENDING') throw notAllowed(access.status);
 
   const job = await prisma.job.findUniqueOrThrow({

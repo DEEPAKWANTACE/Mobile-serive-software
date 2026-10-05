@@ -36,6 +36,7 @@ import { RwrForm, SpareHoldForm, SpareReceivedForm } from './HoldAndRwrForms';
 import { CancelTransferButton, TransferRequestForm, TransferResponseButtons } from './TransferActions';
 import { PartCodeInput } from '@/features/inventory/PartCodeInput';
 import { DeliveryForm } from '@/features/billing/DeliveryForm';
+import { L4Panel } from '@/features/l4/L4Actions';
 import { Link } from 'react-router';
 
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
@@ -47,7 +48,8 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
   const [action, setAction] = useState<'transfer' | 'spare' | 'spareReceived' | 'rwr' | 'deliver' | null>(null);
-  const canDeliver = canApprove && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR');
+  const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
+  const canDeliver = canApprove && atHome && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR') && (!user?.branch || user.branch.id === job.branch.id);
 
   const isManager = user?.role === ROLES.BRANCH_MANAGER || user?.role === ROLES.SUPER_ADMIN;
   const pending = job.pendingTransfer;
@@ -62,7 +64,9 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const canDiagnose = isAssignedEngineer && DIAGNOSABLE_STATUSES.includes(job.status);
   const transitions = isAssignedEngineer ? (ENGINEER_TRANSITIONS[job.status] ?? []) : [];
 
-  if (job.status === 'RECEIVED') return null;
+  if (job.status === 'RECEIVED' && job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id && !job.diagnosedAt) {
+    return <L4Panel job={job} />;
+  }
 
   return (
     <Card
@@ -76,6 +80,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
       }
     >
       <div className="space-y-4">
+        <L4Panel job={job} />
         {job.status === 'DELIVERED' && (
           <div className="rounded-md bg-slate-800 p-4 text-sm text-white">
             <div className="font-medium">

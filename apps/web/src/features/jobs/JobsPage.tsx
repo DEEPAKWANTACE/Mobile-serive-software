@@ -84,6 +84,10 @@ export function JobsPage() {
         <span className="flex items-center gap-1.5">
           <JobStatusBadge status={j.status} />
           {j.hasPendingTransfer && <span title="Transfer requested">🔁</span>}
+          {j.location !== 'AT_BRANCH' && <span title="In transit" className="text-xs text-violet-700">🚚</span>}
+          {j.location === 'AT_BRANCH' && j.currentBranch.id !== j.branch.id && (
+            <span className="rounded bg-violet-50 px-1.5 text-xs text-violet-700">@{j.currentBranch.code}</span>
+          )}
         </span>
       ),
     },

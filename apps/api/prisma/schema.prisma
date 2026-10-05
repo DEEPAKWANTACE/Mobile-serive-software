@@ -56,6 +56,9 @@ model City {
 }
 
 model Branch {
+  jobsHere       Job[]           @relation("JobCurrentBranch")
+  movementsOut   JobMovement[]   @relation("MovementFrom")
+  movementsIn    JobMovement[]   @relation("MovementTo")
   expenses       Expense[]
   callLogs       CallLog[]
   invoices       Invoice[]
@@ -85,31 +88,33 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
-  expensesCreated Expense[]       @relation("ExpenseCreatedBy")
-  expensesVoided  Expense[]       @relation("ExpenseVoidedBy")
-  callLogs        CallLog[]
-  jobsDelivered   Job[]           @relation("JobDeliveredBy")
-  invoicesCreated Invoice[]
-  stockMovements  StockMovement[]
-  partsRequested  JobPart[]       @relation("JobPartRequestedBy")
-  partsHandled    JobPart[]       @relation("JobPartHandledBy")
-  id              String          @id @default(uuid(7)) @db.Uuid
-  name            String
-  username        String          @unique
-  phone           String?         @unique
-  email           String?         @unique
-  passwordHash    String          @map("password_hash")
-  role            Role
-  address         String?
+  movementsSent     JobMovement[]   @relation("MovementSentBy")
+  movementsReceived JobMovement[]   @relation("MovementReceivedBy")
+  expensesCreated   Expense[]       @relation("ExpenseCreatedBy")
+  expensesVoided    Expense[]       @relation("ExpenseVoidedBy")
+  callLogs          CallLog[]
+  jobsDelivered     Job[]           @relation("JobDeliveredBy")
+  invoicesCreated   Invoice[]
+  stockMovements    StockMovement[]
+  partsRequested    JobPart[]       @relation("JobPartRequestedBy")
+  partsHandled      JobPart[]       @relation("JobPartHandledBy")
+  id                String          @id @default(uuid(7)) @db.Uuid
+  name              String
+  username          String          @unique
+  phone             String?         @unique
+  email             String?         @unique
+  passwordHash      String          @map("password_hash")
+  role              Role
+  address           String?
   /// 12-digit Aadhaar (staff KYC). Shown masked except to managers.
-  aadhaarNumber   String?         @map("aadhaar_number")
-  aadhaarPhotoKey String?         @map("aadhaar_photo_key")
+  aadhaarNumber     String?         @map("aadhaar_number")
+  aadhaarPhotoKey   String?         @map("aadhaar_photo_key")
   /// Null only for global roles (SUPER_ADMIN).
-  branchId        String?         @map("branch_id") @db.Uuid
-  isActive        Boolean         @default(true) @map("is_active")
-  lastLoginAt     DateTime?       @map("last_login_at")
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  branchId          String?         @map("branch_id") @db.Uuid
+  isActive          Boolean         @default(true) @map("is_active")
+  lastLoginAt       DateTime?       @map("last_login_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
   branch       Branch?       @relation(fields: [branchId], references: [id])
   sessions     Session[]
@@ -285,6 +290,13 @@ enum JobStatus {
   DELIVERED // handed back to the customer; job closed
 }
 
+/// Where the phone physically is. The owning branch (`branchId`) never changes; `currentBranchId` follows the phone.
+enum JobLocation {
+  AT_BRANCH // at the branch that currently works on it
+  TO_L4 // in transit to the main office
+  TO_BRANCH // in transit back to the owning branch
+}
+
 enum RwrReason {
   SPARE_NOT_AVAILABLE
   NOT_REPAIRABLE // e.g. already tampered by other shops
@@ -300,6 +312,11 @@ enum TransferStatus {
 }
 
 model Job {
+  /// Branch that has the phone / works on it now (= branchId unless sent to L4).
+  currentBranchId    String          @map("current_branch_id") @db.Uuid
+  location           JobLocation     @default(AT_BRANCH)
+  currentBranch      Branch          @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
+  movements          JobMovement[]
   callLogs           CallLog[]
   deliveredAt        DateTime?       @map("delivered_at")
   deliveredById      String?         @map("delivered_by_id") @db.Uuid
@@ -368,6 +385,7 @@ model Job {
   @@index([customerId])
   @@index([imei])
   @@index([assignedEngineerId, status])
+  @@index([currentBranchId, status])
   @@map("jobs")
 }
 
@@ -712,4 +730,37 @@ model CallLog {
   @@index([jobId, createdAt])
   @@index([branchId, nextFollowUpAt])
   @@map("call_logs")
+}
+
+// ─── L4 / main-office transfers ─────────────────────────────────────────────
+
+enum MovementDirection {
+  TO_L4
+  TO_BRANCH
+}
+
+/// Physical movement of a phone between a branch and the main office (L4).
+model JobMovement {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  jobId        String            @map("job_id") @db.Uuid
+  direction    MovementDirection
+  fromBranchId String            @map("from_branch_id") @db.Uuid
+  toBranchId   String            @map("to_branch_id") @db.Uuid
+  reason       String?
+  sentById     String            @map("sent_by_id") @db.Uuid
+  sentAt       DateTime          @default(now()) @map("sent_at")
+  receivedById String?           @map("received_by_id") @db.Uuid
+  receivedAt   DateTime?         @map("received_at")
+  receiveNote  String?           @map("receive_note")
+
+  job        Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fromBranch Branch @relation("MovementFrom", fields: [fromBranchId], references: [id])
+  toBranch   Branch @relation("MovementTo", fields: [toBranchId], references: [id])
+  sentBy     User   @relation("MovementSentBy", fields: [sentById], references: [id])
+  receivedBy User?  @relation("MovementReceivedBy", fields: [receivedById], references: [id])
+
+  @@index([jobId, sentAt])
+  @@index([toBranchId, receivedAt])
+  @@index([fromBranchId, sentAt])
+  @@map("job_movements")
 }

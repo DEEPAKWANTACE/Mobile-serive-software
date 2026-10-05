@@ -1,11 +1,10 @@
 import { ROLES, TRANSFERABLE_STATUSES, type TransferDto, type TransferListQuery, type TransferRequestData, type TransferResponseData } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
-import { branchScope } from '../../lib/access.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
-import { findBranchEngineer, loadForAccess } from './jobs.service.ts';
+import { findBranchEngineer, jobBranchScope, loadForAccess } from './jobs.service.ts';
 
 /**
  * Engineer-to-engineer transfer. The sender keeps the job until the receiver accepts, so a job can never be
@@ -52,7 +51,7 @@ export async function list(query: TransferListQuery, actor: Actor) {
     else if (query.direction === 'outgoing') where.fromEngineerId = actor.sub;
     else where.OR = [{ toEngineerId: actor.sub }, { fromEngineerId: actor.sub }];
   } else {
-    where.job = branchScope(actor);
+    where.job = jobBranchScope(actor);
   }
   const rows = await prisma.jobTransfer.findMany({ where, select, orderBy: { createdAt: 'desc' }, take: 100 });
   return rows.map(toDto);
@@ -63,7 +62,7 @@ export async function request(jobId: string, { toEngineerId, reason }: TransferR
   if (job.assignedEngineerId !== actor.sub) throw HttpError.forbidden('Only the engineer holding the job can transfer it');
   if (!TRANSFERABLE_STATUSES.includes(job.status)) throw HttpError.conflict('This job cannot be transferred at its current stage');
   if (toEngineerId === actor.sub) throw HttpError.badRequest('Invalid request', { toEngineerId: ['Choose another engineer'] });
-  const to = await findBranchEngineer(job.branchId, toEngineerId);
+  const to = await findBranchEngineer(job.currentBranchId, toEngineerId);
 
   return prisma.$transaction(async (tx) => {
     await lockJob(tx, jobId);

@@ -40,6 +40,7 @@ import { PhotoPicker } from './PhotoPicker';
 import { JobPartsCard } from './JobPartsCard';
 import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
+import { MovementsCard } from '@/features/l4/L4Actions';
 
 export function JobDetailPage() {
   const { id = '' } = useParams();
@@ -78,7 +79,10 @@ export function JobDetailPage() {
           <div className="text-xs text-slate-500">Engineer</div>
           <div className="mt-0.5 flex items-center gap-3">
             <span className="font-medium">{job.assignedEngineer?.name ?? <span className="text-amber-700">Not assigned</span>}</span>
-            {user?.role !== ROLES.ENGINEER && ASSIGNABLE_STATUSES.includes(job.status) && (
+            {user?.role !== ROLES.ENGINEER &&
+              ASSIGNABLE_STATUSES.includes(job.status) &&
+              job.location === 'AT_BRANCH' &&
+              (!user?.branch || user.branch.id === job.currentBranch.id) && (
               <Button size="sm" variant={job.assignedEngineer ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>
                 {job.assignedEngineer ? 'Reassign' : 'Assign engineer'}
               </Button>
@@ -90,7 +94,7 @@ export function JobDetailPage() {
       <AssignEngineerDialog
         job={
           assigning
-            ? { id: job.id, jobNumber: job.jobNumber, branchId: job.branch.id, assignedEngineerId: job.assignedEngineer?.id ?? null }
+            ? { id: job.id, jobNumber: job.jobNumber, branchId: job.currentBranch.id, assignedEngineerId: job.assignedEngineer?.id ?? null }
             : null
         }
         onClose={() => setAssigning(false)}
@@ -105,6 +109,7 @@ export function JobDetailPage() {
         </div>
         <div className="space-y-5">
           <JobCallsCard job={job} />
+          <MovementsCard job={job} />
           <History jobId={job.id} />
         </div>
       </div>
@@ -395,6 +400,14 @@ function describe(entry: JobHistoryEntryDto) {
       return `Delivered to ${meta.deliveredTo} — invoice ${meta.invoiceNumber}, total ${formatCurrency(Number(meta.total ?? 0))}${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
     case 'job.call_logged':
       return `Customer call: ${CALL_OUTCOME_LABELS[meta.outcome as keyof typeof CALL_OUTCOME_LABELS] ?? meta.outcome}${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.sent_to_l4':
+      return `Sent to L4: ${(meta.to as { name?: string })?.name ?? ''} — “${meta.reason ?? ''}”`;
+    case 'job.received_at_l4':
+      return `Received at L4${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.sent_back_from_l4':
+      return `Sent back from L4${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.received_from_l4':
+      return `Received back at branch from L4${meta.note ? ` — “${meta.note}”` : ''}`;
     case 'job.assigned':
       return `Assigned to ${(meta.engineer as { name?: string } | undefined)?.name ?? 'engineer'}`;
     case 'job.reassigned':

@@ -35,9 +35,23 @@ import { nextJobNumber } from './job-number.ts';
 
 const isEngineer = (actor: Actor) => actor.role === ROLES.ENGINEER;
 
-/** Branch isolation, plus engineers only ever see jobs assigned to them. */
+/**
+ * Branch staff see jobs their branch owns (customer side) or that are physically with them (e.g. at L4).
+ * Engineers only ever see jobs assigned to them.
+ */
+export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
+  const scope = branchScope(actor); // throws for branch roles without a branch
+  if (!scope.branchId) return {};
+  return { OR: [{ branchId: scope.branchId }, { currentBranchId: scope.branchId }] };
+}
+
 function jobScope(actor: Actor): Prisma.JobWhereInput {
-  return { ...branchScope(actor), ...(isEngineer(actor) && { assignedEngineerId: actor.sub }) };
+  return isEngineer(actor) ? { assignedEngineerId: actor.sub } : jobBranchScope(actor);
+}
+
+/** True if the actor's branch owns the job or currently has the phone (Super Admin: always). */
+function canSeeBranch(actor: Actor, job: { branchId: string; currentBranchId: string }) {
+  return !actor.branchId || actor.branchId === job.branchId || actor.branchId === job.currentBranchId;
 }
 
 /** Resolve which branch a branch-level query is about: own branch for staff, explicit for Super Admin. */
@@ -174,6 +188,7 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
           jobNumber,
           estimatedAmount,
           branchId: branch.id,
+          currentBranchId: branch.id,
           customerId: savedCustomer.id,
           createdById: actor.sub,
           ...(engineer && { assignedEngineerId: engineer.id, assignedAt: new Date(), status: 'ASSIGNED' as const }),
@@ -250,6 +265,8 @@ const listSelect = {
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
   branch: { select: { id: true, code: true, name: true } },
+  currentBranch: { select: { id: true, code: true } },
+  location: true,
   assignedEngineer: { select: { id: true, name: true } },
   assignedAt: true,
   quotedAmount: true,
@@ -261,12 +278,18 @@ const listSelect = {
 
 export async function list(query: JobListQuery, actor: Actor) {
   const s = query.search;
-  const where: Prisma.JobWhereInput = {
-    status: query.status,
-    branchId: query.branchId,
-    ...(query.engineerId && { assignedEngineerId: query.engineerId === 'none' ? null : query.engineerId }),
-    ...jobScope(actor), // last, so it overrides any filter the caller is not allowed to widen
-    ...(s && {
+  const and: Prisma.JobWhereInput[] = [jobScope(actor)];
+  if (query.status) and.push({ status: query.status });
+  if (query.branchId) and.push({ OR: [{ branchId: query.branchId }, { currentBranchId: query.branchId }] });
+  if (query.engineerId) and.push({ assignedEngineerId: query.engineerId === 'none' ? null : query.engineerId });
+  // "here"/"owned" use the caller's branch, or the branch a Super Admin is looking at (franchise view).
+  const viewBranch = actor.branchId ?? query.branchId;
+  if (query.here && viewBranch) and.push({ currentBranchId: viewBranch, location: 'AT_BRANCH' });
+  if (query.owned && viewBranch) and.push({ branchId: viewBranch });
+  if (query.open) and.push({ status: { not: 'DELIVERED' } });
+  if (query.minAgeDays !== undefined) and.push({ createdAt: { lte: new Date(Date.now() - query.minAgeDays * 86_400_000) } });
+  if (s) {
+    and.push({
       OR: [
         { jobNumber: contains(s) },
         { imei: { startsWith: s } },
@@ -274,8 +297,9 @@ export async function list(query: JobListQuery, actor: Actor) {
         { customer: { phone: { startsWith: s } } },
         { customer: { name: contains(s) } },
       ],
-    }),
-  };
+    });
+  }
+  const where: Prisma.JobWhereInput = { AND: and };
   const [rows, total] = await prisma.$transaction([
     prisma.job.findMany({
       where,
@@ -300,6 +324,8 @@ export async function list(query: JobListQuery, actor: Actor) {
     quotedAmount: j.quotedAmount?.toNumber() ?? null,
     sparePart: j.sparePart,
     hasPendingTransfer: j.transfers.length > 0,
+    currentBranch: j.currentBranch,
+    location: j.location,
     paid: roundMoney(j.payments.reduce((sum, p) => sum + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0)),
   }));
   return toPage(items, total, query);
@@ -333,6 +359,23 @@ const detailSelect = {
   customerResponse: true,
   repairedAt: true,
   readyAt: true,
+  currentBranch: { select: { id: true, code: true, name: true, type: true } },
+  location: true,
+  movements: {
+    select: {
+      id: true,
+      direction: true,
+      reason: true,
+      sentAt: true,
+      receivedAt: true,
+      receiveNote: true,
+      fromBranch: { select: { id: true, code: true, name: true } },
+      toBranch: { select: { id: true, code: true, name: true } },
+      sentBy: { select: { name: true } },
+      receivedBy: { select: { name: true } },
+    },
+    orderBy: { sentAt: 'asc' },
+  },
   deliveredAt: true,
   deliveredTo: true,
   deliveryNote: true,
@@ -382,10 +425,10 @@ const detailSelect = {
 export async function loadForAccess(id: string, actor: Actor) {
   const job = await prisma.job.findUnique({
     where: { id },
-    select: { id: true, branchId: true, status: true, assignedEngineerId: true },
+    select: { id: true, branchId: true, currentBranchId: true, location: true, status: true, assignedEngineerId: true },
   });
   if (!job) throw HttpError.notFound('Job not found');
-  assertBranchAccess(actor, job.branchId);
+  if (!canSeeBranch(actor, job)) throw HttpError.forbidden();
   if (isEngineer(actor) && job.assignedEngineerId !== actor.sub) {
     // The receiving engineer may look at a job offered to them before accepting.
     const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
@@ -418,6 +461,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     parts,
     deliveredAt,
     invoice,
+    movements,
     ...rest
   } = j;
   const pending = transfers[0];
@@ -434,6 +478,18 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     spareRequestedAt: iso(spareRequestedAt),
     rwrAt: iso(rwrAt),
     deliveredAt: iso(deliveredAt),
+    movements: movements.map((m) => ({
+      id: m.id,
+      direction: m.direction,
+      from: m.fromBranch,
+      to: m.toBranch,
+      reason: m.reason,
+      sentBy: m.sentBy.name,
+      sentAt: m.sentAt.toISOString(),
+      receivedBy: m.receivedBy?.name ?? null,
+      receivedAt: iso(m.receivedAt),
+      receiveNote: m.receiveNote,
+    })),
     invoice: invoice && { ...invoice, total: invoice.total.toNumber() },
     pendingTransfer: pending
       ? { id: pending.id, from: pending.fromEngineer, to: pending.toEngineer, reason: pending.reason, createdAt: pending.createdAt.toISOString() }
@@ -524,8 +580,12 @@ export async function assign(jobId: string, engineerId: string, actor: Actor) {
     throw HttpError.conflict('The engineer can no longer be changed at this stage');
   }
   if (job.assignedEngineerId === engineerId) throw HttpError.badRequest('Job is already assigned to this engineer');
+  if (job.location !== 'AT_BRANCH') throw HttpError.conflict('The phone is in transit — receive it before assigning an engineer');
+  if (actor.branchId && actor.branchId !== job.currentBranchId) {
+    throw HttpError.forbidden('Only the branch that has the phone can assign its engineer');
+  }
 
-  const engineer = await findBranchEngineer(job.branchId, engineerId);
+  const engineer = await findBranchEngineer(job.currentBranchId, engineerId);
 
   return prisma.$transaction(async (tx) => {
     // Guard against a concurrent assignment/status change since we read the job.
@@ -557,13 +617,24 @@ export async function assign(jobId: string, engineerId: string, actor: Actor) {
 
 // ─── Dashboard stats ────────────────────────────────────────────────────────
 
+/**
+ * Counts by status for jobs physically handled by the branch (engineers: their own jobs), plus how many of the
+ * branch's own jobs are away at / travelling to or from the main office.
+ */
 export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDto> {
-  const groups = await prisma.job.groupBy({
-    by: ['status'],
-    where: { ...(branchId && { branchId }), ...jobScope(actor) },
-    _count: { _all: true },
-  });
+  const branch = actor.branchId ?? branchId;
+  const where: Prisma.JobWhereInput = isEngineer(actor)
+    ? { assignedEngineerId: actor.sub }
+    : branch
+      ? { currentBranchId: branch }
+      : {};
+  const [groups, atL4] = await Promise.all([
+    prisma.job.groupBy({ by: ['status'], where, _count: { _all: true } }),
+    branch && !isEngineer(actor)
+      ? prisma.job.count({ where: { branchId: branch, OR: [{ currentBranchId: { not: branch } }, { location: { not: 'AT_BRANCH' } }] } })
+      : Promise.resolve(0),
+  ]);
   const byStatus = Object.fromEntries(JOB_STATUSES.map((s) => [s, 0])) as Record<JobStatus, number>;
   for (const g of groups) byStatus[g.status] = g._count._all;
-  return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0) };
+  return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0), atL4 };
 }

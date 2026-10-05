@@ -4,6 +4,8 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { DayBookPage } from '@/features/accounts/DayBookPage';
 import { CallingPage } from '@/features/calling/CallingPage';
+import { L4TransfersPage } from '@/features/l4/L4TransfersPage';
+import { ReportsPage } from '@/features/reports/ReportsPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { JobDetailPage } from '@/features/jobs/JobDetailPage';
@@ -79,8 +81,13 @@ export const router = createBrowserRouter([
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS]} />,
             children: [
               { path: 'calling', element: <CallingPage /> },
+              { path: 'l4', element: <L4TransfersPage /> },
               { path: 'accounts/day-book', element: <DayBookPage /> },
             ],
+          },
+          {
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS]} />,
+            children: [{ path: 'reports', element: <ReportsPage /> }],
           },
           {
             path: 'store',

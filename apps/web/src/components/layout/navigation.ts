@@ -18,6 +18,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.CCO, ROLES.BRANCH_MANAGER] },
       { label: 'Job Sheets', to: '/jobs', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'My Jobs', to: '/jobs', roles: [ROLES.ENGINEER] },
+      { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
     ],
   },
   {
@@ -25,6 +26,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
+      { label: 'Reports', to: '/reports', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS] },
     ],
   },
   {

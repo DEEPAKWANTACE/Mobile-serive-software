@@ -58,7 +58,12 @@ function assertDeliverable(status: JobStatus) {
 }
 
 async function loadBillJob(jobId: string, actor: Actor) {
-  await loadForAccess(jobId, actor);
+  const access = await loadForAccess(jobId, actor);
+  // The owning branch delivers, and only once the phone is physically back with it.
+  if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the branch that took in the phone can deliver it');
+  if (access.location !== 'AT_BRANCH' || access.currentBranchId !== access.branchId) {
+    throw HttpError.conflict('The phone is not back at the branch yet — receive it from L4 first');
+  }
   return prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: billSelect });
 }
 

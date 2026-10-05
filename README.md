@@ -55,6 +55,10 @@ packages/
 
 `State → City → Branch (SERVICE_CENTER | MAIN_OFFICE/L4) → User (role)` plus `Session` (refresh tokens) and `AuditLog`.
 
+L4: `Job.branchId` is the owning (customer) branch and never changes; `currentBranchId` + `location` (AT_BRANCH / TO_L4 /
+TO_BRANCH) follow the phone, and `JobMovement` logs every send/receive. Branch staff see jobs they own or physically
+hold; assignment and store work use the current branch, approval calls and delivery stay with the owner.
+
 Accounts & calling: `Expense` (never deleted — voided with reason), `CallLog` (outcome + next follow-up).
 
 Inventory: `Part` (master, identified by a short `code`, e.g. `105`), `PartStock` (quantity per branch),
@@ -137,6 +141,9 @@ Other scripts: `npm run build`, `npm run typecheck`, `npm run db:studio`.
 | POST | /api/v1/accounts/expenses · /expenses/:id/void | add: same roles · void (with reason): Super Admin, Branch Manager, Accounts |
 | GET  | /api/v1/calling/list?list=ready\|rwr\|due\|approval · /calling/summary | Super Admin, Branch Manager, CCO, Accounts — pending collection & call lists |
 | GET/POST | /api/v1/jobs/:id/calls | Super Admin, Branch Manager, CCO — call history / log a call (outcome, note, next follow-up) |
+| POST | /api/v1/jobs/:id/l4/send · /l4/receive · /l4/send-back | send: owning branch / assigned engineer → a MAIN_OFFICE · receive: destination branch · send back: L4 once Ready/RWR |
+| GET  | /api/v1/jobs/l4/movements?view=incoming\|outgoing\|all | Super Admin, Branch Manager, CCO |
+| GET  | /api/v1/reports?from=&to=&stateId=&cityId=&branchId= | Super Admin (any scope), Branch Manager & Accounts (own branch) — summary + branch / engineer / CCO tables |
 | PATCH | /api/v1/jobs/:id/device | job viewers — set/correct IMEI & serial (audited) |
 | GET  | /api/v1/jobs/stats | job viewers — counts by status in caller's scope |
 | GET  | /api/v1/jobs/engineers?branchId= | Super Admin (branchId required), Branch Manager, CCO — active engineers + open workload |

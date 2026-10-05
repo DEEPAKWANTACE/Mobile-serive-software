@@ -54,6 +54,14 @@ export const SPARE_HOLD_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR
 /** Engineer can return the phone without repair from these statuses. */
 export const RWR_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR', 'SPARE_PENDING', 'CUSTOMER_REJECTED', 'TESTING'];
 
+export const JOB_LOCATIONS = ['AT_BRANCH', 'TO_L4', 'TO_BRANCH'] as const;
+export type JobLocation = (typeof JOB_LOCATIONS)[number];
+
+/** Owning branch (or the engineer) can send the phone to the main office (L4) in these statuses. */
+export const L4_SENDABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR', 'SPARE_PENDING'];
+/** L4 sends the phone back once it is repaired or returned without repair. */
+export const L4_RETURNABLE_STATUSES: readonly JobStatus[] = ['READY_FOR_DELIVERY', 'RWR'];
+
 export const RWR_REASONS = ['SPARE_NOT_AVAILABLE', 'NOT_REPAIRABLE', 'CUSTOMER_REJECTED', 'OTHER'] as const;
 export type RwrReason = (typeof RWR_REASONS)[number];
 export const RWR_REASON_LABELS: Record<RwrReason, string> = {
@@ -192,6 +200,23 @@ export const jobListQuerySchema = listQuerySchema.extend({
   /** Filter by engineer; "none" = unassigned jobs. Engineers always see only their own jobs. */
   engineerId: z.union([z.uuid(), z.literal('none')]).optional(),
   sort: z.enum(['newest', 'oldest']).default('newest'),
+  /** true = only phones physically at my branch (excludes my jobs that are at L4). */
+  here: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  /** true = only jobs whose customer belongs to my branch (approvals, collection). */
+  owned: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  /** true = everything not yet delivered. */
+  open: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  /** Only jobs received at least this many days ago (overdue view). */
+  minAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
 });
 export type JobListQuery = z.output<typeof jobListQuerySchema>;
 
@@ -284,6 +309,35 @@ export const rwrSchema = z.object({
 export type RwrInput = z.input<typeof rwrSchema>;
 export type RwrData = z.output<typeof rwrSchema>;
 
+export const sendToL4Schema = z.object({
+  toBranchId: z.uuid('Select the main office'),
+  reason: z.string().trim().min(3, 'Why is it going to L4?').max(500),
+});
+export type SendToL4Data = z.output<typeof sendToL4Schema>;
+
+export const movementNoteSchema = z.object({ note: optionalText(500) });
+
+export const movementListQuerySchemaL4 = z.object({
+  /** incoming = to receive at my branch · outgoing = sent by my branch, not yet received · all = history */
+  view: z.enum(['incoming', 'outgoing', 'all']).default('incoming'),
+  branchId: z.uuid().optional(),
+});
+export type L4MovementListQuery = z.output<typeof movementListQuerySchemaL4>;
+
+export type JobMovementDto = {
+  id: string;
+  direction: 'TO_L4' | 'TO_BRANCH';
+  from: { id: string; code: string; name: string };
+  to: { id: string; code: string; name: string };
+  reason: string | null;
+  sentBy: string;
+  sentAt: string;
+  receivedBy: string | null;
+  receivedAt: string | null;
+  receiveNote: string | null;
+  job?: { id: string; jobNumber: string; device: string; status: JobStatus; customer: string };
+};
+
 export type TransferDto = {
   id: string;
   job: { id: string; jobNumber: string; device: string; status: JobStatus };
@@ -334,6 +388,8 @@ export type JobListItemDto = {
   quotedAmount: number | null;
   sparePart: string | null;
   hasPendingTransfer: boolean;
+  currentBranch: { id: string; code: string };
+  location: JobLocation;
   /** Net amount received so far (advances − refunds). */
   paid: number;
 };
@@ -371,6 +427,9 @@ export type JobDto = {
   customerResponse: string | null;
   repairedAt: string | null;
   readyAt: string | null;
+  currentBranch: { id: string; code: string; name: string; type: 'SERVICE_CENTER' | 'MAIN_OFFICE' };
+  location: JobLocation;
+  movements: JobMovementDto[];
   deliveredAt: string | null;
   deliveredTo: string | null;
   deliveryNote: string | null;
@@ -397,7 +456,12 @@ export type JobDto = {
 export type EngineerWorkloadDto = { id: string; name: string; openJobs: number };
 
 /** Job counts by status within the caller's scope (engineers: their own jobs). */
-export type JobStatsDto = { byStatus: Record<JobStatus, number>; total: number };
+export type JobStatsDto = {
+  byStatus: Record<JobStatus, number>;
+  total: number;
+  /** This branch's jobs currently at / travelling to or from the main office. */
+  atL4: number;
+};
 
 export type JobHistoryEntryDto = {
   id: string;
