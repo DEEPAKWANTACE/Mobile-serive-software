@@ -13,6 +13,7 @@ import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from './jobs.service.ts';
+import { endAssignment, recordStatus } from './history.ts';
 
 /**
  * L4 / main-office flow. The owning branch (customer side) never changes; `currentBranchId` + `location` track the phone:
@@ -49,6 +50,8 @@ export async function sendToL4(jobId: string, { toBranchId, reason }: SendToL4Da
       data: { status: 'CANCELLED', handledById: actor.sub, handledAt: new Date(), note: 'Sent to L4' },
     });
     await tx.jobMovement.create({ data: { jobId, direction: 'TO_L4', fromBranchId: job.branchId, toBranchId: target.id, reason, sentById: actor.sub } });
+    await endAssignment(tx, jobId, 'SENT_TO_L4');
+    await recordStatus(tx, { jobId, from: job.status, to: 'RECEIVED', actorId: actor.sub, engineerId: null, remark: `Sent to L4 (${target.code}): ${reason}` });
     await recordAudit(
       {
         actorId: actor.sub,

@@ -12,6 +12,7 @@ const styles: Record<JobStatus, string> = {
   SPARE_PENDING: 'bg-yellow-100 text-yellow-800',
   RWR: 'bg-slate-200 text-slate-700',
   DELIVERED: 'bg-slate-800 text-white',
+  CANCELLED: 'bg-slate-100 text-slate-500 line-through',
 };
 
 export function JobStatusBadge({ status }: { status: JobStatus }) {

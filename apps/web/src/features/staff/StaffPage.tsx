@@ -37,7 +37,7 @@ import { useListState } from '@/hooks/use-list-state';
 import { api } from '@/lib/api-client';
 import { useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
-import { formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime } from '@/lib/format';
 
 export function StaffPage() {
   const { user: me } = useAuth();
@@ -67,6 +67,15 @@ export function StaffPage() {
     { header: 'Role', cell: (u) => ROLE_LABELS[u.role] },
     { header: 'Branch', cell: (u) => (u.branch ? `${u.branch.name} (${u.branch.code})` : 'All branches') },
     { header: 'Phone', cell: (u) => u.phone ?? '—' },
+    {
+      header: 'Password',
+      cell: (u) => (
+        <span className="whitespace-nowrap text-slate-600" title="Passwords are stored hashed and can never be shown — use Change password to set a new one">
+          <span className="tracking-widest">••••••</span>
+          <span className="ml-1.5 text-xs text-slate-500">set {u.passwordChangedAt ? formatDate(u.passwordChangedAt) : '—'}</span>
+        </span>
+      ),
+    },
     { header: 'Last login', cell: (u) => <span className="whitespace-nowrap text-slate-600">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'Never'}</span> },
     { header: 'Status', cell: (u) => <StatusBadge active={u.isActive} /> },
     {
@@ -79,7 +88,7 @@ export function StaffPage() {
               Edit
             </Button>
             <Button variant="link" onClick={() => setResetting(u)}>
-              Reset password
+              Change password
             </Button>
             {u.id !== me.id && (
               <StatusToggle
@@ -87,7 +96,8 @@ export function StaffPage() {
                 id={u.id}
                 name={u.name}
                 isActive={u.isActive}
-                warning="They will be signed out and cannot sign in."
+                warning="They will be signed out and cannot sign in. Their jobs and history are kept."
+                offLabel="Delete (deactivate)"
               />
             )}
           </div>
@@ -98,9 +108,9 @@ export function StaffPage() {
   return (
     <div>
       <PageHeader
-        title="Staff"
+        title="User Master"
         description={isSuperAdmin ? 'User accounts across all branches' : `Staff accounts of ${me.branch?.name ?? 'your branch'}`}
-        actions={<Button onClick={() => setEditing('new')}>Add staff</Button>}
+        actions={<Button onClick={() => setEditing('new')}>Add user</Button>}
       />
       <FilterBar>
         <SearchInput onSearch={list.setSearch} placeholder="Search name, username, phone" />
@@ -123,7 +133,7 @@ export function StaffPage() {
       <DataTable columns={columns} rows={data?.items} rowKey={(u) => u.id} isLoading={isLoading} />
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={list.setPage} />}
 
-      <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add staff' : 'Edit staff'} size="lg">
+      <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add user' : 'Edit user'} size="lg">
         {editing && (
           <StaffForm
             user={editing === 'new' ? undefined : editing}
@@ -135,7 +145,7 @@ export function StaffPage() {
         )}
       </Modal>
 
-      <Modal open={resetting !== null} onClose={() => setResetting(null)} title={`Reset password — ${resetting?.name ?? ''}`} size="sm">
+      <Modal open={resetting !== null} onClose={() => setResetting(null)} title={`Change password — ${resetting?.name ?? ''}`} size="sm">
         {resetting && <ResetPasswordForm user={resetting} onDone={() => setResetting(null)} />}
       </Modal>
     </div>
@@ -302,7 +312,7 @@ function ResetPasswordForm({ user, onDone }: { user: UserDto; onDone: () => void
       <Field label="New password" required error={errors.password?.message} hint="Minimum 8 characters">
         <input {...register('password')} type="password" autoComplete="new-password" autoFocus className={inputClass} aria-invalid={!!errors.password} />
       </Field>
-      <FormActions onCancel={onDone} loading={reset.isPending} submitLabel="Reset password" />
+      <FormActions onCancel={onDone} loading={reset.isPending} submitLabel="Change password" />
     </form>
   );
 }

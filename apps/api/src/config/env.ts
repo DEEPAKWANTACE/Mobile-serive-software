@@ -15,6 +15,8 @@ const envSchema = z.object({
   UPLOAD_DIR: z.string().default('uploads'),
   /** Business timezone, used e.g. for the month in job numbers. */
   APP_TIMEZONE: z.string().default('Asia/Kolkata'),
+  /** Key for encrypting stored secrets (device unlock codes). Any long random string; keep it stable. */
+  DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 

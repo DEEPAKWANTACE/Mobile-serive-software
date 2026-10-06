@@ -2,6 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import {
+  jobCancelSchema,
+  jobPaymentSchema,
+  repairNotesSchema,
+  unassignSchema,
   jobTrendQuerySchema,
   imeiCheckQuerySchema,
   jobEditSchema,
@@ -58,7 +62,7 @@ export const jobRoutes = Router();
 // Storekeeper / accounts access is added with their workflow modules.
 // Engineers are further limited (in the service) to jobs assigned to them.
 const viewers = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER] as const;
-const creators = [ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
+const creators = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 const assigners = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 
 jobRoutes.get('/', authorize(...viewers), validate({ query: jobListQuerySchema }), controller.list);
@@ -77,7 +81,10 @@ jobRoutes.post(
 );
 // Static paths before "/:id".
 jobRoutes.get('/stats', authorize(...viewers), validate({ query: jobStatsQuerySchema }), controller.stats);
-jobRoutes.get('/engineers', authorize(...viewers), validate({ query: engineerListQuerySchema }), controller.engineers);
+jobRoutes.get('/engineers', authorize(...viewers, ROLES.ACCOUNTS), validate({ query: engineerListQuerySchema }), controller.engineers);
+jobRoutes.get('/inward-staff', authorize(...assigners), validate({ query: engineerListQuerySchema }), async (req, res) => {
+  res.json(await service.inwardStaff(actorOf(req), (res.locals.query as { branchId?: string }).branchId));
+});
 // Transfers (static paths before "/:id")
 const transferParams = z.object({ transferId: z.uuid() });
 jobRoutes.get('/transfers', authorize(...viewers), validate({ query: transferListQuerySchema }), controller.listTransfers);
@@ -143,7 +150,7 @@ jobRoutes.post(
 );
 jobRoutes.post(
   '/:id/status',
-  authorize(ROLES.ENGINEER),
+  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: statusChangeSchema }),
   controller.changeStatus,
 );
@@ -219,6 +226,32 @@ jobRoutes.delete(
   validate({ params: photoParams, body: photoDeleteSchema }),
   async (req, res) => {
     await editing.deletePhoto(req.params.id as string, req.params.photoId as string, req.body.reason, actorOf(req));
+    res.status(204).end();
+  },
+);
+
+// ─── Admin / counter actions ────────────────────────────────────────────────
+jobRoutes.post('/:id/unassign', authorize(...assigners), validate({ params: idParamSchema, body: unassignSchema }), async (req, res) => {
+  await service.unassign(req.params.id as string, req.body.note, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/:id/cancel', authorize(...assigners), validate({ params: idParamSchema, body: jobCancelSchema }), async (req, res) => {
+  await service.cancel(req.params.id as string, req.body, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.delete('/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), async (req, res) => {
+  await service.remove(req.params.id as string, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/:id/payments', authorize(...assigners), validate({ params: idParamSchema, body: jobPaymentSchema }), async (req, res) => {
+  res.status(201).json(await service.addPayment(req.params.id as string, req.body, actorOf(req)));
+});
+jobRoutes.put(
+  '/:id/repair-notes',
+  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
+  validate({ params: idParamSchema, body: repairNotesSchema }),
+  async (req, res) => {
+    await service.updateRepairNotes(req.params.id as string, req.body, actorOf(req));
     res.status(204).end();
   },
 );

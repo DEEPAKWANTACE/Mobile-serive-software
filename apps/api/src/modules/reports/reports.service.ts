@@ -1,6 +1,11 @@
 import {
+  ENGINEER_OPEN_STATUSES,
   REPORT_ROLES,
   roundMoney,
+  type DashboardSummaryDto,
+  type EngineerReportQuery,
+  type EngineerReportRowDto,
+  type JobStatus,
   ROLES,
   type ReportBranchRow,
   type ReportCcoRow,
@@ -12,6 +17,9 @@ import { businessRange, businessToday } from '../../lib/business-date.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
+import type { Prisma } from '../../generated/prisma/client.ts';
+import { toPage } from '../../lib/pagination.ts';
+import { jobMoney } from '../jobs/jobs.service.ts';
 
 const TAT_LIMIT_DAYS = 15;
 const DAY = 86_400_000;
@@ -146,4 +154,137 @@ export async function build(query: ReportQuery, actor: Actor): Promise<ReportDto
   });
 
   return { from: query.from, to: query.to, summary: counts(ids), branches: branchRows, engineers: engineerRows, ccos: ccoRows };
+}
+
+// ─── Engineer report (record level) ─────────────────────────────────────────
+
+function reportBranch(actor: Actor, requested?: string) {
+  if (!REPORT_ROLES.includes(actor.role)) throw HttpError.forbidden();
+  return actor.branchId ?? requested;
+}
+
+function paymentStatus(total: number, paid: number): EngineerReportRowDto['paymentStatus'] {
+  if (paid > total) return 'REFUND_DUE';
+  if (total <= 0) return 'NO_CHARGE';
+  if (paid >= total) return 'PAID';
+  return paid > 0 ? 'PARTIAL' : 'UNPAID';
+}
+
+export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
+  const branchId = reportBranch(actor, query.branchId);
+  const and: Prisma.JobWhereInput[] = [];
+  if (branchId) and.push({ OR: [{ branchId }, { currentBranchId: branchId }] });
+  if (query.jobNumber) and.push({ jobNumber: { contains: query.jobNumber, mode: 'insensitive' } });
+  if (query.from || query.to) and.push({ createdAt: businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) });
+  if (query.status) and.push({ status: query.status as JobStatus });
+  // An engineer "worked on" a job if it is assigned to them now or was at any time (transfers included).
+  if (query.engineerId) and.push({ OR: [{ assignedEngineerId: query.engineerId }, { assignments: { some: { engineerId: query.engineerId } } }] });
+  const where: Prisma.JobWhereInput = { AND: and };
+
+  const [rows, total] = await prisma.$transaction([
+    prisma.job.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+      select: {
+        id: true,
+        jobNumber: true,
+        status: true,
+        createdAt: true,
+        assignedAt: true,
+        repairedAt: true,
+        testingAt: true,
+        diagnosisNotes: true,
+        repairRemark: true,
+        testingRemark: true,
+        quotedAmount: true,
+        estimatedAmount: true,
+        invoice: { select: { total: true } },
+        payments: { select: { kind: true, amount: true } },
+        branch: { select: { code: true } },
+        customer: { select: { name: true } },
+        brand: { select: { name: true } },
+        deviceModel: { select: { name: true } },
+        assignedEngineer: { select: { name: true } },
+        faults: { select: { fault: { select: { name: true } } } },
+        assignments: { select: { engineer: { select: { name: true } }, endReason: true }, orderBy: { assignedAt: 'asc' } },
+        statusHistory: { select: { changedAt: true }, orderBy: { id: 'desc' }, take: 1 },
+      },
+    }),
+    prisma.job.count({ where }),
+  ]);
+
+  const items: EngineerReportRowDto[] = rows.map((j) => {
+    const money = jobMoney(j);
+    const chain = j.assignments.map((a) => a.engineer.name);
+    const last = j.assignments.at(-1);
+    if (last?.endReason === 'UNASSIGNED') chain.push('Admin');
+    if (last?.endReason === 'SENT_TO_L4') chain.push('L4');
+    return {
+      job: { id: j.id, jobNumber: j.jobNumber, createdAt: j.createdAt.toISOString(), status: j.status, branchCode: j.branch.code },
+      customer: j.customer.name,
+      product: `${j.brand.name} ${j.deviceModel.name}`,
+      problem: j.faults.map((f) => f.fault.name).join(', '),
+      engineer: j.assignedEngineer?.name ?? null,
+      assignedAt: j.assignedAt?.toISOString() ?? null,
+      lastStatusAt: j.statusHistory[0]?.changedAt.toISOString() ?? null,
+      repairedAt: j.repairedAt?.toISOString() ?? null,
+      testingAt: j.testingAt?.toISOString() ?? null,
+      totalAmount: money.totalAmount,
+      paidAmount: money.paidAmount,
+      balance: money.balance,
+      paymentStatus: paymentStatus(money.totalAmount, money.paidAmount),
+      transferHistory: chain.join(' → '),
+      remarks: [j.diagnosisNotes, j.repairRemark && `Repair: ${j.repairRemark}`, j.testingRemark && `Testing: ${j.testingRemark}`].filter(Boolean).join(' · ') || null,
+    };
+  });
+  return toPage(items, total, query);
+}
+
+// ─── Dashboard summary ──────────────────────────────────────────────────────
+
+export async function dashboardSummary(query: { from?: string; to?: string; branchId?: string }, actor: Actor): Promise<DashboardSummaryDto> {
+  const branchId = actor.branchId ?? query.branchId;
+  const scope: Prisma.JobWhereInput = branchId ? { branchId } : {};
+  const range = query.from || query.to ? businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) : null;
+
+  const [jobs, totalOut] = await Promise.all([
+    prisma.job.findMany({
+      where: { ...scope, ...(range && { createdAt: range }) },
+      select: {
+        status: true,
+        createdAt: true,
+        quotedAmount: true,
+        estimatedAmount: true,
+        invoice: { select: { total: true } },
+        payments: { select: { kind: true, amount: true } },
+        assignedEngineer: { select: { id: true, name: true } },
+      },
+    }),
+    prisma.job.count({ where: { ...scope, status: 'DELIVERED', ...(range && { deliveredAt: range }) } }),
+  ]);
+  const open = jobs.filter((j) => j.status !== 'DELIVERED' && j.status !== 'CANCELLED');
+  const money = jobs.filter((j) => j.status !== 'CANCELLED').map((j) => jobMoney(j));
+  const sum = (k: 'totalAmount' | 'paidAmount') => roundMoney(money.reduce((s, m) => s + m[k], 0));
+  const perEngineer = new Map<string, { engineerId: string; engineer: string; pending: number }>();
+  for (const j of open) {
+    if (!j.assignedEngineer) continue;
+    const row = perEngineer.get(j.assignedEngineer.id) ?? { engineerId: j.assignedEngineer.id, engineer: j.assignedEngineer.name, pending: 0 };
+    row.pending += 1;
+    perEngineer.set(row.engineerId, row);
+  }
+
+  return {
+    totalJobs: jobs.length,
+    totalIn: jobs.length,
+    totalOut,
+    pending: open.length,
+    underRepair: open.filter((j) => (ENGINEER_OPEN_STATUSES as readonly string[]).includes(j.status)).length,
+    over15Days: open.filter((j) => Date.now() - j.createdAt.getTime() >= 15 * DAY).length,
+    totalAmount: sum('totalAmount'),
+    totalPaid: sum('paidAmount'),
+    totalBalance: roundMoney(sum('totalAmount') - sum('paidAmount')),
+    engineerPending: [...perEngineer.values()].sort((a, b) => b.pending - a.pending),
+  };
 }

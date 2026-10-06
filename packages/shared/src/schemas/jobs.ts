@@ -16,6 +16,7 @@ export const JOB_STATUSES = [
   'SPARE_PENDING',
   'RWR',
   'DELIVERED',
+  'CANCELLED',
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
@@ -30,7 +31,24 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   SPARE_PENDING: 'Spare not available',
   RWR: 'Returned without repair (RWR)',
   DELIVERED: 'Delivered',
+  CANCELLED: 'Cancelled',
 };
+
+/** Closed jobs: nothing more can happen to them. */
+export const CLOSED_STATUSES: readonly JobStatus[] = ['DELIVERED', 'CANCELLED'];
+/** The counter may cancel a job that has not been repaired / returned yet. */
+export const CANCELLABLE_STATUSES: readonly JobStatus[] = [
+  'RECEIVED',
+  'ASSIGNED',
+  'AWAITING_APPROVAL',
+  'IN_REPAIR',
+  'SPARE_PENDING',
+  'CUSTOMER_REJECTED',
+];
+
+export const WARRANTY_STATUSES = ['IN_WARRANTY', 'OUT_OF_WARRANTY'] as const;
+export type WarrantyStatus = (typeof WARRANTY_STATUSES)[number];
+export const WARRANTY_LABELS: Record<WarrantyStatus, string> = { IN_WARRANTY: 'In warranty', OUT_OF_WARRANTY: 'Out of warranty' };
 
 /** Statuses in which the engineer can still be (re)assigned. */
 export const ASSIGNABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED'];
@@ -77,13 +95,19 @@ export const DIAGNOSABLE_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING
 
 /** Work-progress moves the assigned engineer can make, with the button label for each. */
 export const ENGINEER_TRANSITIONS: Partial<Record<JobStatus, { to: JobStatus; label: string; noteRequired?: boolean }[]>> = {
-  IN_REPAIR: [{ to: 'REPAIRED', label: 'Mark repaired (done)' }],
+  // Old-system names: In repair = "Pending", Repaired = "Done", Ready = "Returned Ok". Testing may come before or after Done.
+  IN_REPAIR: [
+    { to: 'REPAIRED', label: 'Mark repaired (done)' },
+    { to: 'TESTING', label: 'Start testing' },
+  ],
   REPAIRED: [
     { to: 'TESTING', label: 'Start testing' },
+    { to: 'READY_FOR_DELIVERY', label: 'Returned OK – to counter' },
     { to: 'IN_REPAIR', label: 'Back to repair', noteRequired: true },
   ],
   TESTING: [
     { to: 'READY_FOR_DELIVERY', label: 'Testing OK – return to counter' },
+    { to: 'REPAIRED', label: 'Testing passed – mark done' },
     { to: 'IN_REPAIR', label: 'Testing failed – back to repair', noteRequired: true },
   ],
 };
@@ -149,10 +173,26 @@ export const mobileNumber = z
 export const jobCustomerSchema = z.object({
   phone: mobileNumber,
   name: z.string().trim().min(2, 'Enter customer name').max(100),
+  city: optionalText(60),
   altPhone: optionalText(10).refine((v) => !v || /^[6-9]\d{9}$/.test(v), 'Enter a valid 10-digit mobile number'),
   email: optionalText(150).refine((v) => !v || z.email().safeParse(v).success, 'Invalid email'),
   address: optionalText(300),
 });
+
+/** Fields from the old job form (inward details). */
+const intakeExtras = {
+  /** Quoted total typed by the counter (used when no price option is chosen). */
+  totalAmount: z.preprocess(
+    (v) => (v === '' || v === undefined ? undefined : v),
+    z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullable().optional(),
+  ),
+  retailer: optionalText(100),
+  inwardById: z.uuid().nullish(),
+  phoneDamaged: z.boolean().optional(),
+  warranty: z.enum(WARRANTY_STATUSES).nullish(),
+  /** Phone unlock code / pattern. Stored encrypted; "" clears it. */
+  devicePassword: optionalText(60),
+};
 
 const imeiField = optionalText(15).refine((v) => !v || isValidImei(v), 'Invalid IMEI (must be 15 digits)');
 const serialField = optionalText(30).refine((v) => !v || /^[A-Za-z0-9-]{4,30}$/.test(v), 'Invalid serial number');
@@ -181,6 +221,9 @@ export const jobCreateSchema = z
     conditionNotes: optionalText(1000),
     /** Optional: assign straight away at intake. */
     engineerId: z.uuid().nullish(),
+    /** Only Super Admin chooses the branch; branch staff always use their own. */
+    branchId: z.uuid().nullish(),
+    ...intakeExtras,
     advance: z
       .object({
         amount: z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
@@ -210,6 +253,7 @@ export const jobEditSchema = z.object({
   accessories: z.array(z.enum(ACCESSORIES)).max(ACCESSORIES.length).optional(),
   accessoriesOther: optionalText(200),
   conditionNotes: optionalText(1000),
+  ...intakeExtras,
 });
 export type JobEditInput = z.input<typeof jobEditSchema>;
 export type JobEditData = z.output<typeof jobEditSchema>;
@@ -243,13 +287,28 @@ export const jobListQuerySchema = listQuerySchema.extend({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
-  /** true = everything not yet delivered. */
+  /** true = everything still open (not delivered or cancelled). */
   open: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
   /** Only jobs received at least this many days ago (overdue view). */
   minAgeDays: z.coerce.number().int().min(0).max(3650).optional(),
+  /** Received between these business dates (inclusive, YYYY-MM-DD). */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  /** Brand / model name contains. */
+  product: z.string().trim().max(100).optional(),
+  /** true = delivered ("out") jobs only. */
+  delivered: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  /** true = jobs with an amount still to collect. */
+  balanceDue: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
 });
 export type JobListQuery = z.output<typeof jobListQuerySchema>;
 
@@ -311,6 +370,7 @@ export type StatusChangeData = z.output<typeof statusChangeSchema>;
 export const transferRequestSchema = z.object({
   toEngineerId: z.uuid('Select an engineer'),
   reason: z.string().trim().min(3, 'Enter a reason').max(500),
+  remark: optionalText(500),
 });
 export type TransferRequestInput = z.input<typeof transferRequestSchema>;
 export type TransferRequestData = z.output<typeof transferRequestSchema>;
@@ -384,6 +444,34 @@ export type TransferDto = {
   respondedAt: string | null;
 };
 
+// ─── Admin / counter actions ────────────────────────────────────────────────
+
+export const jobCancelSchema = z.object({
+  reason: z.string().trim().min(3, 'Why is the job cancelled?').max(300),
+  /** Required when the customer has paid an advance: how it is returned. */
+  refundMode: z.enum(PAYMENT_MODES).nullish(),
+});
+export type JobCancelData = z.output<typeof jobCancelSchema>;
+
+/** Engineers' open statuses in which an Admin / Branch Manager may move the job to another engineer directly. */
+export const ADMIN_REASSIGNABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'SPARE_PENDING', 'CUSTOMER_REJECTED'];
+
+/** Extra payment before delivery (on top of the intake advance). */
+export const jobPaymentSchema = z.object({
+  amount: z.coerce.number('Enter amount').min(1, 'Enter amount').max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
+  mode: z.enum(PAYMENT_MODES),
+  reference: optionalText(60),
+});
+export type JobPaymentData = z.output<typeof jobPaymentSchema>;
+
+/** Engineer's repair / testing notes. Testing date is set when a testing remark is first saved. */
+export const repairNotesSchema = z
+  .object({ repairRemark: optionalText(1000), testingRemark: optionalText(1000) })
+  .refine((v) => v.repairRemark !== undefined || v.testingRemark !== undefined, 'Nothing to update');
+export type RepairNotesData = z.output<typeof repairNotesSchema>;
+
+export const unassignSchema = z.object({ note: optionalText(300) });
+
 export const customerLookupQuerySchema = z.object({ phone: mobileNumber });
 
 export const photoUploadSchema = z.object({ kind: z.enum(['CUSTOMER', 'ID_PROOF', 'DEVICE']) });
@@ -401,6 +489,7 @@ export type CustomerDto = {
   id: string;
   name: string;
   phone: string;
+  city: string | null;
   altPhone: string | null;
   email: string | null;
   address: string | null;
@@ -416,15 +505,30 @@ export type JobListItemDto = {
   imei: string | null;
   faults: string[];
   branch: { id: string; code: string; name: string };
-  assignedEngineer: { id: string; name: string } | null;
+  assignedEngineer: { id: string; name: string; username: string } | null;
   assignedAt: string | null;
   quotedAmount: number | null;
+  /** Engineer chain, e.g. "Ankit → Rakesh" (Entry Master transfer details). */
+  assignmentChain: string;
   sparePart: string | null;
   hasPendingTransfer: boolean;
   currentBranch: { id: string; code: string };
   location: JobLocation;
   /** Net amount received so far (advances − refunds). */
   paid: number;
+  /** Bill total: invoice if delivered, else engineer estimate, else intake estimate (0 if unknown). */
+  totalAmount: number;
+  /** totalAmount − paid (negative = refund due). */
+  balance: number;
+  city: string | null;
+  serialNumber: string | null;
+  remark: string | null;
+  retailer: string | null;
+  inwardBy: string | null;
+  repairedAt: string | null;
+  readyAt: string | null;
+  deliveredAt: string | null;
+  deliveryNote: string | null;
 };
 
 export type JobPhotoDto = { id: string; kind: PhotoKind; createdAt: string };
@@ -461,6 +565,22 @@ export type JobDto = {
   repairedAt: string | null;
   readyAt: string | null;
   currentBranch: { id: string; code: string; name: string; type: 'SERVICE_CENTER' | 'MAIN_OFFICE' };
+  retailer: string | null;
+  inwardBy: { id: string; name: string } | null;
+  phoneDamaged: boolean;
+  warranty: WarrantyStatus | null;
+  /** Decrypted unlock code — only sent to counter staff and the assigned engineer. */
+  devicePassword: string | null;
+  repairRemark: string | null;
+  testingRemark: string | null;
+  testingAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  totalAmount: number;
+  paidAmount: number;
+  balance: number;
+  statusHistory: { id: string; from: JobStatus | null; to: JobStatus; engineer: string | null; by: string | null; remark: string | null; at: string }[];
+  assignments: { id: string; engineer: { id: string; name: string }; assignedBy: string | null; assignedAt: string; endedAt: string | null; endReason: string | null; note: string | null }[];
   location: JobLocation;
   movements: JobMovementDto[];
   deliveredAt: string | null;

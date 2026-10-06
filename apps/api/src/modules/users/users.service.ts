@@ -30,6 +30,7 @@ const select = {
   address: true,
   aadhaarNumber: true,
   aadhaarPhotoKey: true,
+  passwordChangedAt: true,
   isActive: true,
   lastLoginAt: true,
   createdAt: true,
@@ -44,6 +45,7 @@ const toDto = ({ aadhaarPhotoKey, ...u }: Row, actor?: Actor): UserDto => ({
   aadhaarNumber: u.aadhaarNumber && (actor && canManage(actor, u) ? u.aadhaarNumber : maskAadhaar(u.aadhaarNumber)),
   hasAadhaarPhoto: !!aadhaarPhotoKey,
   lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
+  passwordChangedAt: u.passwordChangedAt?.toISOString() ?? null,
   createdAt: u.createdAt.toISOString(),
 });
 
@@ -98,7 +100,7 @@ export async function create(data: UserCreateData, actor: Actor) {
   const passwordHash = await hashPassword(password);
 
   return prisma.$transaction(async (tx) => {
-    const row = await tx.user.create({ data: { ...fields, branchId, passwordHash }, select });
+    const row = await tx.user.create({ data: { ...fields, branchId, passwordHash, passwordChangedAt: new Date() }, select });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -159,7 +161,7 @@ export async function resetPassword(id: string, password: string, actor: Actor) 
 
   const passwordHash = await hashPassword(password);
   await prisma.$transaction(async (tx) => {
-    await tx.user.update({ where: { id }, data: { passwordHash } });
+    await tx.user.update({ where: { id }, data: { passwordHash, passwordChangedAt: new Date() } });
     await revokeSessions(tx, id);
     await recordAudit(
       {

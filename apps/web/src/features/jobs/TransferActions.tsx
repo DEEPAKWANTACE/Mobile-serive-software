@@ -12,6 +12,7 @@ export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () =
   const queryClient = useQueryClient();
   const [to, setTo] = useState('');
   const [reason, setReason] = useState('');
+  const [remark, setRemark] = useState('');
   const [errors, setErrors] = useState<{ to?: string; reason?: string }>({});
   const engineers = useQuery({
     queryKey: ['engineers', job.branch.id],
@@ -20,7 +21,7 @@ export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () =
   const options = (engineers.data ?? []).filter((e) => e.id !== job.assignedEngineer?.id);
 
   const send = useMutation({
-    mutationFn: () => api.post(`/jobs/${job.id}/transfers`, { toEngineerId: to, reason }),
+    mutationFn: () => api.post(`/jobs/${job.id}/transfers`, { toEngineerId: to, reason, remark }),
     onSuccess: () => {
       toast.success('Transfer request sent — the job stays with you until it is accepted');
       void queryClient.invalidateQueries();
@@ -51,6 +52,9 @@ export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () =
       </Field>
       <Field label="Reason" required error={errors.reason}>
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Board-level work, needs a senior" />
+      </Field>
+      <Field label="Remark" hint="Work done so far, parts already tried — optional">
+        <input value={remark} onChange={(e) => setRemark(e.target.value)} maxLength={300} className={inputClass} />
       </Field>
       <p className="text-xs text-slate-500">The other engineer must accept. Until then the job stays with you.</p>
       <FormActions onCancel={onDone} loading={send.isPending} submitLabel="Send request" />

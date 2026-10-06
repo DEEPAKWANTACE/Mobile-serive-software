@@ -10,6 +10,8 @@ import {
   PAYMENT_MODE_LABELS,
   PAYMENT_MODES,
   PHOTO_KIND_LABELS,
+  ROLES,
+  type BranchDto,
   type BrandDto,
   type CustomerDto,
   type EngineerWorkloadDto,
@@ -32,12 +34,17 @@ import { formatCurrency } from '@/lib/format';
 import { compressImage } from '@/lib/image';
 import { ImeiWarning } from './ImeiWarning';
 import { PhotoPicker } from './PhotoPicker';
+import { useAuth } from '@/features/auth/auth-context';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
 const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [] });
 
-export function NewJobPage() {
+export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === ROLES.SUPER_ADMIN;
+  const { items: branchOptions } = useOptions<BranchDto>('branches', {}, { enabled: isSuperAdmin });
+  const [showPassword, setShowPassword] = useState(false);
   const [photos, setPhotos] = useState(emptyPhotos);
   const [idProofError, setIdProofError] = useState<string>();
   const [returning, setReturning] = useState<CustomerDto | null>(null);
@@ -50,7 +57,13 @@ export function NewJobPage() {
   >({
     resolver: zodResolver(jobCreateSchema),
     defaultValues: {
-      customer: { phone: '', name: '', altPhone: '', email: '', address: '' },
+      customer: { phone: '', name: '', city: '', altPhone: '', email: '', address: '' },
+      branchId: null,
+      retailer: '',
+      inwardById: null,
+      phoneDamaged: false,
+      warranty: null,
+      devicePassword: '',
       brandId: '',
       deviceModelId: '',
       imei: '',
@@ -79,7 +92,19 @@ export function NewJobPage() {
     queryFn: () => api.get<ModelPriceDto[]>(`/models/${modelId}/prices`),
     enabled: !!modelId,
   });
-  const engineers = useQuery({ queryKey: ['engineers', 'own'], queryFn: () => api.get<EngineerWorkloadDto[]>('/jobs/engineers') });
+  // Super Admin works for a chosen branch; everyone else for their own.
+  const formBranch = isSuperAdmin ? (watch('branchId') ?? '') : (user?.branch?.id ?? '');
+  const branchQs = isSuperAdmin ? `?branchId=${formBranch}` : '';
+  const engineers = useQuery({
+    queryKey: ['engineers', formBranch || 'own'],
+    queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers${branchQs}`),
+    enabled: !isSuperAdmin || !!formBranch,
+  });
+  const inwardStaff = useQuery({
+    queryKey: ['inward-staff', formBranch || 'own'],
+    queryFn: () => api.get<{ id: string; name: string; role: string }[]>(`/jobs/inward-staff${branchQs}`),
+    enabled: !isSuperAdmin || !!formBranch,
+  });
 
   // Returning customer: prefill details once a valid mobile number is entered.
   useEffect(() => {
@@ -94,6 +119,7 @@ export function NewJobPage() {
       if (customer) {
         setValue('customer.name', customer.name, { shouldValidate: true });
         setValue('customer.altPhone', customer.altPhone ?? '');
+        setValue('customer.city', customer.city ?? '');
         setValue('customer.email', customer.email ?? '');
         setValue('customer.address', customer.address ?? '');
       }
@@ -158,7 +184,17 @@ export function NewJobPage() {
 
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-4xl space-y-5">
-      <PageHeader title="New Job Sheet" description="Register a device received for repair" />
+      {!embedded && <PageHeader title="New Job Sheet" description="Register a device received for repair" />}
+      {isSuperAdmin && (
+        <Card title="Branch">
+          <Field label="Branch receiving the phone" required {...err(errors.branchId?.message)}>
+            <select {...register('branchId', { setValueAs: (v: string | null) => v || null, onChange: () => setValue('engineerId', null) })} className={inputClass}>
+              <option value="">Select branch</option>
+              {branchOptions.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+            </select>
+          </Field>
+        </Card>
+      )}
 
       <Card title="Customer">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -168,6 +204,12 @@ export function NewJobPage() {
           </Field>
           <Field label="Customer name" required {...err(errors.customer?.name?.message)}>
             <input {...register('customer.name')} className={inputClass} />
+          </Field>
+          <Field label="City" {...err(errors.customer?.city?.message)}>
+            <input {...register('customer.city')} className={inputClass} />
+          </Field>
+          <Field label="Retailer (if from a shop)" {...err(errors.retailer?.message)} hint="Dealer / shopkeeper who brought the phone">
+            <input {...register('retailer')} className={inputClass} />
           </Field>
           <Field label="Alternate mobile" {...err(errors.customer?.altPhone?.message)}>
             <input {...register('customer.altPhone')} inputMode="numeric" maxLength={10} className={inputClass} />
@@ -230,6 +272,28 @@ export function NewJobPage() {
           <Field label="Colour" {...err(errors.color?.message)}>
             <input {...register('color')} className={inputClass} />
           </Field>
+          <Field label="Phone password / pattern" {...err(errors.devicePassword?.message)} hint="Stored encrypted; visible only to counter staff and the assigned engineer">
+            <div className="flex gap-2">
+              <input {...register('devicePassword')} type={showPassword ? 'text' : 'password'} autoComplete="off" className={`${inputClass} font-mono`} />
+              <button type="button" onClick={() => setShowPassword((v) => !v)} className="rounded-md border border-slate-300 px-2 text-xs text-slate-600 hover:bg-slate-50">
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+          </Field>
+          <Field label="Warranty">
+            <div className="flex flex-wrap gap-4 pt-2 text-sm">
+              {([['', 'Not specified'], ['IN_WARRANTY', 'In warranty'], ['OUT_OF_WARRANTY', 'Out of warranty']] as const).map(([v, label]) => (
+                <label key={v} className="flex items-center gap-1.5">
+                  <input type="radio" value={v} {...register('warranty', { setValueAs: (x: string | null) => x || null })} className="accent-brand-600" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <label className="flex items-center gap-2 pt-6 text-sm">
+            <input type="checkbox" {...register('phoneDamaged')} className="size-4 accent-brand-600" />
+            Phone is physically damaged
+          </label>
         </div>
       </Card>
 
@@ -257,6 +321,9 @@ export function NewJobPage() {
             <span className="text-lg font-semibold">{pricedTotal > 0 ? formatCurrency(pricedTotal) : 'To be decided'}</span>
           </div>
         )}
+        <Field label="Total amount (₹)" className="mt-4 max-w-xs" {...err(errors.totalAmount?.message)} hint="Optional — overrides the price-list estimate, e.g. a quote agreed with the customer">
+          <input {...register('totalAmount')} inputMode="decimal" className={inputClass} placeholder={pricedTotal > 0 ? String(pricedTotal) : 'To be decided'} />
+        </Field>
         {needsIdProof.length > 0 && (
           <div className="mt-3 rounded-md bg-red-50 px-4 py-2.5 text-sm text-red-700">
             🔒 Aadhaar photo is compulsory for {needsIdProof.map((f) => f!.name).join(', ')}.
@@ -291,7 +358,7 @@ export function NewJobPage() {
           )}
         />
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Other accessories" {...err(errors.accessoriesOther?.message)}>
+          <Field label="Extra added (other items received)" {...err(errors.accessoriesOther?.message)}>
             <input {...register('accessoriesOther')} className={inputClass} />
           </Field>
           <Field label="Physical condition" hint="Scratches, dents, cracks, missing screws…" {...err(errors.conditionNotes?.message)}>
@@ -322,8 +389,14 @@ export function NewJobPage() {
         </Card>
       </div>
 
-      <Card title="Engineer & advance">
+      <Card title="Inward, engineer & advance">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Inward by" {...err(errors.inwardById?.message)} hint="Who took the phone in (defaults to you)">
+            <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
+              <option value="">{user?.name} (me)</option>
+              {(inwardStaff.data ?? []).filter((u) => u.id !== user?.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          </Field>
           <Field label="Assign engineer" {...err(errors.engineerId?.message)} hint="Optional — can be assigned later">
             <Controller
               control={control}

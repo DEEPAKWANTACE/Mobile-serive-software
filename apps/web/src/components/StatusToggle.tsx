@@ -11,10 +11,12 @@ type Props = {
   isActive: boolean;
   /** Extra consequence shown when deactivating. */
   warning?: string;
+  /** Button / dialog wording for switching off, e.g. "Delete (deactivate)". */
+  offLabel?: string;
 };
 
 /** Activate / deactivate button with confirmation. Records are never hard-deleted. */
-export function StatusToggle({ resource, id, name, isActive, warning }: Props) {
+export function StatusToggle({ resource, id, name, isActive, warning, offLabel = 'Deactivate' }: Props) {
   const [open, setOpen] = useState(false);
   const save = useSave<{ isActive: boolean }>(resource);
 
@@ -33,13 +35,13 @@ export function StatusToggle({ resource, id, name, isActive, warning }: Props) {
   return (
     <>
       <Button variant="link" className={isActive ? 'text-red-600!' : ''} onClick={() => setOpen(true)}>
-        {isActive ? 'Deactivate' : 'Activate'}
+        {isActive ? offLabel : 'Activate'}
       </Button>
       <ConfirmDialog
         open={open}
-        title={`${isActive ? 'Deactivate' : 'Activate'} ${name}?`}
+        title={`${isActive ? offLabel : 'Activate'} ${name}?`}
         message={isActive ? `${name} will be hidden from selection lists. ${warning ?? ''}` : `${name} will be available again.`}
-        confirmLabel={isActive ? 'Deactivate' : 'Activate'}
+        confirmLabel={isActive ? offLabel : 'Activate'}
         danger={isActive}
         loading={save.isPending}
         onConfirm={confirm}

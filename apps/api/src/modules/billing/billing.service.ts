@@ -14,6 +14,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { period } from '../jobs/job-number.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
+import { endAssignment, recordStatus } from '../jobs/history.ts';
 
 /**
  * Delivery & billing. The bill comes from the customer-approved estimate (repair) or an optional inspection charge
@@ -118,6 +119,8 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
       data: { status: 'DELIVERED', deliveredAt: now, deliveredById: actor.sub, deliveredTo: data.deliveredTo, deliveryNote: data.note ?? null },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+    await endAssignment(tx, jobId, 'CLOSED');
+    await recordStatus(tx, { jobId, from: job.status, to: 'DELIVERED', actorId: actor.sub, remark: `Delivered to ${data.deliveredTo}${data.note ? ` — ${data.note}` : ''}` });
 
     const branch = await tx.branch.findUniqueOrThrow({ where: { id: job.branchId }, select: { id: true, code: true } });
     const p = `INV-${period(now)}`; // invoice series shares the per-branch counter table under its own key

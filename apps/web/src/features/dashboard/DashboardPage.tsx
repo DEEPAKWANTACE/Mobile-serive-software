@@ -63,6 +63,7 @@ import { BarList } from '@/components/charts/BarList';
 import { FranchisePicker, type FranchiseSelection } from './FranchisePicker';
 import { AgeBadge, OverdueCard } from './OverdueCard';
 import { CancelTransferButton, TransferResponseButtons } from '@/features/jobs/TransferActions';
+import { DashboardSummary } from './DashboardSummary';
 
 const useStats = () => useQuery({ queryKey: ['jobs', 'stats'], queryFn: () => api.get<JobStatsDto>('/jobs/stats') });
 
@@ -157,6 +158,7 @@ function AccountsDashboard() {
         <StatCard label="Cash in hand" value={money(book.data?.cashInHand)} to="/accounts/day-book" icon={Wallet} />
         <StatCard label="Pending collection" value={money(pending.data?.ready.amount)} to="/calling" tone="warning" icon={HandCoins} />
       </div>
+      <DashboardSummary linkable={false} />
       <TrendCard />
     </>
   );
@@ -229,6 +231,9 @@ function EngineerDashboard() {
 
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
   const outgoing = useQuery({ queryKey: ['jobs', 'transfers', 'outgoing'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=outgoing') });
+  const overdue = useList<JobListItemDto>('jobs', { open: true, minAgeDays: 15, pageSize: 1 });
+  const transfers = incoming.data && outgoing.data ? incoming.data.length + outgoing.data.length : undefined;
+  const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
 
   const card = (label: string, st: JobStatus, icon: React.ComponentType<{ className?: string }>, tone?: 'warning' | 'brand') => (
     <button type="button" onClick={() => setStatus(status === st ? '' : st)} className={`rounded-xl text-left ${status === st ? 'ring-2 ring-brand-500' : ''}`}>
@@ -238,16 +243,22 @@ function EngineerDashboard() {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatCard label="Total assigned" value={stats.data?.total} to="/jobs" icon={Users} hint="All jobs with you" />
         <button type="button" onClick={() => setStatus('')} className={`rounded-xl text-left ${status === '' ? 'ring-2 ring-brand-500' : ''}`}>
-          <StatCard label="My pending calls" value={open} tone="brand" icon={ClipboardList} />
+          <StatCard label="Pending" value={open} tone="brand" icon={ClipboardList} hint="Diagnosis, repair & testing" />
         </button>
+        <StatCard label="Completed" value={completed} to="/jobs?status=READY_FOR_DELIVERY" tone="good" icon={PackageCheck} hint="Returned OK / delivered" />
+        <StatCard label="More than 15 days" value={overdue.data?.total} to="/jobs?view=over15" tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" />
+      </div>
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
         {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
         {card('To repair', 'IN_REPAIR', Wrench, 'brand')}
         {card('Repaired', 'REPAIRED', BadgeCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
+        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" />
       </div>
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
@@ -408,6 +419,8 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
           />
         </Card>
       </div>
+
+      <DashboardSummary branchId={branchId} />
 
       <OverdueCard branchId={branchId} />
 

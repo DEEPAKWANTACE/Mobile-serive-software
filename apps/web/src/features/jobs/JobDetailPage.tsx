@@ -5,7 +5,13 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import {
+  ADMIN_REASSIGNABLE_STATUSES,
   ASSIGNABLE_STATUSES,
+  CLOSED_STATUSES,
+  jobPaymentSchema,
+  PAYMENT_MODES,
+  WARRANTY_LABELS,
+  type JobPaymentData,
   CALL_OUTCOME_LABELS,
   RWR_REASON_LABELS,
   JOB_STATUS_LABELS,
@@ -23,7 +29,10 @@ import {
   type JobPhotoDto,
   type PhotoKind,
 } from '@msm/shared';
+import { Eye, EyeOff } from 'lucide-react';
+import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
 import { FormActions } from '@/components/ui/FormActions';
@@ -51,6 +60,17 @@ export function JobDetailPage() {
   const { data: job, isLoading, error } = useJob(id);
   const [assigning, setAssigning] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [unassigning, setUnassigning] = useState(false);
+  const queryClient = useQueryClient();
+  const unassign = useMutation({
+    mutationFn: () => api.post(`/jobs/${id}/unassign`, {}),
+    onSuccess: () => {
+      toast.success('Job taken back from the engineer');
+      setUnassigning(false);
+      void queryClient.invalidateQueries();
+    },
+    onError: (err) => toast.error(err.message),
+  });
 
   if (isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   if (error || !job) {
@@ -64,8 +84,24 @@ export function JobDetailPage() {
     );
   }
 
+  const isManager = user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER;
+  const closed = CLOSED_STATUSES.includes(job.status);
+  const sameBranch = !user?.branch || user.branch.id === job.currentBranch.id;
+  const canAssign =
+    user?.role !== ROLES.ENGINEER &&
+    (isManager ? ADMIN_REASSIGNABLE_STATUSES : ASSIGNABLE_STATUSES).includes(job.status) &&
+    job.location === 'AT_BRANCH' &&
+    sameBranch;
+
   return (
     <div className="space-y-5">
+      {job.status === 'CANCELLED' && (
+        <div className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
+          <span className="font-medium">Cancelled</span>
+          {job.cancelledAt && ` on ${formatDateTime(job.cancelledAt)}`}
+          {job.cancelReason && ` — “${job.cancelReason}”`}
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link to="/jobs" className="text-sm text-slate-500 hover:underline">
@@ -76,17 +112,22 @@ export function JobDetailPage() {
             <JobStatusBadge status={job.status} />
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Received {formatDateTime(job.createdAt)} at {job.branch.name} by {job.createdBy.name}
+            Received {formatDateTime(job.createdAt)} at {job.branch.name} by {job.inwardBy?.name ?? job.createdBy.name}
           </p>
           {user?.role !== ROLES.ENGINEER && (
             <div className="mt-2 flex flex-wrap gap-2">
               <Link to={`/jobs/${job.id}/print`}>
                 <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
               </Link>
-              {job.status !== 'DELIVERED' && (!user?.branch || user.branch.id === job.branch.id) && (
-                <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-                  ✏️ Edit job sheet
-                </Button>
+              {!closed && (!user?.branch || user.branch.id === job.branch.id) && (
+                <>
+                  <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+                    ✏️ Edit job sheet
+                  </Button>
+                  <Link to={`/jobs?tab=delete&job=${encodeURIComponent(job.jobNumber)}`}>
+                    <Button size="sm" variant="secondary">{isManager ? 'Cancel / delete' : 'Cancel job'}</Button>
+                  </Link>
+                </>
               )}
               <WhatsAppButton
                 phone={job.customer.phone}
@@ -108,12 +149,14 @@ export function JobDetailPage() {
           <div className="text-xs text-slate-500">Engineer</div>
           <div className="mt-0.5 flex items-center gap-3">
             <span className="font-medium">{job.assignedEngineer?.name ?? <span className="text-amber-700">Not assigned</span>}</span>
-            {user?.role !== ROLES.ENGINEER &&
-              ASSIGNABLE_STATUSES.includes(job.status) &&
-              job.location === 'AT_BRANCH' &&
-              (!user?.branch || user.branch.id === job.currentBranch.id) && (
+            {canAssign && (
               <Button size="sm" variant={job.assignedEngineer ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>
                 {job.assignedEngineer ? 'Reassign' : 'Assign engineer'}
+              </Button>
+            )}
+            {canAssign && job.status === 'ASSIGNED' && job.assignedEngineer && (
+              <Button size="sm" variant="secondary" onClick={() => setUnassigning(true)}>
+                Unassign
               </Button>
             )}
           </div>
@@ -123,6 +166,15 @@ export function JobDetailPage() {
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit job sheet ${job.jobNumber}`} size="lg">
         {editing && <EditJobForm job={job} onDone={() => setEditing(false)} />}
       </Modal>
+      <ConfirmDialog
+        open={unassigning}
+        title={`Take ${job.jobNumber} back from ${job.assignedEngineer?.name ?? 'the engineer'}?`}
+        message="The job goes back to Received and can be assigned to someone else. The assignment history is kept."
+        confirmLabel="Unassign"
+        loading={unassign.isPending}
+        onConfirm={() => unassign.mutate()}
+        onClose={() => setUnassigning(false)}
+      />
       <AssignEngineerDialog
         job={
           assigning
@@ -135,6 +187,7 @@ export function JobDetailPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
           <WorkPanel job={job} />
+          <RepairNotes job={job} />
           <JobPartsCard job={job} />
           <JobInfo job={job} />
           <Photos job={job} />
@@ -142,6 +195,8 @@ export function JobDetailPage() {
         <div className="space-y-5">
           <JobCallsCard job={job} />
           <MovementsCard job={job} />
+          <StatusTimeline job={job} />
+          <Assignments job={job} />
           <History jobId={job.id} />
         </div>
       </div>
@@ -166,7 +221,7 @@ function JobInfo({ job }: { job: JobDto }) {
       <Card
         title="Customer & device"
         actions={
-          job.status !== 'DELIVERED' && (
+          !CLOSED_STATUSES.includes(job.status) && (
             <Button variant="link" onClick={() => setEditingDevice(true)}>
               {job.imei || job.serialNumber ? 'Edit IMEI / serial' : 'Add IMEI / serial'}
             </Button>
@@ -187,15 +242,18 @@ function JobInfo({ job }: { job: JobDto }) {
           </Row>
           <Row label="Alternate mobile">{job.customer.altPhone}</Row>
           <Row label="Email">{job.customer.email}</Row>
-          <div className="sm:col-span-2">
-            <Row label="Address">{job.customer.address}</Row>
-          </div>
+          <Row label="City">{job.customer.city}</Row>
+          <Row label="Address">{job.customer.address}</Row>
+          <Row label="Retailer">{job.retailer}</Row>
           <Row label="Device">
             {job.brand.name} {job.model.name}
           </Row>
           <Row label="IMEI">{job.imei && <span className="font-mono">{job.imei}</span>}</Row>
           <Row label="Serial no.">{job.serialNumber && <span className="font-mono">{job.serialNumber}</span>}</Row>
           <Row label="Colour">{job.color}</Row>
+          <Row label="Warranty">{job.warranty && WARRANTY_LABELS[job.warranty]}</Row>
+          <Row label="Phone damaged">{job.phoneDamaged ? <span className="font-medium text-amber-700">Yes</span> : 'No'}</Row>
+          <Row label="Phone password / pattern">{job.devicePassword && <SecretValue value={job.devicePassword} />}</Row>
         </dl>
         <Modal open={editingDevice} onClose={() => setEditingDevice(false)} title="IMEI / serial number" size="sm">
           {editingDevice && <DeviceForm job={job} onDone={() => setEditingDevice(false)} />}
@@ -216,8 +274,9 @@ function JobInfo({ job }: { job: JobDto }) {
             </ul>
           </Row>
           <Row label="Customer complaint">{job.customerComplaint}</Row>
-          <Row label="Accessories received">{accessories.length ? accessories.join(', ') : 'None'}</Row>
-          <Row label="Physical condition">{job.conditionNotes}</Row>
+          <Row label="Extra added (items received)">{accessories.length ? accessories.join(', ') : 'None'}</Row>
+          <Row label="Physical condition / remark">{job.conditionNotes}</Row>
+          <Row label="Inward by">{job.inwardBy?.name}</Row>
         </dl>
       </Card>
       <Estimate job={job} />
@@ -226,32 +285,197 @@ function JobInfo({ job }: { job: JobDto }) {
 }
 
 function Estimate({ job }: { job: JobDto }) {
-  const paid = job.payments.reduce((sum, p) => sum + p.amount, 0);
+  const { user } = useAuth();
+  const [receiving, setReceiving] = useState(false);
+  const canReceive =
+    user?.role !== ROLES.ENGINEER && !CLOSED_STATUSES.includes(job.status) && job.balance > 0 && (!user?.branch || user.branch.id === job.branch.id);
   return (
-    <Card title="Estimate & payments">
+    <Card
+      title="Amount & payments"
+      actions={canReceive && <Button size="sm" onClick={() => setReceiving(true)}>Receive payment</Button>}
+    >
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Row label="Estimated amount">
-          <span className="text-base font-semibold">{job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</span>
+        <Row label={job.quotedAmount !== null ? 'Total (approved)' : 'Total (estimate)'}>
+          <span className="text-base font-semibold">{job.totalAmount || job.estimatedAmount !== null ? formatCurrency(job.totalAmount) : 'To be decided'}</span>
         </Row>
-        <Row label="Received so far">
-          <span className="text-base font-semibold text-emerald-700">{formatCurrency(paid)}</span>
+        <Row label="Paid">
+          <span className="text-base font-semibold text-emerald-700">{formatCurrency(job.paidAmount)}</span>
         </Row>
-        {job.estimatedAmount !== null && (
-          <Row label="Balance (as per estimate)">
-            <span className="text-base font-semibold">{formatCurrency(Math.max(0, job.estimatedAmount - paid))}</span>
-          </Row>
-        )}
+        <Row label={job.balance < 0 ? 'Refund due' : 'Balance'}>
+          <span className={`text-base font-semibold ${job.balance > 0 ? 'text-amber-700' : ''}`}>{formatCurrency(Math.abs(job.balance))}</span>
+        </Row>
       </dl>
       {job.payments.length > 0 && (
-        <ul className="mt-4 space-y-1 text-sm text-slate-600">
+        <ul className="mt-4 divide-y divide-slate-100 rounded-md border border-slate-200 text-sm">
           {job.payments.map((p) => (
-            <li key={p.id}>
-              {p.kind === 'ADVANCE' ? 'Advance' : 'Payment'} · {formatCurrency(p.amount)} by {PAYMENT_MODE_LABELS[p.mode]}
-              {p.reference && ` (${p.reference})`} · {formatDateTime(p.createdAt)}
+            <li key={p.id} className="flex flex-wrap justify-between gap-2 px-3 py-1.5">
+              <span>
+                {p.kind === 'ADVANCE' ? 'Advance / part payment' : p.kind === 'REFUND' ? 'Refund' : 'Payment'} · {PAYMENT_MODE_LABELS[p.mode]}
+                {p.reference && ` (${p.reference})`}
+                <span className="text-slate-500"> · {formatDateTime(p.createdAt)}</span>
+              </span>
+              <span className={`font-medium ${p.kind === 'REFUND' ? 'text-red-700' : ''}`}>
+                {p.kind === 'REFUND' ? '−' : ''}
+                {formatCurrency(p.amount)}
+              </span>
             </li>
           ))}
         </ul>
       )}
+      <Modal open={receiving} onClose={() => setReceiving(false)} title={`Receive payment — ${job.jobNumber}`} size="sm">
+        {receiving && <PaymentForm job={job} onDone={() => setReceiving(false)} />}
+      </Modal>
+    </Card>
+  );
+}
+
+function PaymentForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const { register, handleSubmit, setError, formState: { errors } } = useForm<z.input<typeof jobPaymentSchema>, unknown, JobPaymentData>({
+    resolver: zodResolver(jobPaymentSchema),
+    defaultValues: { amount: job.balance, mode: 'CASH', reference: '' },
+  });
+  const save = useMutation({
+    mutationFn: (data: JobPaymentData) => api.post(`/jobs/${job.id}/payments`, data),
+    onSuccess: () => {
+      toast.success('Payment received');
+      void queryClient.invalidateQueries({ queryKey: ['jobs', job.id] });
+      onDone();
+    },
+    onError: (err) => handleFormError(err, setError),
+  });
+  return (
+    <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
+      <p className="text-sm text-slate-600">Balance due: <span className="font-semibold">{formatCurrency(job.balance)}</span></p>
+      <Field label="Amount (₹)" required error={errors.amount?.message}>
+        <input {...register('amount')} inputMode="decimal" autoFocus className={inputClass} />
+      </Field>
+      <Field label="Mode" required error={errors.mode?.message}>
+        <select {...register('mode')} className={inputClass}>
+          {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAYMENT_MODE_LABELS[m]}</option>)}
+        </select>
+      </Field>
+      <Field label="Reference" error={errors.reference?.message} hint="UPI / card reference, optional">
+        <input {...register('reference')} className={inputClass} />
+      </Field>
+      <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Receive" />
+    </form>
+  );
+}
+
+function SecretValue({ value }: { value: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="font-mono">{shown ? value : '••••••'}</span>
+      <button type="button" onClick={() => setShown((v) => !v)} className="text-slate-500 hover:text-slate-800" aria-label={shown ? 'Hide password' : 'Show password'}>
+        {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+      </button>
+    </span>
+  );
+}
+
+/** Engineer's repair & testing remarks; testing date is stamped when the first testing remark is saved. */
+function RepairNotes({ job }: { job: JobDto }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const canEdit =
+    !CLOSED_STATUSES.includes(job.status) &&
+    (job.assignedEngineer?.id === user?.id || user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER);
+  const [editing, setEditing] = useState(false);
+  const [repairRemark, setRepairRemark] = useState(job.repairRemark ?? '');
+  const [testingRemark, setTestingRemark] = useState(job.testingRemark ?? '');
+  const save = useMutation({
+    mutationFn: () => api.put(`/jobs/${job.id}/repair-notes`, { repairRemark, testingRemark }),
+    onSuccess: () => {
+      toast.success('Remarks saved');
+      setEditing(false);
+      void queryClient.invalidateQueries({ queryKey: ['jobs', job.id] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  if (!job.assignedEngineer && !job.repairRemark && !job.testingRemark) return null;
+  return (
+    <Card
+      title="Repair & testing remarks"
+      actions={canEdit && !editing && <Button variant="link" onClick={() => setEditing(true)}>{job.repairRemark || job.testingRemark ? 'Edit' : 'Add remarks'}</Button>}
+    >
+      {editing ? (
+        <form onSubmit={(e) => (e.preventDefault(), save.mutate())} className="space-y-4">
+          <Field label="Repair remark">
+            <textarea value={repairRemark} onChange={(e) => setRepairRemark(e.target.value)} rows={2} maxLength={1000} className={inputClass} placeholder="What was repaired / replaced" />
+          </Field>
+          <Field label="Testing remark">
+            <textarea value={testingRemark} onChange={(e) => setTestingRemark(e.target.value)} rows={2} maxLength={1000} className={inputClass} placeholder="e.g. Display, touch, charging, network OK" />
+          </Field>
+          <FormActions onCancel={() => setEditing(false)} loading={save.isPending} />
+        </form>
+      ) : (
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Row label="Repair remark">{job.repairRemark}</Row>
+          <Row label="Repaired on">{job.repairedAt && formatDateTime(job.repairedAt)}</Row>
+          <Row label="Testing remark">{job.testingRemark}</Row>
+          <Row label="Testing date">{job.testingAt && formatDateTime(job.testingAt)}</Row>
+        </dl>
+      )}
+    </Card>
+  );
+}
+
+function StatusTimeline({ job }: { job: JobDto }) {
+  if (!job.statusHistory.length) return null;
+  return (
+    <Card title="Status history" className="h-fit">
+      <ol className="relative space-y-3 border-l border-slate-200 pl-5">
+        {job.statusHistory.map((h) => (
+          <li key={h.id} className="relative">
+            <span className="absolute top-1.5 -left-[25px] size-2.5 rounded-full bg-slate-400 ring-4 ring-white" />
+            <div className="text-sm font-medium">
+              {h.from ? `${JOB_STATUS_LABELS[h.from]} → ` : ''}
+              {JOB_STATUS_LABELS[h.to]}
+            </div>
+            {h.remark && <div className="text-sm text-slate-600">“{h.remark}”</div>}
+            <div className="text-xs text-slate-500">
+              {h.by ?? 'System'}
+              {h.engineer && h.engineer !== h.by && ` · engineer ${h.engineer}`} · {formatDateTime(h.at)}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+const END_REASON_LABELS: Record<string, string> = {
+  REASSIGNED: 'Reassigned',
+  TRANSFERRED: 'Transferred',
+  UNASSIGNED: 'Taken back',
+  SENT_TO_L4: 'Sent to L4',
+  CLOSED: 'Job closed',
+};
+
+function Assignments({ job }: { job: JobDto }) {
+  if (!job.assignments.length) return null;
+  return (
+    <Card title="Engineer assignments" className="h-fit">
+      <ol className="space-y-2 text-sm">
+        {job.assignments.map((a) => (
+          <li key={a.id} className="rounded-md border border-slate-200 px-3 py-2">
+            <div className="flex justify-between gap-2">
+              <span className="font-medium">{a.engineer.name}</span>
+              <span className={`text-xs ${a.endedAt ? 'text-slate-500' : 'font-medium text-emerald-700'}`}>
+                {a.endedAt ? (END_REASON_LABELS[a.endReason ?? ''] ?? a.endReason) : 'Current'}
+              </span>
+            </div>
+            <div className="text-xs text-slate-500">
+              {formatDateTime(a.assignedAt)}
+              {a.endedAt && ` → ${formatDateTime(a.endedAt)}`}
+              {a.assignedBy && ` · by ${a.assignedBy}`}
+            </div>
+            {a.note && <div className="text-xs text-slate-600">“{a.note}”</div>}
+          </li>
+        ))}
+      </ol>
     </Card>
   );
 }
@@ -491,6 +715,12 @@ function describe(entry: JobHistoryEntryDto) {
     }
     case 'job.photo_deleted':
       return `Photo removed (${PHOTO_KIND_LABELS[meta.kind as PhotoKind] ?? meta.kind}) — “${meta.reason ?? ''}”`;
+    case 'job.unassigned':
+      return `Taken back from engineer${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.cancelled':
+      return `Job cancelled — “${meta.reason ?? ''}”${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
+    case 'job.repair_notes':
+      return `Remarks updated${meta.repairRemark ? ` — repair: “${meta.repairRemark}”` : ''}${meta.testingRemark ? ` — testing: “${meta.testingRemark}”` : ''}`;
     case 'job.assigned':
       return `Assigned to ${(meta.engineer as { name?: string } | undefined)?.name ?? 'engineer'}`;
     case 'job.reassigned':

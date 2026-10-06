@@ -13,17 +13,23 @@ export type NavSection = { title?: string; items: NavItem[] };
 export const NAV_SECTIONS: NavSection[] = [
   { items: [{ label: 'Dashboard', to: '/' }] },
   {
-    title: 'Jobs',
+    title: 'Masters',
     items: [
-      { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.CCO, ROLES.BRANCH_MANAGER] },
-      { label: 'Job Sheets', to: '/jobs', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
-      { label: 'My Jobs', to: '/jobs', roles: [ROLES.ENGINEER] },
-      { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
+      { label: 'Job Master', to: '/jobs', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
+      { label: 'Entry Master', to: '/entries', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
+      { label: 'User Master', to: '/staff', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Engineer Report', to: '/engineer-report', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS] },
     ],
   },
   {
-    title: 'Customers & Money',
+    title: 'My Work',
+    items: [{ label: 'My Jobs', to: '/jobs', roles: [ROLES.ENGINEER] }],
+  },
+  {
+    title: 'Operations',
     items: [
+      { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.SUPER_ADMIN, ROLES.CCO, ROLES.BRANCH_MANAGER] },
+      { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Reports', to: '/reports', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS] },
@@ -52,7 +58,6 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Administration',
     items: [
-      { label: 'Staff', to: '/staff', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
       { label: 'Shop Settings', to: '/settings/shop', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Branches', to: '/masters/branches', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Cities', to: '/masters/cities', roles: [ROLES.SUPER_ADMIN] },

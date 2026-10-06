@@ -5,6 +5,7 @@ import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { findBranchEngineer, jobBranchScope, loadForAccess } from './jobs.service.ts';
+import { startAssignment } from './history.ts';
 
 /**
  * Engineer-to-engineer transfer. The sender keeps the job until the receiver accepts, so a job can never be
@@ -57,7 +58,7 @@ export async function list(query: TransferListQuery, actor: Actor) {
   return rows.map(toDto);
 }
 
-export async function request(jobId: string, { toEngineerId, reason }: TransferRequestData, actor: Actor) {
+export async function request(jobId: string, { toEngineerId, reason, remark }: TransferRequestData, actor: Actor) {
   const job = await loadForAccess(jobId, actor);
   if (job.assignedEngineerId !== actor.sub) throw HttpError.forbidden('Only the engineer holding the job can transfer it');
   if (!TRANSFERABLE_STATUSES.includes(job.status)) throw HttpError.conflict('This job cannot be transferred at its current stage');
@@ -72,7 +73,7 @@ export async function request(jobId: string, { toEngineerId, reason }: TransferR
     if (current.assignedEngineerId !== actor.sub) throw HttpError.conflict('This job is no longer assigned to you');
 
     const row = await tx.jobTransfer.create({
-      data: { jobId, fromEngineerId: actor.sub, toEngineerId: to.id, reason, heldSince: current.assignedAt ?? new Date() },
+      data: { jobId, fromEngineerId: actor.sub, toEngineerId: to.id, reason, remark: remark ?? null, heldSince: current.assignedAt ?? new Date() },
       select,
     });
     await recordAudit(
@@ -119,6 +120,7 @@ export async function respond(transferId: string, { decision, note }: TransferRe
         throw HttpError.conflict('The job has changed since this request was sent; the request was cancelled');
       }
       await tx.job.update({ where: { id: t.jobId }, data: { assignedEngineerId: actor.sub, assignedAt: now } });
+      await startAssignment(tx, { jobId: t.jobId, engineerId: actor.sub, byId: t.fromEngineerId, endReason: 'TRANSFERRED', note: 'Transfer accepted' });
     }
     const row = await tx.jobTransfer.update({
       where: { id: transferId },

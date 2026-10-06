@@ -40,7 +40,7 @@ function AssignForm({ job, onClose }: { job: NonNullable<Props['job']>; onClose:
 
   if (engineers.isLoading) return <p className="text-sm text-slate-500">Loading engineers…</p>;
   const list = engineers.data ?? [];
-  if (!list.length) return <p className="text-sm text-slate-600">No active engineers in this branch. Add one under Staff.</p>;
+  if (!list.length) return <p className="text-sm text-slate-600">No active engineers in this branch. Add one under User Master.</p>;
   const leastBusy = list[0]!.openJobs;
 
   return (

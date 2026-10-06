@@ -58,6 +58,8 @@ export type UserDto = {
   /** Full number for managers who can edit this user; otherwise masked (XXXX XXXX 1234). */
   aadhaarNumber: string | null;
   hasAadhaarPhoto: boolean;
+  /** When the password was last set (never the password itself). */
+  passwordChangedAt: string | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;

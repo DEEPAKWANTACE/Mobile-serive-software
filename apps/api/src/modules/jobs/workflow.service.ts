@@ -20,6 +20,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { assertBranchAccess } from '../../lib/access.ts';
 import { createPhotoRows, loadForAccess, preparePhotos, withStoredPhotos } from './jobs.service.ts';
+import { recordStatus } from './history.ts';
 
 /**
  * Job workflow after assignment:
@@ -31,10 +32,21 @@ import { createPhotoRows, loadForAccess, preparePhotos, withStoredPhotos } from 
 const notAllowed = (status: JobStatus) =>
   HttpError.conflict(`Not allowed while the job is "${JOB_STATUS_LABELS[status]}". Refresh and try again.`);
 
-/** Moves the job only if it is still in `from` (guards against concurrent changes). */
-async function moveFrom(tx: Prisma.TransactionClient, id: string, from: JobStatus, data: Prisma.JobUncheckedUpdateManyInput) {
+/**
+ * Moves the job only if it is still in `from` (guards against concurrent changes) and writes the status history.
+ */
+async function moveFrom(
+  tx: Prisma.TransactionClient,
+  id: string,
+  from: JobStatus,
+  data: Prisma.JobUncheckedUpdateManyInput,
+  ctx: { actor: Actor; remark?: string | null },
+) {
   const { count } = await tx.job.updateMany({ where: { id, status: from }, data });
   if (count === 0) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+  if (typeof data.status === 'string') {
+    await recordStatus(tx, { jobId: id, from, to: data.status as JobStatus, actorId: ctx.actor.sub, remark: ctx.remark });
+  }
 }
 
 async function loadForEngineer(id: string, actor: Actor) {
@@ -102,7 +114,7 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
       ...(withinAgreed
         ? { approvedAmount: agreed }
         : { customerResponse: null }),
-    });
+    }, { actor, remark: withinAgreed ? `Diagnosed: ${data.notes} (within agreed amount)` : `Diagnosed: ${data.notes}` });
     await tx.jobEstimateLine.deleteMany({ where: { jobId: id } });
     await tx.jobEstimateLine.createMany({ data: lines.map((l) => ({ ...l, jobId: id })) });
     await recordAudit(
@@ -137,7 +149,7 @@ export async function decideApproval(id: string, { decision, note }: ApprovalDat
       approvedAt: new Date(),
       approvedById: actor.sub,
       ...(approved && { approvedAmount: quotedAmount }),
-    });
+    }, { actor, remark: approved ? `Customer approved${note ? `: ${note}` : ''}` : `Customer rejected: ${note ?? ''}` });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -157,17 +169,27 @@ export async function decideApproval(id: string, { decision, note }: ApprovalDat
 // ─── Engineer work progress ─────────────────────────────────────────────────
 
 export async function changeStatus(id: string, { status: to, note }: StatusChangeData, actor: Actor) {
-  const access = await loadForEngineer(id, actor);
+  // The assigned engineer moves work forward; an Admin / Branch Manager may do the same on their behalf.
+  const isManager = actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER;
+  const access = isManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
+  if (isManager && actor.branchId && actor.branchId !== access.currentBranchId) throw HttpError.forbidden();
   const transition = ENGINEER_TRANSITIONS[access.status]?.find((t) => t.to === to);
   if (!transition) throw notAllowed(access.status);
   if (transition.noteRequired && !note) throw HttpError.badRequest('Invalid request', { note: ['Enter a reason'] });
+
+  // A note given when starting / finishing testing is the testing remark; one given on "done" is the repair remark.
+  const testingNote = note && (to === 'TESTING' || access.status === 'TESTING');
+  const repairNote = note && !testingNote && to === 'REPAIRED';
 
   await prisma.$transaction(async (tx) => {
     await moveFrom(tx, id, access.status, {
       status: to,
       ...(to === 'REPAIRED' && { repairedAt: new Date() }),
       ...(to === 'READY_FOR_DELIVERY' && { readyAt: new Date() }),
-    });
+      ...(to === 'TESTING' && { testingAt: new Date() }),
+      ...(testingNote && { testingRemark: note }),
+      ...(repairNote && { repairRemark: note }),
+    }, { actor, remark: note ?? null });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -196,7 +218,7 @@ export async function spareHold(id: string, { part, note }: SpareHoldData, actor
       sparePart: part,
       spareRequestedAt: new Date(),
       statusBeforeHold: access.status,
-    });
+    }, { actor, remark: `Spare not available: ${part}${note ? ` — ${note}` : ''}` });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -227,7 +249,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
   });
   const resume: JobStatus = job.statusBeforeHold ?? 'IN_REPAIR';
   await prisma.$transaction(async (tx) => {
-    await moveFrom(tx, id, 'SPARE_PENDING', { status: resume, statusBeforeHold: null });
+    await moveFrom(tx, id, 'SPARE_PENDING', { status: resume, statusBeforeHold: null }, { actor, remark: `Spare received${note ? `: ${note}` : ''}` });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -261,7 +283,7 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
 
   await withStoredPhotos(prepared, () =>
     prisma.$transaction(async (tx) => {
-      await moveFrom(tx, id, access.status, { status: 'RWR', rwrReason: reason, rwrNote: note, rwrAt: new Date(), statusBeforeHold: null });
+      await moveFrom(tx, id, access.status, { status: 'RWR', rwrReason: reason, rwrNote: note, rwrAt: new Date(), statusBeforeHold: null }, { actor, remark: note });
       await createPhotoRows(tx, id, prepared, actor);
       await tx.jobTransfer.updateMany({ where: { jobId: id, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
       await recordAudit(

@@ -90,35 +90,41 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
-  stockTransfersSent     StockTransfer[] @relation("StockTransferSentBy")
-  stockTransfersReceived StockTransfer[] @relation("StockTransferReceivedBy")
-  movementsSent          JobMovement[]   @relation("MovementSentBy")
-  movementsReceived      JobMovement[]   @relation("MovementReceivedBy")
-  expensesCreated        Expense[]       @relation("ExpenseCreatedBy")
-  expensesVoided         Expense[]       @relation("ExpenseVoidedBy")
+  passwordChangedAt      DateTime?          @map("password_changed_at")
+  jobsInwarded           Job[]              @relation("JobInwardBy")
+  statusChanges          JobStatusHistory[] @relation("StatusChangedBy")
+  statusAsEngineer       JobStatusHistory[] @relation("StatusEngineer")
+  assignmentsHeld        JobAssignment[]    @relation("AssignmentEngineer")
+  assignmentsMade        JobAssignment[]    @relation("AssignmentBy")
+  stockTransfersSent     StockTransfer[]    @relation("StockTransferSentBy")
+  stockTransfersReceived StockTransfer[]    @relation("StockTransferReceivedBy")
+  movementsSent          JobMovement[]      @relation("MovementSentBy")
+  movementsReceived      JobMovement[]      @relation("MovementReceivedBy")
+  expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
+  expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
   callLogs               CallLog[]
-  jobsDelivered          Job[]           @relation("JobDeliveredBy")
+  jobsDelivered          Job[]              @relation("JobDeliveredBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
-  partsRequested         JobPart[]       @relation("JobPartRequestedBy")
-  partsHandled           JobPart[]       @relation("JobPartHandledBy")
-  id                     String          @id @default(uuid(7)) @db.Uuid
+  partsRequested         JobPart[]          @relation("JobPartRequestedBy")
+  partsHandled           JobPart[]          @relation("JobPartHandledBy")
+  id                     String             @id @default(uuid(7)) @db.Uuid
   name                   String
-  username               String          @unique
-  phone                  String?         @unique
-  email                  String?         @unique
-  passwordHash           String          @map("password_hash")
+  username               String             @unique
+  phone                  String?            @unique
+  email                  String?            @unique
+  passwordHash           String             @map("password_hash")
   role                   Role
   address                String?
   /// 12-digit Aadhaar (staff KYC). Shown masked except to managers.
-  aadhaarNumber          String?         @map("aadhaar_number")
-  aadhaarPhotoKey        String?         @map("aadhaar_photo_key")
+  aadhaarNumber          String?            @map("aadhaar_number")
+  aadhaarPhotoKey        String?            @map("aadhaar_photo_key")
   /// Null only for global roles (SUPER_ADMIN).
-  branchId               String?         @map("branch_id") @db.Uuid
-  isActive               Boolean         @default(true) @map("is_active")
-  lastLoginAt            DateTime?       @map("last_login_at")
-  createdAt              DateTime        @default(now()) @map("created_at")
-  updatedAt              DateTime        @updatedAt @map("updated_at")
+  branchId               String?            @map("branch_id") @db.Uuid
+  isActive               Boolean            @default(true) @map("is_active")
+  lastLoginAt            DateTime?          @map("last_login_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
 
   branch       Branch?       @relation(fields: [branchId], references: [id])
   sessions     Session[]
@@ -265,6 +271,7 @@ model ServicePrice {
 
 /// Customers are shared across branches and identified by mobile number.
 model Customer {
+  city      String?
   id        String   @id @default(uuid(7)) @db.Uuid
   name      String
   phone     String   @unique
@@ -292,6 +299,20 @@ enum JobStatus {
   SPARE_PENDING // "Spare not available": waiting for a part
   RWR // returned without repair (reason + photos recorded)
   DELIVERED // handed back to the customer; job closed
+  CANCELLED // cancelled by the counter (reason recorded); job closed
+}
+
+enum WarrantyStatus {
+  IN_WARRANTY
+  OUT_OF_WARRANTY
+}
+
+enum AssignmentEndReason {
+  REASSIGNED // admin moved it to another engineer
+  TRANSFERRED // engineer-to-engineer transfer accepted
+  UNASSIGNED // returned to the counter / admin
+  SENT_TO_L4
+  CLOSED // delivered or cancelled
 }
 
 /// Where the phone physically is. The owning branch (`branchId`) never changes; `currentBranchId` follows the phone.
@@ -316,60 +337,76 @@ enum TransferStatus {
 }
 
 model Job {
+  /// Dealer / shopkeeper who brought the phone (if not walk-in).
+  retailer           String?
+  /// Staff member who physically took the phone in (defaults to the creator).
+  inwardById         String?            @map("inward_by_id") @db.Uuid
+  phoneDamaged       Boolean            @default(false) @map("phone_damaged")
+  warranty           WarrantyStatus?
+  /// Device unlock code / pattern, encrypted at rest (AES-256-GCM).
+  devicePasswordEnc  String?            @map("device_password_enc")
+  repairRemark       String?            @map("repair_remark")
+  testingRemark      String?            @map("testing_remark")
+  testingAt          DateTime?          @map("testing_at")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  cancelReason       String?            @map("cancel_reason")
+  inwardBy           User?              @relation("JobInwardBy", fields: [inwardById], references: [id])
+  statusHistory      JobStatusHistory[]
+  assignments        JobAssignment[]
   /// Branch that has the phone / works on it now (= branchId unless sent to L4).
-  currentBranchId    String          @map("current_branch_id") @db.Uuid
-  location           JobLocation     @default(AT_BRANCH)
-  currentBranch      Branch          @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
+  currentBranchId    String             @map("current_branch_id") @db.Uuid
+  location           JobLocation        @default(AT_BRANCH)
+  currentBranch      Branch             @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
   movements          JobMovement[]
   callLogs           CallLog[]
-  deliveredAt        DateTime?       @map("delivered_at")
-  deliveredById      String?         @map("delivered_by_id") @db.Uuid
+  deliveredAt        DateTime?          @map("delivered_at")
+  deliveredById      String?            @map("delivered_by_id") @db.Uuid
   /// Name of the person who collected the phone (customer or someone on their behalf).
-  deliveredTo        String?         @map("delivered_to")
-  deliveryNote       String?         @map("delivery_note")
-  deliveredBy        User?           @relation("JobDeliveredBy", fields: [deliveredById], references: [id])
+  deliveredTo        String?            @map("delivered_to")
+  deliveryNote       String?            @map("delivery_note")
+  deliveredBy        User?              @relation("JobDeliveredBy", fields: [deliveredById], references: [id])
   invoice            Invoice?
   parts              JobPart[]
   stockMovements     StockMovement[]
-  id                 String          @id @default(uuid(7)) @db.Uuid
-  jobNumber          String          @unique @map("job_number") // e.g. AND01-2610-0001
-  branchId           String          @map("branch_id") @db.Uuid
-  customerId         String          @map("customer_id") @db.Uuid
-  brandId            String          @map("brand_id") @db.Uuid
-  deviceModelId      String          @map("device_model_id") @db.Uuid
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  jobNumber          String             @unique @map("job_number") // e.g. AND01-2610-0001
+  branchId           String             @map("branch_id") @db.Uuid
+  customerId         String             @map("customer_id") @db.Uuid
+  brandId            String             @map("brand_id") @db.Uuid
+  deviceModelId      String             @map("device_model_id") @db.Uuid
   imei               String?
-  serialNumber       String?         @map("serial_number")
+  serialNumber       String?            @map("serial_number")
   color              String?
-  customerComplaint  String?         @map("customer_complaint")
-  conditionNotes     String?         @map("condition_notes")
+  customerComplaint  String?            @map("customer_complaint")
+  conditionNotes     String?            @map("condition_notes")
   accessories        String[]
-  accessoriesOther   String?         @map("accessories_other")
+  accessoriesOther   String?            @map("accessories_other")
   /// Sum of the price options chosen at intake; null when cost is unknown (e.g. dead phone).
-  estimatedAmount    Decimal?        @map("estimated_amount") @db.Decimal(10, 2)
-  status             JobStatus       @default(RECEIVED)
-  assignedEngineerId String?         @map("assigned_engineer_id") @db.Uuid
-  assignedAt         DateTime?       @map("assigned_at")
-  diagnosisNotes     String?         @map("diagnosis_notes")
-  diagnosedAt        DateTime?       @map("diagnosed_at")
+  estimatedAmount    Decimal?           @map("estimated_amount") @db.Decimal(10, 2)
+  status             JobStatus          @default(RECEIVED)
+  assignedEngineerId String?            @map("assigned_engineer_id") @db.Uuid
+  assignedAt         DateTime?          @map("assigned_at")
+  diagnosisNotes     String?            @map("diagnosis_notes")
+  diagnosedAt        DateTime?          @map("diagnosed_at")
   /// Current total of the engineer's estimate lines.
-  quotedAmount       Decimal?        @map("quoted_amount") @db.Decimal(10, 2)
+  quotedAmount       Decimal?           @map("quoted_amount") @db.Decimal(10, 2)
   /// Amount the customer has agreed to (intake estimate or explicit approval).
-  approvedAmount     Decimal?        @map("approved_amount") @db.Decimal(10, 2)
-  approvedAt         DateTime?       @map("approved_at")
-  approvedById       String?         @map("approved_by_id") @db.Uuid
-  customerResponse   String?         @map("customer_response")
-  repairedAt         DateTime?       @map("repaired_at")
-  readyAt            DateTime?       @map("ready_at")
-  sparePart          String?         @map("spare_part")
-  spareRequestedAt   DateTime?       @map("spare_requested_at")
+  approvedAmount     Decimal?           @map("approved_amount") @db.Decimal(10, 2)
+  approvedAt         DateTime?          @map("approved_at")
+  approvedById       String?            @map("approved_by_id") @db.Uuid
+  customerResponse   String?            @map("customer_response")
+  repairedAt         DateTime?          @map("repaired_at")
+  readyAt            DateTime?          @map("ready_at")
+  sparePart          String?            @map("spare_part")
+  spareRequestedAt   DateTime?          @map("spare_requested_at")
   /// Status to resume when the spare arrives.
-  statusBeforeHold   JobStatus?      @map("status_before_hold")
-  rwrReason          RwrReason?      @map("rwr_reason")
-  rwrNote            String?         @map("rwr_note")
-  rwrAt              DateTime?       @map("rwr_at")
-  createdById        String          @map("created_by_id") @db.Uuid
-  createdAt          DateTime        @default(now()) @map("created_at")
-  updatedAt          DateTime        @updatedAt @map("updated_at")
+  statusBeforeHold   JobStatus?         @map("status_before_hold")
+  rwrReason          RwrReason?         @map("rwr_reason")
+  rwrNote            String?            @map("rwr_note")
+  rwrAt              DateTime?          @map("rwr_at")
+  createdById        String             @map("created_by_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
 
   branch           Branch            @relation(fields: [branchId], references: [id])
   customer         Customer          @relation(fields: [customerId], references: [id])
@@ -503,6 +540,7 @@ model JobEstimateLine {
 
 /// Engineer-to-engineer hand-over. The job moves only when the receiving engineer accepts.
 model JobTransfer {
+  remark         String?
   id             String         @id @default(uuid(7)) @db.Uuid
   jobId          String         @map("job_id") @db.Uuid
   fromEngineerId String         @map("from_engineer_id") @db.Uuid
@@ -819,4 +857,49 @@ model ShopSettings {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("shop_settings")
+}
+
+// ─── Job history (status & engineer assignment) ─────────────────────────────
+
+/// One row per status change of a job: who changed it, which engineer had it, and why.
+model JobStatusHistory {
+  id          BigInt     @id @default(autoincrement())
+  jobId       String     @map("job_id") @db.Uuid
+  fromStatus  JobStatus? @map("from_status")
+  toStatus    JobStatus  @map("to_status")
+  /// Engineer holding the job when the change happened.
+  engineerId  String?    @map("engineer_id") @db.Uuid
+  changedById String?    @map("changed_by_id") @db.Uuid
+  remark      String?
+  changedAt   DateTime   @default(now()) @map("changed_at")
+
+  job       Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  engineer  User? @relation("StatusEngineer", fields: [engineerId], references: [id])
+  changedBy User? @relation("StatusChangedBy", fields: [changedById], references: [id])
+
+  @@index([jobId, changedAt])
+  @@index([engineerId, changedAt])
+  @@index([toStatus, changedAt])
+  @@map("job_status_history")
+}
+
+/// Engineer assignment periods of a job. A new row starts on every (re)assignment / accepted transfer;
+/// the previous row is closed with the reason, so the full chain (A → B → admin) is kept.
+model JobAssignment {
+  id           String               @id @default(uuid(7)) @db.Uuid
+  jobId        String               @map("job_id") @db.Uuid
+  engineerId   String               @map("engineer_id") @db.Uuid
+  assignedById String?              @map("assigned_by_id") @db.Uuid
+  assignedAt   DateTime             @default(now()) @map("assigned_at")
+  endedAt      DateTime?            @map("ended_at")
+  endReason    AssignmentEndReason? @map("end_reason")
+  note         String?
+
+  job        Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  engineer   User  @relation("AssignmentEngineer", fields: [engineerId], references: [id])
+  assignedBy User? @relation("AssignmentBy", fields: [assignedById], references: [id])
+
+  @@index([jobId, assignedAt])
+  @@index([engineerId, endedAt])
+  @@map("job_assignments")
 }

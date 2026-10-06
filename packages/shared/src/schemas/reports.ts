@@ -68,3 +68,56 @@ export type ReportDto = {
   engineers: ReportEngineerRow[];
   ccos: ReportCcoRow[];
 };
+
+// ─── Engineer report (record level) ─────────────────────────────────────────
+
+export const engineerReportQuerySchema = z.object({
+  jobNumber: z.string().trim().max(40).optional(),
+  from: businessDate.optional(),
+  to: businessDate.optional(),
+  engineerId: z.uuid().optional(),
+  status: z.string().max(40).optional(),
+  branchId: z.uuid().optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(500).default(50),
+});
+export type EngineerReportQuery = z.output<typeof engineerReportQuerySchema>;
+
+export type EngineerReportRowDto = {
+  job: { id: string; jobNumber: string; createdAt: string; status: string; branchCode: string };
+  customer: string;
+  product: string;
+  problem: string;
+  engineer: string | null;
+  assignedAt: string | null;
+  lastStatusAt: string | null;
+  repairedAt: string | null;
+  testingAt: string | null;
+  totalAmount: number;
+  paidAmount: number;
+  balance: number;
+  paymentStatus: 'PAID' | 'PARTIAL' | 'UNPAID' | 'NO_CHARGE' | 'REFUND_DUE';
+  transferHistory: string;
+  remarks: string | null;
+};
+
+// ─── Dashboard summary (old "All / Datewise / Total In / Out / Balance / 15 days / Pending") ───
+
+export const dashboardSummaryQuerySchema = z.object({
+  from: businessDate.optional(),
+  to: businessDate.optional(),
+  branchId: z.uuid().optional(),
+});
+
+export type DashboardSummaryDto = {
+  totalJobs: number;
+  totalIn: number; // received in the period
+  totalOut: number; // delivered in the period
+  pending: number; // open now
+  underRepair: number; // with an engineer now
+  over15Days: number;
+  totalAmount: number;
+  totalPaid: number;
+  totalBalance: number;
+  engineerPending: { engineerId: string; engineer: string; pending: number }[];
+};

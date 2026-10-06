@@ -23,6 +23,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
 import { jobPartSelect, toJobPartDto } from './job-part.ts';
+import { recordStatus } from '../jobs/history.ts';
 import { applyMovement } from './stock.ts';
 
 /** Branch the store action applies to: own branch for branch staff; Super Admin must say which. */
@@ -306,6 +307,7 @@ export async function issue(id: string, note: string | null | undefined, actor: 
       if (!stillMissing) {
         resumed = jp.job.statusBeforeHold ?? 'IN_REPAIR';
         await tx.job.updateMany({ where: { id: jp.job.id, status: 'SPARE_PENDING' }, data: { status: resumed, statusBeforeHold: null } });
+        await recordStatus(tx, { jobId: jp.job.id, from: 'SPARE_PENDING', to: resumed, actorId: actor.sub, remark: `Spare issued: ${jp.part.code} ${jp.part.name}` });
         await audit('job.spare_received', { part: `${jp.part.code} – ${jp.part.name}`, resumedTo: resumed, note: 'Issued by store' });
       }
     }
@@ -329,6 +331,7 @@ export async function markNotAvailable(id: string, note: string | null | undefin
         data: { status: 'SPARE_PENDING', sparePart: label, spareRequestedAt: new Date(), statusBeforeHold: jp.job.status },
       });
       held = count > 0;
+      if (held) await recordStatus(tx, { jobId: jp.job.id, from: jp.job.status, to: 'SPARE_PENDING', actorId: actor.sub, remark: `Spare not available: ${label}` });
     }
     await recordAudit(
       {

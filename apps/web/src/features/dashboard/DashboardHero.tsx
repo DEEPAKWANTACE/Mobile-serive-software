@@ -17,7 +17,7 @@ export function DashboardHero({ user, actions, subtitle }: { user: AuthUser; act
         <div>
           <p className="text-sm text-brand-100">{today}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            {greeting()}, {user.role === 'SUPER_ADMIN' ? user.name : user.name.split(' ')[0]}
+            {user.role === 'ENGINEER' ? `Welcome, ${user.name}` : `${greeting()}, ${user.role === 'SUPER_ADMIN' ? user.name : user.name.split(' ')[0]}`}
           </h1>
           <p className="mt-1 text-sm text-brand-100">
             {ROLE_LABELS[user.role]}

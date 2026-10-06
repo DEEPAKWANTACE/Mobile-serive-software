@@ -63,6 +63,7 @@ function Inner({
       customer: {
         phone: job.customer.phone,
         name: job.customer.name,
+        city: job.customer.city ?? '',
         altPhone: job.customer.altPhone ?? '',
         email: job.customer.email ?? '',
         address: job.customer.address ?? '',
@@ -75,11 +76,26 @@ function Inner({
       accessories: job.accessories as JobEditInput['accessories'],
       accessoriesOther: job.accessoriesOther ?? '',
       conditionNotes: job.conditionNotes ?? '',
+      retailer: job.retailer ?? '',
+      inwardById: job.inwardBy?.id ?? null,
+      phoneDamaged: job.phoneDamaged,
+      warranty: job.warranty,
+      devicePassword: job.devicePassword ?? '',
+      totalAmount: (job.estimatedAmount ?? '') as unknown as number,
     },
   });
   const brandId = watch('brandId');
   const modelId = watch('deviceModelId');
   const { items: models } = useOptions<ModelDto>('models', { brandId: brandId ?? '' }, { enabled: deviceEditable && !!brandId });
+  const inwardStaff = useQuery({
+    queryKey: ['inward-staff', job.branch.id],
+    queryFn: () => api.get<{ id: string; name: string }[]>(`/jobs/inward-staff?branchId=${job.branch.id}`),
+  });
+  // One keyed list (current inwarder first if no longer listed) so the selected <option> survives the staff list loading.
+  const inwardOptions = useMemo(() => {
+    const staff = inwardStaff.data ?? [];
+    return job.inwardBy && !staff.some((u) => u.id === job.inwardBy!.id) ? [job.inwardBy, ...staff] : staff;
+  }, [inwardStaff.data, job.inwardBy]);
   const prices = useQuery({
     queryKey: ['models', modelId, 'prices'],
     queryFn: () => api.get<ModelPriceDto[]>(`/models/${modelId}/prices`),
@@ -93,7 +109,7 @@ function Inner({
 
   const save = useMutation({
     mutationFn: (d: JobEditData) => {
-      const body = deviceEditable ? d : { ...d, brandId: undefined, deviceModelId: undefined, faults: undefined };
+      const body = deviceEditable ? d : { ...d, brandId: undefined, deviceModelId: undefined, faults: undefined, totalAmount: undefined };
       return api.patch<{ changed: number }>(`/jobs/${job.id}`, body);
     },
     onSuccess: (r) => {
@@ -120,8 +136,20 @@ function Inner({
         <Field label="Email" {...err(errors.customer?.email?.message)}>
           <input {...register('customer.email')} className={inputClass} />
         </Field>
-        <Field label="Address" className="sm:col-span-2">
+        <Field label="City" {...err(errors.customer?.city?.message)}>
+          <input {...register('customer.city')} className={inputClass} />
+        </Field>
+        <Field label="Address">
           <input {...register('customer.address')} className={inputClass} />
+        </Field>
+        <Field label="Retailer" {...err(errors.retailer?.message)}>
+          <input {...register('retailer')} className={inputClass} />
+        </Field>
+        <Field label="Inward by" {...err(errors.inwardById?.message)}>
+          <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
+            <option value="">—</option>
+            {inwardOptions.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
         </Field>
       </div>
 
@@ -178,6 +206,25 @@ function Inner({
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {deviceEditable && (
+          <Field label="Total amount (₹)" {...err(errors.totalAmount?.message)} hint="Quoted total before diagnosis">
+            <input {...register('totalAmount')} inputMode="decimal" className={inputClass} />
+          </Field>
+        )}
+        <Field label="Phone password / pattern" {...err(errors.devicePassword?.message)}>
+          <input {...register('devicePassword')} autoComplete="off" className={`${inputClass} font-mono`} />
+        </Field>
+        <Field label="Warranty">
+          <select {...register('warranty', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
+            <option value="">Not specified</option>
+            <option value="IN_WARRANTY">In warranty</option>
+            <option value="OUT_OF_WARRANTY">Out of warranty</option>
+          </select>
+        </Field>
+        <label className="flex items-center gap-2 pt-6 text-sm">
+          <input type="checkbox" {...register('phoneDamaged')} className="size-4 accent-brand-600" />
+          Phone is physically damaged
+        </label>
         <Field label="Colour">
           <input {...register('color')} className={inputClass} />
         </Field>
@@ -205,7 +252,7 @@ function Inner({
           </div>
         )}
       />
-      <Field label="Other accessories">
+      <Field label="Extra added (other items received)">
         <input {...register('accessoriesOther')} className={inputClass} />
       </Field>
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Save changes" />

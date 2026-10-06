@@ -6,6 +6,8 @@ import { DayBookPage } from '@/features/accounts/DayBookPage';
 import { CallingPage } from '@/features/calling/CallingPage';
 import { L4TransfersPage } from '@/features/l4/L4TransfersPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
+import { EngineerReportPage } from '@/features/reports/EngineerReportPage';
+import { EntriesPage } from '@/features/entries/EntriesPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { JobDetailPage } from '@/features/jobs/JobDetailPage';
@@ -53,7 +55,7 @@ export const router = createBrowserRouter([
                 ],
               },
               {
-                element: <RequireAuth roles={[ROLES.CCO, ROLES.BRANCH_MANAGER]} />,
+                element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.CCO, ROLES.BRANCH_MANAGER]} />,
                 children: [{ path: 'new', element: <NewJobPage /> }],
               },
             ],
@@ -93,7 +95,14 @@ export const router = createBrowserRouter([
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS]} />,
-            children: [{ path: 'reports', element: <ReportsPage /> }],
+            children: [
+              { path: 'reports', element: <ReportsPage /> },
+              { path: 'engineer-report', element: <EngineerReportPage /> },
+            ],
+          },
+          {
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
+            children: [{ path: 'entries', element: <EntriesPage /> }],
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,

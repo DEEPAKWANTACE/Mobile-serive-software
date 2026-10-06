@@ -1,4 +1,5 @@
-import { DEVICE_EDITABLE_STATUSES, ROLES, type ImeiCheckDto, type JobEditData } from '@msm/shared';
+import { CLOSED_STATUSES, DEVICE_EDITABLE_STATUSES, ROLES, type ImeiCheckDto, type JobEditData } from '@msm/shared';
+import { decryptSecret, encryptSecret } from '../../lib/secret-box.ts';
 import type { Prisma } from '../../generated/prisma/client.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { logger } from '../../lib/logger.ts';
@@ -13,7 +14,7 @@ async function loadForCounterEdit(id: string, actor: Actor) {
   const job = await loadForAccess(id, actor);
   const counter = actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
   if (!counter || (actor.branchId && actor.branchId !== job.branchId)) throw HttpError.forbidden('Only the branch that took in the phone can edit the job sheet');
-  if (job.status === 'DELIVERED') throw HttpError.conflict('This job is delivered — the job sheet can no longer be changed');
+  if (CLOSED_STATUSES.includes(job.status)) throw HttpError.conflict('This job is closed — the job sheet can no longer be changed');
   return job;
 }
 
@@ -31,8 +32,13 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       accessories: true,
       accessoriesOther: true,
       conditionNotes: true,
+      retailer: true,
+      phoneDamaged: true,
+      warranty: true,
+      inwardById: true,
+      devicePasswordEnc: true,
       diagnosedAt: true,
-      customer: { select: { id: true, phone: true, name: true, altPhone: true, email: true, address: true } },
+      customer: { select: { id: true, phone: true, name: true, city: true, altPhone: true, email: true, address: true } },
       faults: { select: { faultId: true, priceLabel: true, price: true, fault: { select: { name: true } } } },
       photos: { where: { kind: 'ID_PROOF' }, select: { id: true } },
     },
@@ -86,7 +92,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       return { faultId, priceLabel: p.label, price: p.price.toNumber() };
     });
     const priced = newFaults.filter((f) => f.price !== null);
-    jobData.estimatedAmount = priced.length ? priced.reduce((s, f) => s + f.price!, 0) : null;
+    if (data.totalAmount === undefined) jobData.estimatedAmount = priced.length ? priced.reduce((s, f) => s + f.price!, 0) : null;
     const names = new Map(faultRows.map((f) => [f.id, f.name]));
     track(
       'faults',
@@ -95,12 +101,37 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
     );
   }
 
+  if (data.totalAmount !== undefined) {
+    if (!DEVICE_EDITABLE_STATUSES.includes(access.status) || cur.diagnosedAt) {
+      throw HttpError.conflict('The total can only be changed before diagnosis — the engineer\'s estimate applies after that');
+    }
+    const curTotal = (await prisma.job.findUniqueOrThrow({ where: { id }, select: { estimatedAmount: true } })).estimatedAmount?.toNumber() ?? null;
+    track('totalAmount', curTotal, data.totalAmount);
+    jobData.estimatedAmount = data.totalAmount;
+  }
+
   // ── Simple fields ──
-  for (const field of ['color', 'customerComplaint', 'accessoriesOther', 'conditionNotes'] as const) {
+  for (const field of ['color', 'customerComplaint', 'accessoriesOther', 'conditionNotes', 'retailer', 'phoneDamaged', 'warranty'] as const) {
     if (data[field] !== undefined) {
       track(field, cur[field], data[field]);
-      jobData[field] = data[field];
+      // Values are already validated per field by jobEditSchema.
+      (jobData as Record<string, unknown>)[field] = data[field];
     }
+  }
+  if (data.inwardById !== undefined && data.inwardById !== cur.inwardById) {
+    if (data.inwardById) {
+      const ok = await prisma.user.count({
+        where: { id: data.inwardById, isActive: true, OR: [{ role: ROLES.SUPER_ADMIN }, { branchId: access.branchId, role: { in: [ROLES.CCO, ROLES.BRANCH_MANAGER] } }] },
+      });
+      if (!ok) throw HttpError.badRequest('Invalid request', { inwardById: ['Select a CCO / manager of this branch'] });
+    }
+    track('inwardById', cur.inwardById, data.inwardById);
+    jobData.inwardById = data.inwardById;
+  }
+  if (data.devicePassword !== undefined && data.devicePassword !== decryptSecret(cur.devicePasswordEnc)) {
+    // Never log the code itself.
+    changes.devicePassword = { from: cur.devicePasswordEnc ? '••••' : null, to: data.devicePassword ? '••••' : null };
+    jobData.devicePasswordEnc = data.devicePassword ? encryptSecret(data.devicePassword) : null;
   }
   if (data.accessories) {
     track('accessories', cur.accessories, data.accessories);
@@ -111,7 +142,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   const c = data.customer;
   const customerUpdate: Prisma.CustomerUpdateInput = {};
   if (c) {
-    for (const field of ['name', 'altPhone', 'email', 'address'] as const) {
+    for (const field of ['name', 'city', 'altPhone', 'email', 'address'] as const) {
       if (c[field] !== undefined) {
         track(`customer.${field}`, cur.customer[field], c[field]);
         if (!same(cur.customer[field], c[field])) customerUpdate[field] = c[field] as string;
@@ -127,7 +158,14 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       // Wrong mobile number entered: link the job to the right customer (creating it if new).
       const target = await tx.customer.upsert({
         where: { phone: c.phone },
-        create: { phone: c.phone, name: c.name ?? cur.customer.name, altPhone: c.altPhone ?? null, email: c.email ?? null, address: c.address ?? null },
+        create: {
+          phone: c.phone,
+          name: c.name ?? cur.customer.name,
+          city: c.city ?? null,
+          altPhone: c.altPhone ?? null,
+          email: c.email ?? null,
+          address: c.address ?? null,
+        },
         update: customerUpdate,
         select: { id: true },
       });
