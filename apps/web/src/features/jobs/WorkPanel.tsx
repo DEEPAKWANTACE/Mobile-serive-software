@@ -38,6 +38,8 @@ import { PartCodeInput } from '@/features/inventory/PartCodeInput';
 import { DeliveryForm } from '@/features/billing/DeliveryForm';
 import { L4Panel } from '@/features/l4/L4Actions';
 import { Link } from 'react-router';
+import { LogCallForm } from '@/features/calling/LogCallForm';
+import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
 export function WorkPanel({ job }: { job: JobDto }) {
@@ -48,6 +50,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
   const [action, setAction] = useState<'transfer' | 'spare' | 'spareReceived' | 'rwr' | 'deliver' | null>(null);
+  const [loggingCall, setLoggingCall] = useState(false);
   const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
   const canDeliver = canApprove && atHome && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR') && (!user?.branch || user.branch.id === job.branch.id);
 
@@ -57,8 +60,18 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const canCancelTransfer = !!pending && (pending.from.id === user?.id || isManager);
   const canTransfer = isAssignedEngineer && !pending && TRANSFERABLE_STATUSES.includes(job.status);
   const canHold = isAssignedEngineer && SPARE_HOLD_STATUSES.includes(job.status);
-  const canRwr = isAssignedEngineer && RWR_STATUSES.includes(job.status);
+  const canRwr = (isAssignedEngineer || canApprove) && RWR_STATUSES.includes(job.status);
   const canMarkSpareReceived = job.status === 'SPARE_PENDING' && (isAssignedEngineer || isManager);
+
+  const messageContext = {
+    customerName: job.customer.name,
+    jobNumber: job.jobNumber,
+    device: `${job.brand.name} ${job.model.name}`,
+    branchName: job.branch.name,
+    branchPhone: job.branch.phone,
+    estimate: job.quotedAmount ?? job.estimatedAmount,
+    balance: (job.quotedAmount ?? 0) - job.payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -p.amount : p.amount), 0),
+  };
 
   const agreed = job.approvedAmount ?? job.estimatedAmount;
   const canDiagnose = isAssignedEngineer && DIAGNOSABLE_STATUSES.includes(job.status);
@@ -96,14 +109,37 @@ export function WorkPanel({ job }: { job: JobDto }) {
           </div>
         )}
         {canDeliver && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-emerald-50 p-4 ring-1 ring-emerald-200">
-            <div className="text-sm text-emerald-900">
-              <div className="font-medium">{job.status === 'RWR' ? 'Ready to return to customer (unrepaired)' : 'Repaired — ready for the customer'}</div>
-              <a href={`tel:${job.customer.phone}`} className="underline">
-                Call {job.customer.name} ({job.customer.phone})
-              </a>
+          <div className="rounded-lg bg-emerald-50 p-5 ring-1 ring-emerald-300 shadow-xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-emerald-950">
+                  {job.status === 'RWR' ? 'Phone ready to return to customer (unrepaired)' : 'Phone repaired — ready at counter for customer pickup'}
+                </div>
+                <p className="text-sm text-emerald-800 mt-0.5">
+                  Notify the customer via call or WhatsApp, then collect payment and deliver.
+                </p>
+              </div>
+              <Button size="md" onClick={() => setAction('deliver')}>Deliver & bill</Button>
             </div>
-            <Button onClick={() => setAction('deliver')}>Deliver & bill</Button>
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-emerald-200">
+              <a href={`tel:${job.customer.phone}`}>
+                <Button size="sm" variant="secondary">
+                  📞 Call {job.customer.name} ({job.customer.phone})
+                </Button>
+              </a>
+              {canApprove && (
+                <Button size="sm" variant="secondary" onClick={() => setLoggingCall(true)}>
+                  📝 Log customer call
+                </Button>
+              )}
+              <WhatsAppButton
+                phone={job.customer.phone}
+                status={job.status}
+                context={messageContext}
+                size="sm"
+                label="💬 Send WhatsApp pickup message"
+              />
+            </div>
           </div>
         )}
         {pending && (
@@ -142,38 +178,79 @@ export function WorkPanel({ job }: { job: JobDto }) {
           </div>
         )}
         {job.status === 'AWAITING_APPROVAL' && (
-          <div className="rounded-md bg-orange-50 p-4 ring-1 ring-orange-200">
-            <div className="font-medium text-orange-900">Customer approval needed — {formatCurrency(job.quotedAmount ?? 0)}</div>
-            <p className="mt-1 text-sm text-orange-800">
-              {agreed !== null ? `Customer had agreed to ${formatCurrency(agreed)}. ` : 'No price was agreed at intake. '}
-              {canApprove ? (
-                <>
-                  Call{' '}
-                  <a href={`tel:${job.customer.phone}`} className="font-semibold underline">
-                    {job.customer.name} ({job.customer.phone})
-                  </a>{' '}
-                  and record their answer.
-                </>
-              ) : (
-                'Waiting for the counter to call the customer.'
-              )}
-            </p>
+          <div className="rounded-lg bg-orange-50 p-5 ring-1 ring-orange-300 shadow-xs space-y-3">
+            <div>
+              <div className="text-base font-semibold text-orange-950">Customer approval needed — {formatCurrency(job.quotedAmount ?? 0)}</div>
+              <p className="mt-1 text-sm text-orange-900">
+                {agreed !== null ? `Customer had agreed to ${formatCurrency(agreed)}. ` : 'No price was agreed at intake. '}
+                {canApprove ? (
+                  <>
+                    Contact{' '}
+                    <a href={`tel:${job.customer.phone}`} className="font-semibold underline">
+                      {job.customer.name} ({job.customer.phone})
+                    </a>{' '}
+                    and record their decision below.
+                  </>
+                ) : (
+                  'Waiting for the counter to call the customer.'
+                )}
+              </p>
+            </div>
             {canApprove && (
-              <div className="mt-3 flex gap-2">
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-orange-200">
                 <Button size="sm" onClick={() => setApproving('APPROVED')}>
-                  Customer approved
+                  ✓ Customer approved
                 </Button>
                 <Button size="sm" variant="danger" onClick={() => setApproving('REJECTED')}>
-                  Customer rejected
+                  ✕ Customer rejected
                 </Button>
+                <a href={`tel:${job.customer.phone}`}>
+                  <Button size="sm" variant="secondary">
+                    📞 Call customer
+                  </Button>
+                </a>
+                <Button size="sm" variant="secondary" onClick={() => setLoggingCall(true)}>
+                  📝 Log call result
+                </Button>
+                <WhatsAppButton
+                  phone={job.customer.phone}
+                  status={job.status}
+                  context={messageContext}
+                  size="sm"
+                  label="💬 Send WhatsApp approval quote"
+                />
               </div>
             )}
           </div>
         )}
         {job.status === 'CUSTOMER_REJECTED' && (
-          <div className="rounded-md bg-red-50 p-3 text-sm text-red-800">
-            Customer rejected the estimate{job.customerResponse && `: “${job.customerResponse}”`}.{' '}
-            {isAssignedEngineer ? 'Return the phone using “Return without repair” (motherboard photo required).' : 'Waiting for the engineer to return the phone.'}
+          <div className="rounded-lg bg-red-50 p-5 ring-1 ring-red-300 shadow-xs space-y-3">
+            <div>
+              <div className="text-base font-semibold text-red-950">Customer rejected the estimate</div>
+              {job.customerResponse && <p className="mt-1 text-sm text-red-900">Customer feedback: “{job.customerResponse}”</p>}
+              <p className="mt-1 text-xs text-red-800">
+                Please complete Return Without Repair (RWR) with internal/motherboard photos so the device can be returned to the counter.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-200">
+              {canRwr && (
+                <Button size="sm" variant="primary" onClick={() => setAction('rwr')}>
+                  📸 Finalize RWR (take photo & return)
+                </Button>
+              )}
+              {canApprove && (
+                <Button size="sm" variant="secondary" onClick={() => setLoggingCall(true)}>
+                  📝 Log customer call
+                </Button>
+              )}
+              <WhatsAppButton
+                phone={job.customer.phone}
+                status={job.status}
+                context={messageContext}
+                size="sm"
+                label="💬 WhatsApp rejection / collect message"
+              />
+            </div>
           </div>
         )}
         {job.status === 'ASSIGNED' && !job.diagnosedAt && (
@@ -264,6 +341,17 @@ export function WorkPanel({ job }: { job: JobDto }) {
       </Modal>
       <Modal open={action === 'rwr'} onClose={() => setAction(null)} title="Return without repair (RWR)">
         {action === 'rwr' && <RwrForm job={job} onDone={() => setAction(null)} />}
+      </Modal>
+      <Modal open={loggingCall} onClose={() => setLoggingCall(false)} title="Log customer call">
+        {loggingCall && (
+          <LogCallForm
+            jobId={job.id}
+            jobNumber={job.jobNumber}
+            status={job.status}
+            customer={job.customer}
+            onDone={() => setLoggingCall(false)}
+          />
+        )}
       </Modal>
       <Modal open={!!transition} onClose={() => setTransition(null)} title={transition?.label ?? ''} size="sm">
         {transition && <TransitionForm job={job} transition={transition} onDone={() => setTransition(null)} />}

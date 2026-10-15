@@ -4,15 +4,28 @@ import { Button } from '@/components/ui/Button';
 import { Field, inputClass } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 
-type Props = { phone: string; status: string; context: MessageContext; size?: 'sm' | 'md' };
+type Props = {
+  phone: string;
+  status: string;
+  context: MessageContext;
+  size?: 'sm' | 'md';
+  label?: string;
+  variant?: 'primary' | 'secondary';
+  className?: string;
+};
 
 /** Opens WhatsApp (app or web) with a ready-made, editable message to the customer. Free — no SMS provider needed. */
-export function WhatsAppButton({ phone, status, context, size = 'sm' }: Props) {
+export function WhatsAppButton({ phone, status, context, size = 'sm', label = '💬 WhatsApp', variant = 'secondary', className }: Props) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button size={size} variant="secondary" onClick={() => setOpen(true)} className="text-emerald-700!">
-        💬 WhatsApp
+      <Button
+        size={size}
+        variant={variant}
+        onClick={() => setOpen(true)}
+        className={className ?? (variant === 'secondary' ? 'text-emerald-700!' : 'bg-emerald-600 hover:bg-emerald-700 text-white')}
+      >
+        {label}
       </Button>
       <Modal open={open} onClose={() => setOpen(false)} title={`WhatsApp ${context.customerName} (${phone})`}>
         {open && <Composer phone={phone} initial={suggestedMessage(status)} context={context} onDone={() => setOpen(false)} />}

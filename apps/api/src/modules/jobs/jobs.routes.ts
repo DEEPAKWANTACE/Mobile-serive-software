@@ -175,7 +175,7 @@ jobRoutes.post(
 // Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, at least one)
 jobRoutes.post(
   '/:id/rwr',
-  authorize(ROLES.ENGINEER),
+  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: idParamSchema }),
   upload.array('photos', PHOTO_MAX_PER_UPLOAD),
   multipartJson('data'),

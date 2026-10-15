@@ -274,7 +274,10 @@ export async function spareReceived(id: string, note: string | null | undefined,
 // ─── RWR: return without repair (reason + motherboard photos compulsory) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
-  const access = await loadForEngineer(id, actor);
+  const isCounterOrManager =
+    actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
+  const access = isCounterOrManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
+  if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
   if (files.length < RWR_MIN_PHOTOS) {
     throw HttpError.badRequest('Invalid request', { photos: ['Motherboard / internal photo is compulsory for RWR'] });
