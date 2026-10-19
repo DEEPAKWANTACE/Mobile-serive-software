@@ -17,6 +17,7 @@ export class ApiError extends Error {
 let accessToken: string | null = null;
 let refreshInFlight: Promise<AuthResponse | null> | null = null;
 let onSessionExpired: (() => void) | null = null;
+let onSessionChanged: ((session: AuthResponse) => void) | null = null;
 
 export const setAccessToken = (token: string | null) => {
   accessToken = token;
@@ -24,15 +25,35 @@ export const setAccessToken = (token: string | null) => {
 export const setSessionExpiredHandler = (fn: () => void) => {
   onSessionExpired = fn;
 };
+export const setSessionChangedHandler = (fn: ((session: AuthResponse) => void) | null) => {
+  onSessionChanged = fn;
+};
+
+async function exchangeRefreshCookie(): Promise<AuthResponse | null> {
+  const res = await fetch(`${BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' });
+  if (!res.ok) return null;
+  return (await res.json()) as AuthResponse;
+}
+
+/**
+ * The refresh cookie is shared by every tab and is rotated after each use.
+ * A cross-tab lock prevents two tabs from submitting the same cookie at once.
+ */
+function exchangeRefreshCookieSafely(): Promise<AuthResponse | null> {
+  if (navigator.locks) {
+    return navigator.locks.request('msm-auth-refresh', exchangeRefreshCookie);
+  }
+  return exchangeRefreshCookie();
+}
 
 /** Exchange the refresh cookie for a new access token. Concurrent callers share one request. */
 export function refreshSession(): Promise<AuthResponse | null> {
-  refreshInFlight ??= fetch(`${BASE_URL}/auth/refresh`, { method: 'POST', credentials: 'include' })
-    .then(async (res) => {
-      if (!res.ok) return null;
-      const data = (await res.json()) as AuthResponse;
-      accessToken = data.accessToken;
-      return data;
+  refreshInFlight ??= exchangeRefreshCookieSafely()
+    .then((session) => {
+      if (!session) return null;
+      accessToken = session.accessToken;
+      onSessionChanged?.(session);
+      return session;
     })
     .catch(() => null)
     .finally(() => {
