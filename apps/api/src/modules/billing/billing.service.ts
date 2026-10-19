@@ -89,6 +89,44 @@ export async function preview(jobId: string, actor: Actor): Promise<BillPreviewD
 
 const invalid = (field: string, message: string) => HttpError.badRequest('Invalid request', { [field]: [message] });
 
+/**
+ * Allocate an invoice number while holding the branch/month counter row lock.
+ *
+ * The MAX lookup makes the counter self-healing after a restore, data import, or
+ * manual counter edit. Without it, a counter that is behind an existing invoice
+ * keeps generating the same duplicate number because the failed transaction also
+ * rolls its counter increment back.
+ */
+async function nextInvoiceNumber(tx: Prisma.TransactionClient, branch: { id: string; code: string }, now: Date) {
+  const month = period(now);
+  const counterPeriod = `INV-${month}`;
+  const prefix = `INV-${branch.code}-${month}-`;
+  const [row] = await tx.$queryRaw<{ last_seq: number }[]>`
+    INSERT INTO job_counters (branch_id, period, last_seq)
+    VALUES (
+      ${branch.id}::uuid,
+      ${counterPeriod},
+      COALESCE((
+        SELECT MAX(substring(invoice_number FROM '([0-9]+)$')::integer)
+        FROM invoices
+        WHERE branch_id = ${branch.id}::uuid
+          AND invoice_number LIKE ${prefix + '%'}
+      ), 0) + 1
+    )
+    ON CONFLICT (branch_id, period) DO UPDATE
+    SET last_seq = GREATEST(
+      job_counters.last_seq + 1,
+      COALESCE((
+        SELECT MAX(substring(invoice_number FROM '([0-9]+)$')::integer)
+        FROM invoices
+        WHERE branch_id = ${branch.id}::uuid
+          AND invoice_number LIKE ${prefix + '%'}
+      ), 0) + 1
+    )
+    RETURNING last_seq`;
+  return `${prefix}${String(row!.last_seq).padStart(4, '0')}`;
+}
+
 export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   const job = await loadBillJob(jobId, actor);
   assertDeliverable(job.status);
@@ -123,12 +161,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
     await recordStatus(tx, { jobId, from: job.status, to: 'DELIVERED', actorId: actor.sub, remark: `Delivered to ${data.deliveredTo}${data.note ? ` — ${data.note}` : ''}` });
 
     const branch = await tx.branch.findUniqueOrThrow({ where: { id: job.branchId }, select: { id: true, code: true } });
-    const p = `INV-${period(now)}`; // invoice series shares the per-branch counter table under its own key
-    const [row] = await tx.$queryRaw<{ last_seq: number }[]>`
-      INSERT INTO job_counters (branch_id, period, last_seq) VALUES (${branch.id}::uuid, ${p}, 1)
-      ON CONFLICT (branch_id, period) DO UPDATE SET last_seq = job_counters.last_seq + 1
-      RETURNING last_seq`;
-    const invoiceNumber = `INV-${branch.code}-${period(now)}-${String(row!.last_seq).padStart(4, '0')}`;
+    const invoiceNumber = await nextInvoiceNumber(tx, branch, now);
 
     const invoice = await tx.invoice.create({
       data: {

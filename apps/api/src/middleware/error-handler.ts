@@ -19,6 +19,8 @@ const UNIQUE_CONSTRAINTS: Record<string, [string, string]> = {
   faults_name_key: ['name', 'This fault already exists'],
   fault_categories_name_key: ['name', 'This category already exists'],
   parts_code_key: ['code', 'A part with this code already exists'],
+  invoices_invoice_number_key: ['invoiceNumber', 'That invoice number already exists. Refresh and try again'],
+  invoices_job_id_key: ['job', 'An invoice has already been created for this job. Refresh the job to view it'],
 };
 
 const constraintName = (err: Prisma.PrismaClientKnownRequestError): string | undefined =>
