@@ -61,9 +61,13 @@ async function main() {
   const userDefs = [
     { role: 'SUPER_ADMIN', username: 'superadmin', name: 'Super Admin (demo)', branchId: null, email: 'superadmin@quickfix.example', phone: '+91 90000 00001' },
     { role: 'BRANCH_MANAGER', username: 'manager', name: 'Branch Manager', branchId: serviceCenter.id, email: 'manager@quickfix.example', phone: '+91 90000 00002' },
+    { role: 'BRANCH_MANAGER', username: 'gajanan', name: 'Gajanan', branchId: serviceCenter.id, email: 'gajanan@quickfix.example', phone: '+91 91000 00001' },
     { role: 'CCO', username: 'cco', name: 'Customer Care Officer', branchId: serviceCenter.id, email: 'cco@quickfix.example', phone: '+91 90000 00003' },
+    { role: 'CCO', username: 'santosh', name: 'Santosh', branchId: serviceCenter.id, email: 'santosh@quickfix.example', phone: '+91 91000 00002' },
     { role: 'ENGINEER', username: 'engineer', name: 'Engineer One', branchId: serviceCenter.id, email: 'engineer1@quickfix.example', phone: '+91 90000 00004' },
     { role: 'ENGINEER', username: 'engineer2', name: 'Engineer Two', branchId: serviceCenter.id, email: 'engineer2@quickfix.example', phone: '+91 90000 00005' },
+    { role: 'ENGINEER', username: 'purushottam', name: 'Purushottam', branchId: serviceCenter.id, email: 'purushottam@quickfix.example', phone: '+91 91000 00003' },
+    { role: 'ENGINEER', username: 'ankit', name: 'Ankit', branchId: serviceCenter.id, email: 'ankit@quickfix.example', phone: '+91 91000 00004' },
     { role: 'STOREKEEPER', username: 'storekeeper', name: 'Storekeeper', branchId: serviceCenter.id, email: 'store@quickfix.example', phone: '+91 90000 00006' },
     { role: 'ACCOUNTS', username: 'accounts', name: 'Accounts', branchId: serviceCenter.id, email: 'accounts@quickfix.example', phone: '+91 90000 00007' },
   ] satisfies Array<{ role: Role; username: string; name: string; branchId: string | null; email: string; phone: string }>;
