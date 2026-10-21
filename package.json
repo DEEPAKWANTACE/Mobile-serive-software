@@ -10,8 +10,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "npm run dev --workspace=@msm/api & npm run dev --workspace=@msm/web & wait",
-    "dev:api": "npm run dev --workspace=@msm/api",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "tsx watch --conditions=development --env-file=apps/api/.env apps/api/src/server.ts",
     "dev:web": "npm run dev --workspace=@msm/web",
     "build": "npm run build --workspace=@msm/shared && npm run build --workspace=@msm/api && npm run build --workspace=@msm/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
@@ -23,5 +23,8 @@
     "@prisma/engines@7.10.0": true,
     "esbuild@0.28.2": true,
     "prisma@7.10.0": true
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
   }
 }

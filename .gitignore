@@ -9,3 +9,8 @@ coverage/
 .DS_Store
 apps/api/src/generated/
 apps/api/uploads/
+
+# Local renders, smoke-test uploads, and exported documents are not production source.
+/tmp/
+/uploads/
+*.pdf
