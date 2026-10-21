@@ -4,6 +4,7 @@ import { Link } from 'react-router';
 import {
   AlertTriangle,
   ArrowLeftRight,
+  ArrowUpRight,
   BadgeCheck,
   Banknote,
   Boxes,
@@ -208,10 +209,23 @@ function EngineerDashboard() {
   const stats = useStats();
   const by = stats.data?.byStatus;
   const open = by ? ENGINEER_OPEN_STATUSES.reduce((sum, st) => sum + by[st], 0) : undefined;
-  const [status, setStatus] = useState<string>('');
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { data, isLoading } = useList<JobListItemDto>('jobs', { status, sort: 'oldest', pageSize: 50 });
-  const rows = status ? data?.items : data?.items.filter((j) => ENGINEER_OPEN_STATUSES.includes(j.status));
+  const [preview, setPreview] = useState<{
+    key: string;
+    title: string;
+    status?: JobStatus;
+    open?: boolean;
+    minAgeDays?: number;
+    transfersOnly?: boolean;
+  }>({ key: 'pending', title: 'My pending queue', open: true });
+  const listRef = useRef<HTMLDivElement>(null);
+  const { data, isLoading } = useList<JobListItemDto>('jobs', {
+    status: preview.status,
+    open: preview.open,
+    minAgeDays: preview.minAgeDays,
+    sort: 'oldest',
+    pageSize: 50,
+  });
+  const rows = preview.transfersOnly ? data?.items.filter((j) => j.hasPendingTransfer) : data?.items;
 
   const columns: Column<JobListItemDto>[] = [
     { header: 'Job no.', cell: jobLink },
@@ -236,26 +250,34 @@ function EngineerDashboard() {
   const transfers = incoming.data && outgoing.data ? incoming.data.length + outgoing.data.length : undefined;
   const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
 
-  const hoverPreview = (next: string) => ({
-    onMouseEnter: () => { hoverTimer.current = setTimeout(() => setStatus(next), 2000); },
-    onMouseLeave: () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); },
-    onFocus: () => setStatus(next),
-  });
-  const card = (label: string, st: JobStatus, icon: React.ComponentType<{ className?: string }>, tone?: 'warning' | 'brand') => (
-    <Link to={`/jobs?status=${st}`} {...hoverPreview(st)} className={`rounded-xl text-left ${status === st ? 'ring-2 ring-brand-500' : ''}`}>
-      <StatCard label={label} value={by?.[st]} tone={tone} icon={icon} />
-    </Link>
+  const choosePreview = (next: typeof preview) => {
+    setPreview(next);
+    requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
+  const card = (
+    label: string,
+    st: JobStatus,
+    icon: React.ComponentType<{ className?: string }>,
+    tone?: 'warning' | 'brand',
+  ) => (
+    <EngineerPreviewCard
+      label={label}
+      value={by?.[st]}
+      icon={icon}
+      tone={tone}
+      selected={preview.key === st}
+      viewTo={`/jobs?status=${st}`}
+      onPreview={() => choosePreview({ key: st, title: JOB_STATUS_LABELS[st], status: st })}
+    />
   );
 
   return (
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Link to="/jobs?open=true" {...hoverPreview('')}><StatCard label="Total assigned" value={stats.data?.total} icon={Users} hint="All active jobs with you" /></Link>
-        <Link to="/jobs?open=true" {...hoverPreview('')} className={`rounded-xl text-left ${status === '' ? 'ring-2 ring-brand-500' : ''}`}>
-          <StatCard label="Pending" value={open} tone="brand" icon={ClipboardList} hint="Diagnosis, repair & testing" />
-        </Link>
-        <Link to="/jobs?status=READY_FOR_DELIVERY" {...hoverPreview('READY_FOR_DELIVERY')}><StatCard label="Completed" value={completed} tone="good" icon={PackageCheck} hint="Returned OK" /></Link>
-        <Link to="/jobs?view=over15" {...hoverPreview('')}><StatCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" /></Link>
+        <EngineerPreviewCard label="Total assigned" value={stats.data?.total} icon={Users} hint="All active jobs with you" selected={preview.key === 'total'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'total', title: 'All active jobs', open: true })} />
+        <EngineerPreviewCard label="Pending" value={open} tone="brand" icon={ClipboardList} hint="Diagnosis, repair & testing" selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue', open: true })} />
+        <EngineerPreviewCard label="Completed" value={completed} tone="good" icon={PackageCheck} hint="Returned OK" selected={preview.key === 'completed'} viewTo="/jobs?status=READY_FOR_DELIVERY" onPreview={() => choosePreview({ key: 'completed', title: JOB_STATUS_LABELS.READY_FOR_DELIVERY, status: 'READY_FOR_DELIVERY' })} />
+        <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
@@ -265,7 +287,7 @@ function EngineerDashboard() {
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
         {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
-        <Link to="/jobs?open=true" {...hoverPreview('')}><StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" /></Link>
+        <EngineerPreviewCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" selected={preview.key === 'transfers'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'transfers', title: 'Jobs with transfer requests', open: true, transfersOnly: true })} />
       </div>
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
@@ -301,10 +323,53 @@ function EngineerDashboard() {
           </ul>
         </Card>
       )}
-      <Card title={status ? JOB_STATUS_LABELS[status as JobStatus] : 'My queue'} subtitle="Oldest first" icon={ClipboardList}>
-        <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
-      </Card>
+      <div ref={listRef} className="scroll-mt-4">
+        <Card title={preview.title} subtitle="Oldest first · use View all to open the full filtered page" icon={ClipboardList}>
+          <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
+        </Card>
+      </div>
     </>
+  );
+}
+
+function EngineerPreviewCard({
+  label,
+  value,
+  icon,
+  hint,
+  tone,
+  selected,
+  viewTo,
+  onPreview,
+}: {
+  label: string;
+  value: number | undefined;
+  icon: React.ComponentType<{ className?: string }>;
+  hint?: string;
+  tone?: 'default' | 'brand' | 'good' | 'warning' | 'critical';
+  selected: boolean;
+  viewTo: string;
+  onPreview: () => void;
+}) {
+  return (
+    <div className={`relative rounded-xl transition ${selected ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
+      <button
+        type="button"
+        onClick={onPreview}
+        aria-pressed={selected}
+        aria-label={`Preview ${label} below`}
+        className="block h-full w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none [&>div]:pb-10"
+      >
+        <StatCard label={label} value={value} tone={tone} icon={icon} hint={hint} />
+      </button>
+      <Link
+        to={viewTo}
+        className="absolute right-3 bottom-3 z-10 inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 hover:text-brand-900 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none"
+        aria-label={`View all ${label} jobs`}
+      >
+        View all <ArrowUpRight className="size-3.5" />
+      </Link>
+    </div>
   );
 }
 
