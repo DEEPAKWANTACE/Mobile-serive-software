@@ -29,7 +29,6 @@ import {
   type JobPhotoDto,
   type PhotoKind,
 } from '@msm/shared';
-import { Eye, EyeOff } from 'lucide-react';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -135,7 +134,7 @@ export function JobDetailPage() {
                 context={{
                   customerName: job.customer.name,
                   jobNumber: job.jobNumber,
-                  device: `${job.brand.name} ${job.model.name}`,
+                  device: job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim(),
                   branchName: job.branch.name,
                   branchPhone: job.branch.phone,
                   estimate: job.quotedAmount ?? job.estimatedAmount,
@@ -223,14 +222,14 @@ function JobInfo({ job }: { job: JobDto }) {
         actions={
           !CLOSED_STATUSES.includes(job.status) && (
             <Button variant="link" onClick={() => setEditingDevice(true)}>
-              {job.imei || job.serialNumber ? 'Edit IMEI / serial' : 'Add IMEI / serial'}
+              {job.jobType === 'MOBILE' ? (job.imei || job.imei2 ? 'Edit IMEIs' : 'Add IMEIs') : (job.serialNumber ? 'Edit serial' : 'Add serial')}
             </Button>
           )
         }
       >
-        {!job.imei && !job.serialNumber && job.status !== 'DELIVERED' && (
+        {((job.jobType === 'MOBILE' && (!job.imei || !job.imei2)) || (job.jobType === 'ACCESSORY' && !job.serialNumber)) && job.status !== 'DELIVERED' && (
           <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            IMEI / serial not recorded yet — it must be added before the phone is delivered.
+            {job.jobType === 'MOBILE' ? 'Both IMEIs must be recorded before delivery.' : 'The serial number must be recorded before delivery.'}
           </div>
         )}
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -246,14 +245,14 @@ function JobInfo({ job }: { job: JobDto }) {
           <Row label="Address">{job.customer.address}</Row>
           <Row label="Retailer">{job.retailer}</Row>
           <Row label="Device">
-            {job.brand.name} {job.model.name}
+            {job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()}
           </Row>
-          <Row label="IMEI">{job.imei && <span className="font-mono">{job.imei}</span>}</Row>
+          <Row label="IMEI 1">{job.imei && <span className="font-mono">{job.imei}</span>}</Row>
+          <Row label="IMEI 2">{job.imei2 && <span className="font-mono">{job.imei2}</span>}</Row>
           <Row label="Serial no.">{job.serialNumber && <span className="font-mono">{job.serialNumber}</span>}</Row>
           <Row label="Colour">{job.color}</Row>
           <Row label="Warranty">{job.warranty && WARRANTY_LABELS[job.warranty]}</Row>
           <Row label="Phone damaged">{job.phoneDamaged ? <span className="font-medium text-amber-700">Yes</span> : 'No'}</Row>
-          <Row label="Phone password / pattern">{job.devicePassword && <SecretValue value={job.devicePassword} />}</Row>
         </dl>
         <Modal open={editingDevice} onClose={() => setEditingDevice(false)} title="IMEI / serial number" size="sm">
           {editingDevice && <DeviceForm job={job} onDone={() => setEditingDevice(false)} />}
@@ -360,18 +359,6 @@ function PaymentForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
       </Field>
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Receive" />
     </form>
-  );
-}
-
-function SecretValue({ value }: { value: string }) {
-  const [shown, setShown] = useState(false);
-  return (
-    <span className="inline-flex items-center gap-2">
-      <span className="font-mono">{shown ? value : '••••••'}</span>
-      <button type="button" onClick={() => setShown((v) => !v)} className="text-slate-500 hover:text-slate-800" aria-label={shown ? 'Hide password' : 'Show password'}>
-        {shown ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </button>
-    </span>
   );
 }
 
@@ -484,7 +471,7 @@ function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
   const { register, handleSubmit, setError, watch, formState: { errors } } = useForm<JobDeviceUpdateInput, unknown, JobDeviceUpdateData>({
     resolver: zodResolver(jobDeviceUpdateSchema),
-    defaultValues: { imei: job.imei ?? '', serialNumber: job.serialNumber ?? '' },
+    defaultValues: { imei: job.imei ?? '', imei2: job.imei2 ?? '', serialNumber: job.serialNumber ?? '' },
   });
   const save = useMutation({
     mutationFn: (data: JobDeviceUpdateData) => api.patch(`/jobs/${job.id}/device`, data),
@@ -498,13 +485,20 @@ function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
 
   return (
     <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
-      <Field label="IMEI" error={errors.imei?.message} hint="15 digits — dial *#06#">
-        <input {...register('imei')} inputMode="numeric" maxLength={15} autoFocus className={`${inputClass} font-mono`} />
-      </Field>
-      <ImeiWarning imei={watch('imei')} excludeJobId={job.id} />
-      <Field label="Serial number" error={errors.serialNumber?.message}>
-        <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
-      </Field>
+      {job.jobType === 'MOBILE' ? <>
+        <Field label="IMEI 1" error={errors.imei?.message} hint="15 digits — dial *#06#">
+          <input {...register('imei')} inputMode="numeric" maxLength={15} autoFocus className={`${inputClass} font-mono`} />
+        </Field>
+        <ImeiWarning imei={watch('imei')} excludeJobId={job.id} />
+        <Field label="IMEI 2" error={errors.imei2?.message} hint="15 digits — dial *#06#">
+          <input {...register('imei2')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
+        </Field>
+        <ImeiWarning imei={watch('imei2')} excludeJobId={job.id} />
+      </> : (
+        <Field label="Serial number" error={errors.serialNumber?.message}>
+          <input {...register('serialNumber')} autoFocus className={`${inputClass} font-mono uppercase`} />
+        </Field>
+      )}
       <FormActions onCancel={onDone} loading={save.isPending} />
     </form>
   );

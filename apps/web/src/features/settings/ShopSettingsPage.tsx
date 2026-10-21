@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { shopSettingsSchema, type ShopSettingsData, type ShopSettingsDto, type ShopSettingsInput } from '@msm/shared';
+import { branchWarrantySchema, shopSettingsSchema, type AccessoryOptionDto, type BranchDto, type BranchWarrantyData, type ShopSettingsData, type ShopSettingsDto, type ShopSettingsInput } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
@@ -13,8 +13,11 @@ import { api } from '@/lib/api-client';
 import { handleFormError } from '@/lib/form-errors';
 import { compressImage } from '@/lib/image';
 import { useShopSettings } from './useShopSettings';
+import { useAuth } from '@/features/auth/auth-context';
+import { useOptions } from '@/lib/crud';
 
-export function ShopSettingsPage() {
+export function ShopSettingsPage({ branchDefaultsOnly = false }: { branchDefaultsOnly?: boolean }) {
+  if (branchDefaultsOnly) return <BranchJobDefaults />;
   const { data } = useShopSettings();
   if (!data) return <p className="text-sm text-slate-500">Loading…</p>;
   return <SettingsForm settings={data} />;
@@ -101,6 +104,60 @@ function SettingsForm({ settings }: { settings: ShopSettingsDto }) {
           </div>
         </form>
       </Card>
+      <AccessoryOptionsCard />
     </div>
   );
+}
+
+function BranchJobDefaults() {
+  const queryClient = useQueryClient();
+  const defaults = useQuery({ queryKey: ['settings', 'branch-warranty'], queryFn: () => api.get<BranchWarrantyData>('/settings/branch-warranty') });
+  if (!defaults.data) return <p className="text-sm text-slate-500">Loading…</p>;
+  return <div className="mx-auto max-w-3xl space-y-5">
+    <PageHeader title="Job Defaults" description="Defaults used by CCOs for this branch" />
+    <WarrantyDefaultsForm initial={defaults.data} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['settings', 'branch-warranty'] })} />
+    <AccessoryOptionsCard />
+  </div>;
+}
+
+function WarrantyDefaultsForm({ initial, onSaved }: { initial: BranchWarrantyData; onSaved: () => void }) {
+  const { register, handleSubmit, setError, formState: { errors } } = useForm<BranchWarrantyData>({ resolver: zodResolver(branchWarrantySchema), defaultValues: initial });
+  const save = useMutation({
+    mutationFn: (d: BranchWarrantyData) => api.put('/settings/branch-warranty', d),
+    onSuccess: () => { toast.success('Repair warranty defaults saved'); onSaved(); },
+    onError: (e) => handleFormError(e, setError),
+  });
+  return <Card title="Repair warranty defaults">
+    <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
+      <Field label="Default warranty period" error={errors.warrantyPeriod?.message}><input {...register('warrantyPeriod')} className={inputClass} placeholder="e.g. 30 days" /></Field>
+      <Field label="Default warranty terms" error={errors.warrantyTerms?.message}><textarea {...register('warrantyTerms')} rows={3} className={inputClass} /></Field>
+      <div className="flex justify-end"><Button type="submit" loading={save.isPending}>Save defaults</Button></div>
+    </form>
+  </Card>;
+}
+
+function AccessoryOptionsCard() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isSuper = user?.role === 'SUPER_ADMIN';
+  const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: isSuper });
+  const [branchId, setBranchId] = useState('');
+  const [name, setName] = useState('');
+  const qs = isSuper ? (branchId ? `?scope=branch&branchId=${branchId}` : '?scope=global') : '?scope=branch';
+  const options = useQuery({ queryKey: ['settings', 'accessories', qs], queryFn: () => api.get<AccessoryOptionDto[]>(`/settings/accessories${qs}`) });
+  const add = useMutation({
+    mutationFn: () => api.post('/settings/accessories', { name, sortOrder: (options.data?.length ?? 0) * 10, branchId: isSuper ? (branchId || null) : null }),
+    onSuccess: () => { setName(''); toast.success('Accessory option added'); void queryClient.invalidateQueries({ queryKey: ['settings', 'accessories'] }); },
+  });
+  const toggle = useMutation({
+    mutationFn: (o: AccessoryOptionDto) => api.patch(`/settings/accessories/${o.id}`, { isActive: !o.isActive }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings', 'accessories'] }),
+  });
+  return <Card title="Accessories received list" subtitle={isSuper ? 'Global defaults or a selected branch' : 'Editable only for your branch'}>
+    {isSuper && <Field label="List scope"><select value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputClass}><option value="">Global defaults</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}</select></Field>}
+    <div className="mt-4 flex gap-2"><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} placeholder="Add option" /><Button disabled={!name.trim()} loading={add.isPending} onClick={() => add.mutate()}>Add</Button></div>
+    <ul className="mt-4 divide-y divide-slate-100 rounded-md border border-slate-200">
+      {(options.data ?? []).map((o) => <li key={o.id} className="flex items-center justify-between px-3 py-2 text-sm"><span className={o.isActive ? '' : 'text-slate-400 line-through'}>{o.name}</span><Button size="sm" variant="secondary" onClick={() => toggle.mutate(o)}>{o.isActive ? 'Deactivate' : 'Activate'}</Button></li>)}
+    </ul>
+  </Card>;
 }

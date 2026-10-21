@@ -56,7 +56,7 @@ export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
 }
 
 function jobScope(actor: Actor): Prisma.JobWhereInput {
-  return isEngineer(actor) ? { assignedEngineerId: actor.sub } : jobBranchScope(actor);
+  return isEngineer(actor) ? { assignedEngineerId: actor.sub, status: { in: [...ENGINEER_OPEN_STATUSES] } } : jobBranchScope(actor);
 }
 
 /** True if the actor's branch owns the job or currently has the phone (Super Admin: always). */
@@ -165,6 +165,7 @@ export function jobMoney(j: MoneySource) {
  * (Aadhaar required for flagged faults) are enforced and a job never exists without its photos.
  */
 export async function create(data: JobCreateData, photos: IncomingPhotos, actor: Actor) {
+  if (actor.role !== ROLES.CCO) throw HttpError.forbidden('Only a CCO can create a job sheet');
   // Branch staff create jobs for their own branch; Super Admin picks the branch.
   const branchId = actor.branchId ?? data.branchId;
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select the branch'] });
@@ -173,7 +174,9 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
 
   const [branch, model, faultRows, priceRows] = await Promise.all([
     prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true } }),
-    prisma.deviceModel.findUnique({ where: { id: data.deviceModelId }, select: { brandId: true, isActive: true } }),
+    data.deviceModelId
+      ? prisma.deviceModel.findUnique({ where: { id: data.deviceModelId }, select: { brandId: true, isActive: true } })
+      : Promise.resolve(null),
     prisma.fault.findMany({ where: { id: { in: faultIds }, isActive: true }, select: { id: true, name: true, requiresIdProof: true } }),
     prisma.servicePrice.findMany({
       where: { id: { in: priceIds } },
@@ -181,7 +184,7 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     }),
   ]);
   if (!branch || !branch.isActive) throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
-  if (!model || !model.isActive || model.brandId !== data.brandId) {
+  if (data.jobType === 'MOBILE' && (!model || !model.isActive || model.brandId !== data.brandId)) {
     throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
   }
   if (faultRows.length !== faultIds.length) {
@@ -227,6 +230,8 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     inwardById: _i,
     devicePassword,
     totalAmount: _t,
+    skipDiagnosis,
+    customerAlreadyApproved,
     ...jobFields
   } = data;
 
@@ -253,13 +258,31 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
           createdById: actor.sub,
           inwardById,
           devicePasswordEnc: devicePassword ? encryptSecret(devicePassword) : null,
-          ...(engineer && { assignedEngineerId: engineer.id, assignedAt: new Date(), status: 'ASSIGNED' as const }),
+          ...(engineer && {
+            assignedEngineerId: engineer.id,
+            assignedAt: new Date(),
+            status: skipDiagnosis ? (customerAlreadyApproved ? 'IN_REPAIR' as const : 'AWAITING_APPROVAL' as const) : 'ASSIGNED' as const,
+          }),
+          ...(skipDiagnosis && {
+            diagnosisNotes: 'Estimate entered by CCO at intake',
+            diagnosedAt: new Date(),
+            quotedAmount: estimatedAmount,
+            customerResponse: customerAlreadyApproved ? 'Approved by customer at intake' : null,
+            ...(customerAlreadyApproved && {
+              approvedAmount: estimatedAmount,
+              approvedAt: new Date(),
+              approvedById: actor.sub,
+            }),
+          }),
           faults: { create: lines },
+          ...(skipDiagnosis && estimatedAmount !== null && {
+            estimateLines: { create: [{ description: 'Repair estimate', amount: estimatedAmount, sortOrder: 0 }] },
+          }),
         },
         select: { id: true, jobNumber: true, status: true },
       });
       await recordStatus(tx, { jobId: job.id, from: null, to: job.status, actorId: actor.sub, engineerId: engineer?.id ?? null, remark: 'Job sheet created' });
-      if (engineer) await startAssignment(tx, { jobId: job.id, engineerId: engineer.id, byId: actor.sub, endReason: 'REASSIGNED', note: 'Assigned at intake' });
+      if (engineer) await startAssignment(tx, { jobId: job.id, engineerId: engineer.id, byId: actor.sub, endReason: 'REASSIGNED', note: skipDiagnosis ? 'Assigned with CCO estimate' : 'Assigned at intake' });
 
       await createPhotoRows(tx, job.id, prepared, actor);
 
@@ -325,6 +348,8 @@ const listSelect = {
   status: true,
   createdAt: true,
   imei: true,
+  jobType: true,
+  accessoryName: true,
   customer: { select: { name: true, phone: true, city: true } },
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
@@ -369,7 +394,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     and.push(query.delivered ? { deliveredAt: r } : { createdAt: r });
   }
   if (query.product) {
-    and.push({ OR: [{ brand: { name: contains(query.product) } }, { deviceModel: { name: contains(query.product) } }] });
+    and.push({ OR: [{ brand: { name: contains(query.product) } }, { deviceModel: { name: contains(query.product) } }, { accessoryName: contains(query.product) }] });
   }
   if (query.delivered) and.push({ status: 'DELIVERED' });
   if (query.balanceDue) and.push({ id: { in: await jobIdsWithBalanceDue() } });
@@ -379,6 +404,8 @@ export async function list(query: JobListQuery, actor: Actor) {
         { jobNumber: contains(s) },
         { customer: { city: contains(s) } },
         { imei: { startsWith: s } },
+        { imei2: { startsWith: s } },
+        { accessoryName: contains(s) },
         { serialNumber: contains(s) },
         { customer: { phone: { startsWith: s } } },
         { customer: { name: contains(s) } },
@@ -401,7 +428,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     status: j.status,
     createdAt: j.createdAt.toISOString(),
     customer: { name: j.customer.name, phone: j.customer.phone },
-    device: `${j.brand.name} ${j.deviceModel.name}`,
+    device: j.jobType === 'ACCESSORY' ? (j.accessoryName ?? 'Accessory') : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim(),
     imei: j.imei,
     faults: j.faults.map((f) => f.fault.name),
     branch: j.branch,
@@ -438,12 +465,16 @@ const detailSelect = {
   status: true,
   createdAt: true,
   imei: true,
+  imei2: true,
+  jobType: true,
+  accessoryName: true,
   serialNumber: true,
   color: true,
   customerComplaint: true,
   accessories: true,
   accessoriesOther: true,
   conditionNotes: true,
+  physicalConditionRemark: true,
   branch: { select: { id: true, code: true, name: true, address: true, phone: true } },
   customer: { select: { id: true, name: true, phone: true, city: true, altPhone: true, email: true, address: true } },
   brand: { select: { id: true, name: true } },
@@ -521,6 +552,8 @@ const detailSelect = {
   rwrReason: true,
   rwrNote: true,
   rwrAt: true,
+  warrantyPeriod: true,
+  warrantyTerms: true,
   transfers: {
     where: { status: 'PENDING' },
     select: {
@@ -568,6 +601,9 @@ export async function loadForAccess(id: string, actor: Actor) {
     // The receiving engineer may look at a job offered to them before accepting.
     const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
     if (!offered) throw HttpError.forbidden('This job is not assigned to you');
+  }
+  if (isEngineer(actor) && job.assignedEngineerId === actor.sub && !ENGINEER_OPEN_STATUSES.includes(job.status)) {
+    throw HttpError.forbidden('This job no longer needs engineer action');
   }
   return job;
 }

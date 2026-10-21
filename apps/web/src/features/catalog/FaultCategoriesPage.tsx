@@ -8,6 +8,7 @@ import {
   type FaultCategoryCreateData,
   type FaultCategoryCreateInput,
   type FaultCategoryDto,
+  ROLES,
 } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
@@ -22,10 +23,15 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
 import { useList, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function FaultCategoriesPage() {
   const list = useListState({});
-  const { data, isLoading } = useList<FaultCategoryDto>('fault-categories', list.params);
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  const { data, isLoading } = useList<FaultCategoryDto>('fault-categories', { ...list.params, ...scope });
   const [editing, setEditing] = useState<FaultCategoryDto | 'new' | null>(null);
 
   const columns: Column<FaultCategoryDto>[] = [
@@ -62,6 +68,7 @@ export function FaultCategoriesPage() {
         actions={<Button onClick={() => setEditing('new')}>Add category</Button>}
       />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search category" />
         <StatusFilter value={list.status} onChange={list.setStatus} />
       </FilterBar>
@@ -69,17 +76,17 @@ export function FaultCategoriesPage() {
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={list.setPage} />}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add category' : 'Edit category'} size="sm">
-        {editing && <CategoryForm category={editing === 'new' ? undefined : editing} onDone={() => setEditing(null)} />}
+        {editing && <CategoryForm category={editing === 'new' ? undefined : editing} branchId={scopeBranch || null} onDone={() => setEditing(null)} />}
       </Modal>
     </div>
   );
 }
 
-function CategoryForm({ category, onDone }: { category?: FaultCategoryDto; onDone: () => void }) {
+function CategoryForm({ category, branchId, onDone }: { category?: FaultCategoryDto; branchId: string | null; onDone: () => void }) {
   const save = useSave<FaultCategoryCreateData>('fault-categories');
   const { register, handleSubmit, setError, formState: { errors } } = useForm<FaultCategoryCreateInput, unknown, FaultCategoryCreateData>({
     resolver: zodResolver(faultCategoryCreateSchema),
-    defaultValues: { name: category?.name ?? '', sortOrder: category?.sortOrder ?? 0 },
+    defaultValues: { name: category?.name ?? '', sortOrder: category?.sortOrder ?? 0, branchId },
   });
 
   const onSubmit = handleSubmit((data) =>

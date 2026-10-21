@@ -75,6 +75,10 @@ export async function rwr(req: Request<{ id: string }>, res: Response) {
   res.json(await workflow.returnWithoutRepair(req.params.id, req.body, files, actorOf(req)));
 }
 
+export async function finalizeRwr(req: Request<{ id: string }>, res: Response) {
+  res.json(await workflow.finalizeRwr(req.params.id, actorOf(req)));
+}
+
 export async function listTransfers(req: Request, res: Response<unknown, { query: TransferListQuery }>) {
   res.json(await transfers.list(res.locals.query, actorOf(req)));
 }

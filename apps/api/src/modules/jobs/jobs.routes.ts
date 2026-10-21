@@ -62,11 +62,11 @@ export const jobRoutes = Router();
 // Storekeeper / accounts access is added with their workflow modules.
 // Engineers are further limited (in the service) to jobs assigned to them.
 const viewers = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER] as const;
-const creators = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
+const creators = [ROLES.CCO] as const;
 const assigners = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 
 jobRoutes.get('/', authorize(...viewers), validate({ query: jobListQuerySchema }), controller.list);
-// Multipart: "data" (JSON job sheet) + optional CUSTOMER / ID_PROOF / DEVICE image files.
+// Multipart: "data" + intake photos. Job sheets are created by CCOs.
 jobRoutes.post(
   '/',
   authorize(...creators),
@@ -74,6 +74,7 @@ jobRoutes.post(
     { name: 'CUSTOMER', maxCount: 1 },
     { name: 'ID_PROOF', maxCount: 4 },
     { name: 'DEVICE', maxCount: PHOTO_MAX_PER_UPLOAD },
+    { name: 'PHYSICAL_CONDITION', maxCount: PHOTO_MAX_PER_UPLOAD },
   ]),
   multipartJson('data'),
   validate({ body: jobCreateSchema }),
@@ -107,20 +108,20 @@ jobRoutes.post(
 );
 jobRoutes.post(
   '/transfers/:transferId/cancel',
-  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER),
   validate({ params: transferParams }),
   controller.cancelTransfer,
 );
 jobRoutes.get('/:id', authorize(...viewers), validate({ params: idParamSchema }), controller.get);
 jobRoutes.post(
   '/:id/assign',
-  authorize(...assigners),
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: idParamSchema, body: jobAssignSchema }),
   controller.assign,
 );
 jobRoutes.patch(
   '/:id/device',
-  authorize(...viewers),
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER),
   validate({ params: idParamSchema, body: jobDeviceUpdateSchema }),
   controller.updateDevice,
 );
@@ -144,13 +145,13 @@ jobRoutes.put(
 );
 jobRoutes.post(
   '/:id/approval',
-  authorize(...assigners),
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: idParamSchema, body: approvalSchema }),
   controller.decideApproval,
 );
 jobRoutes.post(
   '/:id/status',
-  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: statusChangeSchema }),
   controller.changeStatus,
 );
@@ -168,20 +169,21 @@ jobRoutes.post(
 );
 jobRoutes.post(
   '/:id/spare-received',
-  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: spareReceivedSchema }),
   controller.spareReceived,
 );
 // Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, at least one)
 jobRoutes.post(
   '/:id/rwr',
-  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO),
+  authorize(ROLES.ENGINEER, ROLES.CCO),
   validate({ params: idParamSchema }),
   upload.array('photos', PHOTO_MAX_PER_UPLOAD),
   multipartJson('data'),
   validate({ body: rwrSchema }),
   controller.rwr,
 );
+jobRoutes.post('/:id/rwr/finalize', authorize(ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), controller.finalizeRwr);
 jobRoutes.post(
   '/:id/parts',
   authorize(ROLES.ENGINEER),
@@ -190,39 +192,39 @@ jobRoutes.post(
 );
 
 // ─── Delivery & billing (counter) ───────────────────────────────────────────
-jobRoutes.get('/:id/bill-preview', authorize(...assigners), validate({ params: idParamSchema }), billing.preview);
-jobRoutes.post('/:id/deliver', authorize(...assigners), validate({ params: idParamSchema, body: deliverySchema }), billing.deliver);
-jobRoutes.get('/:id/invoice', authorize(...assigners), validate({ params: idParamSchema }), billing.invoice);
+jobRoutes.get('/:id/bill-preview', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema }), billing.preview);
+jobRoutes.post('/:id/deliver', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: deliverySchema }), billing.deliver);
+jobRoutes.get('/:id/invoice', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema }), billing.invoice);
 
 // ─── Customer calls ─────────────────────────────────────────────────────────
 jobRoutes.get('/:id/calls', authorize(...assigners), validate({ params: idParamSchema }), async (req, res) => {
   res.json(await calling.jobCalls(req.params.id as string, actorOf(req)));
 });
-jobRoutes.post('/:id/calls', authorize(...assigners), validate({ params: idParamSchema, body: callLogCreateSchema }), async (req, res) => {
+jobRoutes.post('/:id/calls', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: callLogCreateSchema }), async (req, res) => {
   res.status(201).json(await calling.logCall(req.params.id as string, req.body, actorOf(req)));
 });
 
 // ─── L4 / main office ───────────────────────────────────────────────────────
-jobRoutes.post('/:id/l4/send', authorize(...viewers), validate({ params: idParamSchema, body: sendToL4Schema }), async (req, res) => {
+jobRoutes.post('/:id/l4/send', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER), validate({ params: idParamSchema, body: sendToL4Schema }), async (req, res) => {
   await l4.sendToL4(req.params.id as string, req.body, actorOf(req));
   res.status(204).end();
 });
-jobRoutes.post('/:id/l4/receive', authorize(...assigners), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+jobRoutes.post('/:id/l4/receive', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
   await l4.receive(req.params.id as string, req.body.note, actorOf(req));
   res.status(204).end();
 });
-jobRoutes.post('/:id/l4/send-back', authorize(...viewers), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+jobRoutes.post('/:id/l4/send-back', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
   await l4.sendBack(req.params.id as string, req.body.note, actorOf(req));
   res.status(204).end();
 });
 
 // ─── Corrections ────────────────────────────────────────────────────────────
-jobRoutes.patch('/:id', authorize(...assigners), validate({ params: idParamSchema, body: jobEditSchema }), async (req, res) => {
+jobRoutes.patch('/:id', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobEditSchema }), async (req, res) => {
   res.json(await editing.edit(req.params.id as string, req.body, actorOf(req)));
 });
 jobRoutes.delete(
   '/:id/photos/:photoId',
-  authorize(...assigners),
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: photoParams, body: photoDeleteSchema }),
   async (req, res) => {
     await editing.deletePhoto(req.params.id as string, req.params.photoId as string, req.body.reason, actorOf(req));
@@ -231,24 +233,24 @@ jobRoutes.delete(
 );
 
 // ─── Admin / counter actions ────────────────────────────────────────────────
-jobRoutes.post('/:id/unassign', authorize(...assigners), validate({ params: idParamSchema, body: unassignSchema }), async (req, res) => {
+jobRoutes.post('/:id/unassign', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: unassignSchema }), async (req, res) => {
   await service.unassign(req.params.id as string, req.body.note, actorOf(req));
   res.status(204).end();
 });
-jobRoutes.post('/:id/cancel', authorize(...assigners), validate({ params: idParamSchema, body: jobCancelSchema }), async (req, res) => {
+jobRoutes.post('/:id/cancel', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobCancelSchema }), async (req, res) => {
   await service.cancel(req.params.id as string, req.body, actorOf(req));
   res.status(204).end();
 });
-jobRoutes.delete('/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), async (req, res) => {
+jobRoutes.delete('/:id', authorize(ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), async (req, res) => {
   await service.remove(req.params.id as string, actorOf(req));
   res.status(204).end();
 });
-jobRoutes.post('/:id/payments', authorize(...assigners), validate({ params: idParamSchema, body: jobPaymentSchema }), async (req, res) => {
+jobRoutes.post('/:id/payments', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobPaymentSchema }), async (req, res) => {
   res.status(201).json(await service.addPayment(req.params.id as string, req.body, actorOf(req)));
 });
 jobRoutes.put(
   '/:id/repair-notes',
-  authorize(ROLES.ENGINEER, ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: repairNotesSchema }),
   async (req, res) => {
     await service.updateRepairNotes(req.params.id as string, req.body, actorOf(req));

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { partCreateSchema, type BrandDto, type ModelDto, type PartCreateData, type PartCreateInput, type PartDto } from '@msm/shared';
+import { partCreateSchema, ROLES, type BrandDto, type ModelDto, type PartCreateData, type PartCreateInput, type PartDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -17,15 +17,21 @@ import { useListState } from '@/hooks/use-list-state';
 import { useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { formatCurrency } from '@/lib/format';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function PartsPage() {
   const list = useListState({});
-  const { data, isLoading } = useList<PartDto>('parts', list.params);
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  const { data, isLoading } = useList<PartDto>('parts', { ...list.params, ...scope });
   const [editing, setEditing] = useState<PartDto | 'new' | null>(null);
 
   const columns: Column<PartDto>[] = [
     { header: 'Code', cell: (p) => <span className="font-mono font-semibold">{p.code}</span> },
     { header: 'Part', cell: (p) => <span className="font-medium">{p.name}</span> },
+    { header: 'Category', cell: (p) => p.category ? `${p.category}${p.subcategory ? ` › ${p.subcategory}` : ''}` : '—' },
     { header: 'For', cell: (p) => (p.model ? `${p.brand?.name ?? ''} ${p.model.name}` : (p.brand?.name ?? 'Any')) },
     { header: 'Selling', cell: (p) => formatCurrency(p.sellingPrice) },
     { header: 'Cost', cell: (p) => (p.costPrice !== null ? formatCurrency(p.costPrice) : '—') },
@@ -53,26 +59,30 @@ export function PartsPage() {
         actions={<Button onClick={() => setEditing('new')}>Add part</Button>}
       />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search code or name" />
         <StatusFilter value={list.status} onChange={list.setStatus} />
       </FilterBar>
       <DataTable columns={columns} rows={data?.items} rowKey={(p) => p.id} isLoading={isLoading} />
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={list.setPage} />}
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add part' : 'Edit part'} size="lg">
-        {editing && <PartForm part={editing === 'new' ? undefined : editing} onDone={() => setEditing(null)} />}
+        {editing && <PartForm part={editing === 'new' ? undefined : editing} branchId={scopeBranch || null} scope={scope} onDone={() => setEditing(null)} />}
       </Modal>
     </div>
   );
 }
 
-function PartForm({ part, onDone }: { part?: PartDto; onDone: () => void }) {
+function PartForm({ part, branchId: scopeBranch, scope, onDone }: { part?: PartDto; branchId: string | null; scope: { scope: string; branchId?: string }; onDone: () => void }) {
   const save = useSave<PartCreateData>('parts');
-  const { items: brands } = useOptions<BrandDto>('brands');
+  const { items: brands } = useOptions<BrandDto>('brands', scope);
   const { register, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<PartCreateInput, unknown, PartCreateData>({
     resolver: zodResolver(partCreateSchema),
     defaultValues: {
       code: part?.code ?? '',
       name: part?.name ?? '',
+      category: part?.category ?? '',
+      subcategory: part?.subcategory ?? '',
+      branchId: scopeBranch,
       brandId: part?.brand?.id ?? null,
       deviceModelId: part?.model?.id ?? null,
       sellingPrice: part?.sellingPrice ?? ('' as unknown as number),
@@ -103,6 +113,12 @@ function PartForm({ part, onDone }: { part?: PartDto; onDone: () => void }) {
       </Field>
       <Field label="Part name" required error={errors.name?.message}>
         <input {...register('name')} className={inputClass} placeholder="e.g. Display – Galaxy S24 OG" />
+      </Field>
+      <Field label="Category" error={errors.category?.message} hint="e.g. Display, Charging, Battery">
+        <input {...register('category')} className={inputClass} />
+      </Field>
+      <Field label="Subcategory" error={errors.subcategory?.message} hint="e.g. Not glowing, Broken, No touch">
+        <input {...register('subcategory')} className={inputClass} />
       </Field>
       <Field label="Brand" hint="Optional — leave blank for universal parts">
         <select

@@ -5,11 +5,15 @@ import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
+import { assertCatalogRow, catalogWhere, writeCatalogBranch } from '../../lib/catalog-scope.ts';
 
 export const partSelect = {
   id: true,
+  branchId: true,
   code: true,
   name: true,
+  category: true,
+  subcategory: true,
   sellingPrice: true,
   costPrice: true,
   reorderLevel: true,
@@ -25,10 +29,12 @@ export const toPartDto = ({ deviceModel, sellingPrice, costPrice, ...p }: Row): 
   model: deviceModel,
   sellingPrice: sellingPrice.toNumber(),
   costPrice: costPrice?.toNumber() ?? null,
+  isGlobal: p.branchId === null,
 });
 
-export async function list(query: PartListQuery) {
+export async function list(query: PartListQuery, actor: Actor) {
   const where: Prisma.PartWhereInput = {
+    ...catalogWhere(actor, query),
     isActive: query.isActive,
     brandId: query.brandId,
     deviceModelId: query.deviceModelId,
@@ -43,9 +49,13 @@ export async function list(query: PartListQuery) {
 
 /** Find an active part by its code, with stock at a branch (caller's own branch unless given). */
 export async function lookup(code: string, actor: Actor, branchId?: string): Promise<PartLookupDto> {
-  const part = await prisma.part.findUnique({ where: { code }, select: partSelect });
-  if (!part || !part.isActive) throw HttpError.notFound(`No active part with code ${code}`);
   const branch = actor.branchId ?? branchId;
+  const part = await prisma.part.findFirst({
+    where: { code, isActive: true, ...(branch ? { OR: [{ branchId: branch }, { branchId: null }] } : { branchId: null }) },
+    orderBy: { branchId: { sort: 'asc', nulls: 'last' } },
+    select: partSelect,
+  });
+  if (!part || !part.isActive) throw HttpError.notFound(`No active part with code ${code}`);
   const stock = branch
     ? ((await prisma.partStock.findUnique({ where: { partId_branchId: { partId: part.id, branchId: branch } }, select: { quantity: true } }))
         ?.quantity ?? 0)
@@ -63,8 +73,10 @@ async function assertModelMatchesBrand(data: { brandId?: string | null; deviceMo
 
 export async function create(data: PartCreateData, actor: Actor) {
   await assertModelMatchesBrand(data);
+  const branchId = writeCatalogBranch(actor, data.branchId);
+  const { branchId: _ignored, ...fields } = data;
   return prisma.$transaction(async (tx) => {
-    const row = await tx.part.create({ data, select: partSelect });
+    const row = await tx.part.create({ data: { ...fields, branchId }, select: partSelect });
     await recordAudit(
       { actorId: actor.sub, action: 'part.created', entityType: 'part', entityId: row.id, metadata: { ...data }, ip: actor.ip },
       tx,
@@ -75,8 +87,11 @@ export async function create(data: PartCreateData, actor: Actor) {
 
 export async function update(id: string, data: PartUpdateData, actor: Actor) {
   await assertModelMatchesBrand(data);
+  const current = await prisma.part.findUniqueOrThrow({ where: { id }, select: { branchId: true } });
+  assertCatalogRow(actor, current.branchId);
+  const { branchId: _ignored, ...changes } = data;
   return prisma.$transaction(async (tx) => {
-    const row = await tx.part.update({ where: { id }, data, select: partSelect });
+    const row = await tx.part.update({ where: { id }, data: changes, select: partSelect });
     await recordAudit(
       { actorId: actor.sub, action: 'part.updated', entityType: 'part', entityId: id, metadata: { ...data }, ip: actor.ip },
       tx,

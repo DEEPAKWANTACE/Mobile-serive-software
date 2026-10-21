@@ -56,32 +56,39 @@ model City {
 }
 
 model Branch {
-  stockTransfersOut StockTransfer[] @relation("StockTransferFrom")
-  stockTransfersIn  StockTransfer[] @relation("StockTransferTo")
-  jobsHere          Job[]           @relation("JobCurrentBranch")
-  movementsOut      JobMovement[]   @relation("MovementFrom")
-  movementsIn       JobMovement[]   @relation("MovementTo")
-  expenses          Expense[]
-  callLogs          CallLog[]
-  invoices          Invoice[]
-  partStocks        PartStock[]
-  stockMovements    StockMovement[]
-  id                String          @id @default(uuid(7)) @db.Uuid
-  cityId            String          @map("city_id") @db.Uuid
-  code              String          @unique // short code, used as job-number prefix
-  name              String
-  type              BranchType      @default(SERVICE_CENTER)
-  address           String?
-  phone             String?
-  isActive          Boolean         @default(true) @map("is_active")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  stockTransfersOut     StockTransfer[] @relation("StockTransferFrom")
+  stockTransfersIn      StockTransfer[] @relation("StockTransferTo")
+  jobsHere              Job[]           @relation("JobCurrentBranch")
+  movementsOut          JobMovement[]   @relation("MovementFrom")
+  movementsIn           JobMovement[]   @relation("MovementTo")
+  expenses              Expense[]
+  callLogs              CallLog[]
+  invoices              Invoice[]
+  partStocks            PartStock[]
+  stockMovements        StockMovement[]
+  id                    String          @id @default(uuid(7)) @db.Uuid
+  cityId                String          @map("city_id") @db.Uuid
+  code                  String          @unique // short code, used as job-number prefix
+  name                  String
+  type                  BranchType      @default(SERVICE_CENTER)
+  address               String?
+  phone                 String?
+  isActive              Boolean         @default(true) @map("is_active")
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  defaultWarrantyPeriod String?         @map("default_warranty_period")
+  defaultWarrantyTerms  String?         @map("default_warranty_terms")
 
-  city        City         @relation(fields: [cityId], references: [id])
-  users       User[]
-  jobs        Job[]
-  jobCounters JobCounter[]
-  payments    Payment[]
+  city             City              @relation(fields: [cityId], references: [id])
+  users            User[]
+  jobs             Job[]
+  jobCounters      JobCounter[]
+  payments         Payment[]
+  accessoryOptions AccessoryOption[]
+  brands           Brand[]
+  faultCategories  FaultCategory[]
+  faults           Fault[]
+  masterParts      Part[]
 
   @@index([cityId])
   @@map("branches")
@@ -185,14 +192,18 @@ model AuditLog {
 model Brand {
   parts     Part[]
   id        String   @id @default(uuid(7)) @db.Uuid
-  name      String   @unique
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   models DeviceModel[]
   jobs   Job[]
+  branch Branch?       @relation(fields: [branchId], references: [id])
 
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
   @@map("brands")
 }
 
@@ -216,22 +227,27 @@ model DeviceModel {
 /// Groups faults for quicker selection, e.g. "Battery" → "Not charging", "No backup".
 model FaultCategory {
   id        String   @id @default(uuid(7)) @db.Uuid
-  name      String   @unique
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   faults Fault[]
+  branch Branch? @relation(fields: [branchId], references: [id])
 
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
   @@map("fault_categories")
 }
 
 /// Problem / fault / service type the customer reports or the engineer diagnoses.
 model Fault {
   id              String   @id @default(uuid(7)) @db.Uuid
+  branchId        String?  @map("branch_id") @db.Uuid
   categoryId      String?  @map("category_id") @db.Uuid
-  name            String   @unique
+  name            String
   description     String?
   /// Jobs with this fault (e.g. software unlock) need the customer's Aadhaar/ID photo.
   requiresIdProof Boolean  @default(false) @map("requires_id_proof")
@@ -243,7 +259,10 @@ model Fault {
   prices        ServicePrice[]
   jobFaults     JobFault[]
   estimateLines JobEstimateLine[]
+  branch        Branch?           @relation(fields: [branchId], references: [id])
 
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
   @@index([categoryId])
   @@map("faults")
 }
@@ -297,9 +316,15 @@ enum JobStatus {
   TESTING // engineer testing the repaired phone
   READY_FOR_DELIVERY // "Returned OK": handed back to the counter
   SPARE_PENDING // "Spare not available": waiting for a part
+  RWR_PENDING // requested by CCO / engineer; locked until the branch manager finalises it
   RWR // returned without repair (reason + photos recorded)
   DELIVERED // handed back to the customer; job closed
   CANCELLED // cancelled by the counter (reason recorded); job closed
+}
+
+enum JobType {
+  MOBILE
+  ACCESSORY
 }
 
 enum WarrantyStatus {
@@ -338,80 +363,86 @@ enum TransferStatus {
 
 model Job {
   /// Dealer / shopkeeper who brought the phone (if not walk-in).
-  retailer           String?
+  retailer                String?
   /// Staff member who physically took the phone in (defaults to the creator).
-  inwardById         String?            @map("inward_by_id") @db.Uuid
-  phoneDamaged       Boolean            @default(false) @map("phone_damaged")
-  warranty           WarrantyStatus?
+  inwardById              String?            @map("inward_by_id") @db.Uuid
+  phoneDamaged            Boolean            @default(false) @map("phone_damaged")
+  warranty                WarrantyStatus?
   /// Device unlock code / pattern, encrypted at rest (AES-256-GCM).
-  devicePasswordEnc  String?            @map("device_password_enc")
-  repairRemark       String?            @map("repair_remark")
-  testingRemark      String?            @map("testing_remark")
-  testingAt          DateTime?          @map("testing_at")
-  cancelledAt        DateTime?          @map("cancelled_at")
-  cancelReason       String?            @map("cancel_reason")
-  inwardBy           User?              @relation("JobInwardBy", fields: [inwardById], references: [id])
-  statusHistory      JobStatusHistory[]
-  assignments        JobAssignment[]
+  devicePasswordEnc       String?            @map("device_password_enc")
+  repairRemark            String?            @map("repair_remark")
+  testingRemark           String?            @map("testing_remark")
+  testingAt               DateTime?          @map("testing_at")
+  cancelledAt             DateTime?          @map("cancelled_at")
+  cancelReason            String?            @map("cancel_reason")
+  inwardBy                User?              @relation("JobInwardBy", fields: [inwardById], references: [id])
+  statusHistory           JobStatusHistory[]
+  assignments             JobAssignment[]
   /// Branch that has the phone / works on it now (= branchId unless sent to L4).
-  currentBranchId    String             @map("current_branch_id") @db.Uuid
-  location           JobLocation        @default(AT_BRANCH)
-  currentBranch      Branch             @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
-  movements          JobMovement[]
-  callLogs           CallLog[]
-  deliveredAt        DateTime?          @map("delivered_at")
-  deliveredById      String?            @map("delivered_by_id") @db.Uuid
+  currentBranchId         String             @map("current_branch_id") @db.Uuid
+  location                JobLocation        @default(AT_BRANCH)
+  currentBranch           Branch             @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
+  movements               JobMovement[]
+  callLogs                CallLog[]
+  deliveredAt             DateTime?          @map("delivered_at")
+  deliveredById           String?            @map("delivered_by_id") @db.Uuid
   /// Name of the person who collected the phone (customer or someone on their behalf).
-  deliveredTo        String?            @map("delivered_to")
-  deliveryNote       String?            @map("delivery_note")
-  deliveredBy        User?              @relation("JobDeliveredBy", fields: [deliveredById], references: [id])
-  invoice            Invoice?
-  parts              JobPart[]
-  stockMovements     StockMovement[]
-  id                 String             @id @default(uuid(7)) @db.Uuid
-  jobNumber          String             @unique @map("job_number") // e.g. AND01-2610-0001
-  branchId           String             @map("branch_id") @db.Uuid
-  customerId         String             @map("customer_id") @db.Uuid
-  brandId            String             @map("brand_id") @db.Uuid
-  deviceModelId      String             @map("device_model_id") @db.Uuid
-  imei               String?
-  serialNumber       String?            @map("serial_number")
-  color              String?
-  customerComplaint  String?            @map("customer_complaint")
-  conditionNotes     String?            @map("condition_notes")
-  accessories        String[]
-  accessoriesOther   String?            @map("accessories_other")
+  deliveredTo             String?            @map("delivered_to")
+  deliveryNote            String?            @map("delivery_note")
+  deliveredBy             User?              @relation("JobDeliveredBy", fields: [deliveredById], references: [id])
+  invoice                 Invoice?
+  parts                   JobPart[]
+  stockMovements          StockMovement[]
+  id                      String             @id @default(uuid(7)) @db.Uuid
+  jobNumber               String             @unique @map("job_number") // e.g. AND01-2610-0001
+  jobType                 JobType            @default(MOBILE) @map("job_type")
+  accessoryName           String?            @map("accessory_name")
+  branchId                String             @map("branch_id") @db.Uuid
+  customerId              String             @map("customer_id") @db.Uuid
+  brandId                 String?            @map("brand_id") @db.Uuid
+  deviceModelId           String?            @map("device_model_id") @db.Uuid
+  imei                    String?
+  imei2                   String?
+  serialNumber            String?            @map("serial_number")
+  color                   String?
+  customerComplaint       String?            @map("customer_complaint")
+  conditionNotes          String?            @map("condition_notes")
+  physicalConditionRemark String?            @map("physical_condition_remark")
+  accessories             String[]
+  accessoriesOther        String?            @map("accessories_other")
   /// Sum of the price options chosen at intake; null when cost is unknown (e.g. dead phone).
-  estimatedAmount    Decimal?           @map("estimated_amount") @db.Decimal(10, 2)
-  status             JobStatus          @default(RECEIVED)
-  assignedEngineerId String?            @map("assigned_engineer_id") @db.Uuid
-  assignedAt         DateTime?          @map("assigned_at")
-  diagnosisNotes     String?            @map("diagnosis_notes")
-  diagnosedAt        DateTime?          @map("diagnosed_at")
+  estimatedAmount         Decimal?           @map("estimated_amount") @db.Decimal(10, 2)
+  status                  JobStatus          @default(RECEIVED)
+  assignedEngineerId      String?            @map("assigned_engineer_id") @db.Uuid
+  assignedAt              DateTime?          @map("assigned_at")
+  diagnosisNotes          String?            @map("diagnosis_notes")
+  diagnosedAt             DateTime?          @map("diagnosed_at")
   /// Current total of the engineer's estimate lines.
-  quotedAmount       Decimal?           @map("quoted_amount") @db.Decimal(10, 2)
+  quotedAmount            Decimal?           @map("quoted_amount") @db.Decimal(10, 2)
   /// Amount the customer has agreed to (intake estimate or explicit approval).
-  approvedAmount     Decimal?           @map("approved_amount") @db.Decimal(10, 2)
-  approvedAt         DateTime?          @map("approved_at")
-  approvedById       String?            @map("approved_by_id") @db.Uuid
-  customerResponse   String?            @map("customer_response")
-  repairedAt         DateTime?          @map("repaired_at")
-  readyAt            DateTime?          @map("ready_at")
-  sparePart          String?            @map("spare_part")
-  spareRequestedAt   DateTime?          @map("spare_requested_at")
+  approvedAmount          Decimal?           @map("approved_amount") @db.Decimal(10, 2)
+  approvedAt              DateTime?          @map("approved_at")
+  approvedById            String?            @map("approved_by_id") @db.Uuid
+  customerResponse        String?            @map("customer_response")
+  repairedAt              DateTime?          @map("repaired_at")
+  readyAt                 DateTime?          @map("ready_at")
+  sparePart               String?            @map("spare_part")
+  spareRequestedAt        DateTime?          @map("spare_requested_at")
   /// Status to resume when the spare arrives.
-  statusBeforeHold   JobStatus?         @map("status_before_hold")
-  rwrReason          RwrReason?         @map("rwr_reason")
-  rwrNote            String?            @map("rwr_note")
-  rwrAt              DateTime?          @map("rwr_at")
-  createdById        String             @map("created_by_id") @db.Uuid
-  createdAt          DateTime           @default(now()) @map("created_at")
-  updatedAt          DateTime           @updatedAt @map("updated_at")
+  statusBeforeHold        JobStatus?         @map("status_before_hold")
+  rwrReason               RwrReason?         @map("rwr_reason")
+  rwrNote                 String?            @map("rwr_note")
+  rwrAt                   DateTime?          @map("rwr_at")
+  warrantyPeriod          String?            @map("warranty_period")
+  warrantyTerms           String?            @map("warranty_terms")
+  createdById             String             @map("created_by_id") @db.Uuid
+  createdAt               DateTime           @default(now()) @map("created_at")
+  updatedAt               DateTime           @updatedAt @map("updated_at")
 
   branch           Branch            @relation(fields: [branchId], references: [id])
   customer         Customer          @relation(fields: [customerId], references: [id])
-  brand            Brand             @relation(fields: [brandId], references: [id])
-  deviceModel      DeviceModel       @relation(fields: [deviceModelId], references: [id])
+  brand            Brand?            @relation(fields: [brandId], references: [id])
+  deviceModel      DeviceModel?      @relation(fields: [deviceModelId], references: [id])
   createdBy        User              @relation("JobCreatedBy", fields: [createdById], references: [id])
   assignedEngineer User?             @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
   approvedBy       User?             @relation("JobApprovedBy", fields: [approvedById], references: [id])
@@ -461,7 +492,25 @@ enum PhotoKind {
   CUSTOMER
   ID_PROOF // Aadhaar or other ID
   DEVICE
+  PHYSICAL_CONDITION
   RWR // motherboard / internal condition proof when returned without repair
+}
+
+/// Items physically received with a job. A null branch is a Super Admin global default.
+model AccessoryOption {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
+  @@map("accessory_options")
 }
 
 /// Private image stored via the storage driver; served only through an authorised endpoint.
@@ -568,8 +617,11 @@ model JobTransfer {
 model Part {
   stockTransfers StockTransfer[]
   id             String          @id @default(uuid(7)) @db.Uuid
-  code           String          @unique
+  branchId       String?         @map("branch_id") @db.Uuid
+  code           String
   name           String
+  category       String?
+  subcategory    String?
   brandId        String?         @map("brand_id") @db.Uuid
   deviceModelId  String?         @map("device_model_id") @db.Uuid
   /// Price charged to the customer.
@@ -588,7 +640,10 @@ model Part {
   movements     StockMovement[]
   jobParts      JobPart[]
   estimateLines JobEstimateLine[]
+  branch        Branch?           @relation(fields: [branchId], references: [id])
 
+  @@unique([branchId, code])
+  @@index([branchId, isActive])
   @@index([deviceModelId])
   @@map("parts")
 }

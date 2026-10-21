@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, idParamSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -23,4 +23,21 @@ settingsRoutes.get('/shop/logo', async (_req, res) => {
   const { stream, mimeType } = await service.logo();
   res.set({ 'Content-Type': mimeType, 'Cache-Control': 'private, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
   stream.pipe(res);
+});
+
+settingsRoutes.get('/branch-warranty', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), async (req, res) => {
+  res.json(await service.branchWarranty(actorOf(req)));
+});
+settingsRoutes.put('/branch-warranty', authorize(ROLES.BRANCH_MANAGER), validate({ body: branchWarrantySchema }), async (req, res) => {
+  res.json(await service.updateBranchWarranty(req.body, actorOf(req)));
+});
+
+settingsRoutes.get('/accessories', validate({ query: accessoryOptionsQuerySchema }), async (req, res) => {
+  res.json(await service.accessoryOptions(res.locals.query as never, actorOf(req)));
+});
+settingsRoutes.post('/accessories', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: accessoryOptionSchema }), async (req, res) => {
+  res.status(201).json(await service.createAccessoryOption(req.body, actorOf(req)));
+});
+settingsRoutes.patch('/accessories/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema, body: accessoryOptionUpdateSchema }), async (req, res) => {
+  res.json(await service.updateAccessoryOption(req.params.id as string, req.body, actorOf(req)));
 });

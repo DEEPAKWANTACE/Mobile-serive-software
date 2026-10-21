@@ -5,19 +5,21 @@ const name = z.string().trim().min(1, 'Name is required').max(100);
 
 // ─── Brands ─────────────────────────────────────────────────────────────────
 
-export const brandCreateSchema = z.object({ name });
+export const brandCreateSchema = z.object({ name, branchId: z.uuid().nullish() });
 export const brandUpdateSchema = brandCreateSchema.partial().extend({ isActive: z.boolean().optional() });
+export const catalogListQuerySchema = listQuerySchema.extend({ branchId: z.uuid().optional(), scope: z.enum(['effective', 'branch', 'global']).default('effective') });
+export type CatalogListQuery = z.output<typeof catalogListQuerySchema>;
 export type BrandCreateInput = z.input<typeof brandCreateSchema>;
 export type BrandCreateData = z.output<typeof brandCreateSchema>;
 export type BrandUpdateData = z.output<typeof brandUpdateSchema>;
 
-export type BrandDto = { id: string; name: string; isActive: boolean; modelCount: number };
+export type BrandDto = { id: string; name: string; isActive: boolean; modelCount: number; branchId: string | null; isGlobal: boolean };
 
 // ─── Models ─────────────────────────────────────────────────────────────────
 
 export const modelCreateSchema = z.object({ brandId: z.uuid('Select a brand'), name });
 export const modelUpdateSchema = modelCreateSchema.partial().extend({ isActive: z.boolean().optional() });
-export const modelListQuerySchema = listQuerySchema.extend({ brandId: z.uuid().optional() });
+export const modelListQuerySchema = catalogListQuerySchema.extend({ brandId: z.uuid().optional() });
 export type ModelCreateInput = z.input<typeof modelCreateSchema>;
 export type ModelCreateData = z.output<typeof modelCreateSchema>;
 export type ModelUpdateData = z.output<typeof modelUpdateSchema>;
@@ -30,11 +32,14 @@ export type ModelDto = {
   brand: { id: string; name: string };
   /** Number of faults with a price set for this model. */
   priceCount: number;
+  branchId: string | null;
+  isGlobal: boolean;
 };
 
 // ─── Fault categories ───────────────────────────────────────────────────────
 
 export const faultCategoryCreateSchema = z.object({
+  branchId: z.uuid().nullish(),
   name,
   sortOrder: z.coerce.number().int().min(0).max(999).default(0),
 });
@@ -43,18 +48,19 @@ export type FaultCategoryCreateInput = z.input<typeof faultCategoryCreateSchema>
 export type FaultCategoryCreateData = z.output<typeof faultCategoryCreateSchema>;
 export type FaultCategoryUpdateData = z.output<typeof faultCategoryUpdateSchema>;
 
-export type FaultCategoryDto = { id: string; name: string; sortOrder: number; isActive: boolean; faultCount: number };
+export type FaultCategoryDto = { id: string; name: string; sortOrder: number; isActive: boolean; faultCount: number; branchId: string | null; isGlobal: boolean };
 
 // ─── Faults / problems ──────────────────────────────────────────────────────
 
 export const faultCreateSchema = z.object({
+  branchId: z.uuid().nullish(),
   categoryId: z.uuid('Select a category'),
   name,
   description: optionalText(300),
   requiresIdProof: z.boolean().default(false),
 });
 export const faultUpdateSchema = faultCreateSchema.partial().extend({ isActive: z.boolean().optional() });
-export const faultListQuerySchema = listQuerySchema.extend({ categoryId: z.uuid().optional() });
+export const faultListQuerySchema = catalogListQuerySchema.extend({ categoryId: z.uuid().optional() });
 export type FaultCreateInput = z.input<typeof faultCreateSchema>;
 export type FaultCreateData = z.output<typeof faultCreateSchema>;
 export type FaultUpdateData = z.output<typeof faultUpdateSchema>;
@@ -67,6 +73,8 @@ export type FaultDto = {
   requiresIdProof: boolean;
   isActive: boolean;
   category: { id: string; name: string } | null;
+  branchId: string | null;
+  isGlobal: boolean;
 };
 
 // ─── Service pricing (per model + fault) ────────────────────────────────────

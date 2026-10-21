@@ -48,14 +48,14 @@ export const router = createBrowserRouter([
               { index: true, element: <JobsPage /> },
               { path: ':id', element: <JobDetailPage /> },
               {
-                element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
+                element: <RequireAuth roles={[ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
                 children: [
                   { path: ':id/invoice', element: <InvoicePage /> },
                   { path: ':id/print', element: <JobSheetPrintPage /> },
                 ],
               },
               {
-                element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.CCO, ROLES.BRANCH_MANAGER]} />,
+                element: <RequireAuth roles={[ROLES.CCO]} />,
                 children: [{ path: 'new', element: <NewJobPage /> }],
               },
             ],
@@ -75,7 +75,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'catalog',
-            element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER]} />,
             children: [
               { path: 'brands', element: <BrandsPage /> },
               { path: 'models', element: <ModelsPage /> },
@@ -107,6 +107,10 @@ export const router = createBrowserRouter([
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,
             children: [{ path: 'settings/shop', element: <ShopSettingsPage /> }],
+          },
+          {
+            element: <RequireAuth roles={[ROLES.BRANCH_MANAGER]} />,
+            children: [{ path: 'settings/job-defaults', element: <ShopSettingsPage branchDefaultsOnly /> }],
           },
           {
             path: 'store',

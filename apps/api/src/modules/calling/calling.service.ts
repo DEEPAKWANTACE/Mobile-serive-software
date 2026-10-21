@@ -49,7 +49,7 @@ function toRow(j: Row, now = Date.now()): CallingRowDto {
   const since = j.status === 'READY_FOR_DELIVERY' ? j.readyAt : j.status === 'RWR' ? j.rwrAt : j.diagnosedAt;
   const last = j.callLogs[0];
   return {
-    job: { id: j.id, jobNumber: j.jobNumber, status: j.status, device: `${j.brand.name} ${j.deviceModel.name}`, branchCode: j.branch.code },
+    job: { id: j.id, jobNumber: j.jobNumber, status: j.status, device: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory', branchCode: j.branch.code },
     customer: j.customer,
     since: since?.toISOString() ?? null,
     daysWaiting: since ? Math.floor((now - since.getTime()) / 86_400_000) : 0,

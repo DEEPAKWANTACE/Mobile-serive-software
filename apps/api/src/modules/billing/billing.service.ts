@@ -1,6 +1,7 @@
 import {
   DELIVERABLE_STATUSES,
   JOB_STATUS_LABELS,
+  ROLES,
   roundMoney,
   type BillPreviewDto,
   type DeliveryData,
@@ -25,7 +26,9 @@ const billSelect = {
   id: true,
   branchId: true,
   status: true,
+  jobType: true,
   imei: true,
+  imei2: true,
   serialNumber: true,
   accessories: true,
   accessoriesOther: true,
@@ -60,6 +63,9 @@ function assertDeliverable(status: JobStatus) {
 
 async function loadBillJob(jobId: string, actor: Actor) {
   const access = await loadForAccess(jobId, actor);
+  if (access.status === 'RWR' && actor.role !== ROLES.BRANCH_MANAGER) {
+    throw HttpError.forbidden('Only this job\'s Branch Manager can deliver an RWR job');
+  }
   // The owning branch delivers, and only once the phone is physically back with it.
   if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the branch that took in the phone can deliver it');
   if (access.location !== 'AT_BRANCH' || access.currentBranchId !== access.branchId) {
@@ -132,7 +138,12 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   assertDeliverable(job.status);
   const bill = buildPreview(job);
 
-  if (bill.imeiRequired && !job.imei && !job.serialNumber) throw invalid('imei', 'Add the IMEI / serial number before delivering a repaired phone');
+  if (bill.imeiRequired && job.jobType === 'MOBILE' && (!job.imei || !job.imei2)) {
+    throw invalid('imei', 'Add both IMEI 1 and IMEI 2 before delivering a repaired mobile');
+  }
+  if (bill.imeiRequired && job.jobType === 'ACCESSORY' && !job.serialNumber) {
+    throw invalid('serialNumber', 'Add the serial number before delivering a repaired accessory');
+  }
   if (bill.accessories.length && !data.accessoriesReturned) throw invalid('accessoriesReturned', 'Confirm the accessories were returned');
 
   const lines = bill.kind === 'RWR' && data.inspectionCharge > 0 ? [{ description: 'Inspection / diagnosis charge', amount: data.inspectionCharge }] : bill.lines;
@@ -281,7 +292,7 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
       id: job.id,
       jobNumber: job.jobNumber,
       receivedAt: job.createdAt.toISOString(),
-      device: `${job.brand.name} ${job.deviceModel.name}`,
+      device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
       imei: job.imei,
       serialNumber: job.serialNumber,
       status: job.status,

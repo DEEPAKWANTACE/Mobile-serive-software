@@ -32,7 +32,7 @@ export function SpareHoldForm({ job, onDone }: { job: JobDto; onDone: () => void
       className="space-y-4"
     >
       <Field label="Part needed" required error={error}>
-        <input value={part} onChange={(e) => setPart(e.target.value)} autoFocus className={inputClass} placeholder={`e.g. Display – ${job.brand.name} ${job.model.name}`} />
+        <input value={part} onChange={(e) => setPart(e.target.value)} autoFocus className={inputClass} placeholder={`e.g. Display – ${job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`}`} />
       </Field>
       <Field label="Note">
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} />
@@ -83,7 +83,7 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
       return api.post(`/jobs/${job.id}/rwr`, form);
     },
     onSuccess: () => {
-      toast.success('Returned without repair — phone goes back to the counter');
+      toast.success('RWR request sent to the Branch Manager');
       void queryClient.invalidateQueries();
       onDone();
     },
@@ -129,7 +129,7 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
       </Field>
       <PhotoPicker label="Motherboard / internal photos" required multiple files={photos} onChange={setPhotos} error={errors.photos} />
       <p className="text-xs text-slate-500">These photos are kept as proof of the condition in which the phone was returned.</p>
-      <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Return without repair" />
+      <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Request RWR" />
     </form>
   );
 }

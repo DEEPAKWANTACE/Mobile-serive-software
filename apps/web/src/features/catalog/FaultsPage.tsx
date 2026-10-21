@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { faultCreateSchema, type FaultCategoryDto, type FaultCreateData, type FaultCreateInput, type FaultDto } from '@msm/shared';
+import { faultCreateSchema, ROLES, type FaultCategoryDto, type FaultCreateData, type FaultCreateInput, type FaultDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -17,12 +17,17 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
 import { useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function FaultsPage() {
   const [searchParams] = useSearchParams();
   const list = useListState({ categoryId: searchParams.get('categoryId') ?? '' });
-  const { data, isLoading } = useList<FaultDto>('faults', list.params);
-  const { items: categories } = useOptions<FaultCategoryDto>('fault-categories');
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  const { data, isLoading } = useList<FaultDto>('faults', { ...list.params, ...scope });
+  const { items: categories } = useOptions<FaultCategoryDto>('fault-categories', scope);
   const [editing, setEditing] = useState<FaultDto | 'new' | null>(null);
 
   const columns: Column<FaultDto>[] = [
@@ -62,6 +67,7 @@ export function FaultsPage() {
         actions={<Button onClick={() => setEditing('new')}>Add fault</Button>}
       />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search fault" />
         <FilterSelect
           value={list.filters.categoryId}
@@ -80,6 +86,7 @@ export function FaultsPage() {
             fault={editing === 'new' ? undefined : editing}
             categories={categories}
             defaultCategoryId={list.filters.categoryId}
+            branchId={scopeBranch || null}
             onDone={() => setEditing(null)}
           />
         )}
@@ -88,9 +95,9 @@ export function FaultsPage() {
   );
 }
 
-type FormProps = { fault?: FaultDto; categories: FaultCategoryDto[]; defaultCategoryId: string; onDone: () => void };
+type FormProps = { fault?: FaultDto; categories: FaultCategoryDto[]; defaultCategoryId: string; branchId: string | null; onDone: () => void };
 
-function FaultForm({ fault, categories, defaultCategoryId, onDone }: FormProps) {
+function FaultForm({ fault, categories, defaultCategoryId, branchId, onDone }: FormProps) {
   const save = useSave<FaultCreateData>('faults');
   const { register, handleSubmit, setError, formState: { errors } } = useForm<FaultCreateInput, unknown, FaultCreateData>({
     resolver: zodResolver(faultCreateSchema),
@@ -99,6 +106,7 @@ function FaultForm({ fault, categories, defaultCategoryId, onDone }: FormProps) 
       name: fault?.name ?? '',
       description: fault?.description ?? '',
       requiresIdProof: fault?.requiresIdProof ?? false,
+      branchId,
     },
   });
 

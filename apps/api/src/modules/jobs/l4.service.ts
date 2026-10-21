@@ -171,7 +171,7 @@ export async function listMovements(query: L4MovementListQuery, actor: Actor): P
       id: m.job.id,
       jobNumber: m.job.jobNumber,
       status: m.job.status,
-      device: `${m.job.brand.name} ${m.job.deviceModel.name}`,
+      device: m.job.brand && m.job.deviceModel ? `${m.job.brand.name} ${m.job.deviceModel.name}` : 'Accessory',
       customer: m.job.customer.name,
     },
   }));

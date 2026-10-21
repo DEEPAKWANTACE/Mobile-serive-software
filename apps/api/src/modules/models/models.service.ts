@@ -12,24 +12,33 @@ import type { Actor } from '../../lib/request-context.ts';
 import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
 import { recordAudit } from '../audit/audit.service.ts';
+import { assertCatalogRow, catalogWhere } from '../../lib/catalog-scope.ts';
 
 const select = {
   id: true,
   name: true,
   isActive: true,
-  brand: { select: { id: true, name: true } },
+  brand: { select: { id: true, name: true, branchId: true } },
   _count: { select: { prices: true } },
 } satisfies Prisma.DeviceModelSelect;
 
 type Row = Prisma.DeviceModelGetPayload<{ select: typeof select }>;
 
-const toDto = ({ _count, ...m }: Row): ModelDto => ({ ...m, priceCount: _count.prices });
+const toDto = ({ _count, brand, ...m }: Row): ModelDto => ({
+  ...m,
+  brand: { id: brand.id, name: brand.name },
+  priceCount: _count.prices,
+  branchId: brand.branchId,
+  isGlobal: brand.branchId === null,
+});
 
-export async function list(query: ModelListQuery) {
+export async function list(query: ModelListQuery, actor: Actor) {
+  const scope = catalogWhere(actor, query);
   const where: Prisma.DeviceModelWhereInput = {
     isActive: query.isActive,
     brandId: query.brandId,
-    ...(query.search && { OR: [{ name: contains(query.search) }, { brand: { name: contains(query.search) } }] }),
+    brand: scope,
+    ...(query.search && { OR: [{ name: contains(query.search) }, { brand: { name: contains(query.search), ...scope } }] }),
   };
   const [rows, total] = await prisma.$transaction([
     prisma.deviceModel.findMany({
@@ -44,6 +53,8 @@ export async function list(query: ModelListQuery) {
 }
 
 export async function create(data: ModelCreateData, actor: Actor) {
+  const brand = await prisma.brand.findUniqueOrThrow({ where: { id: data.brandId }, select: { branchId: true } });
+  assertCatalogRow(actor, brand.branchId);
   return prisma.$transaction(async (tx) => {
     const row = await tx.deviceModel.create({ data, select });
     await recordAudit(
@@ -55,6 +66,12 @@ export async function create(data: ModelCreateData, actor: Actor) {
 }
 
 export async function update(id: string, data: ModelUpdateData, actor: Actor) {
+  const current = await prisma.deviceModel.findUniqueOrThrow({ where: { id }, select: { brand: { select: { branchId: true } } } });
+  assertCatalogRow(actor, current.brand.branchId);
+  if (data.brandId) {
+    const target = await prisma.brand.findUniqueOrThrow({ where: { id: data.brandId }, select: { branchId: true } });
+    assertCatalogRow(actor, target.branchId);
+  }
   return prisma.$transaction(async (tx) => {
     const row = await tx.deviceModel.update({ where: { id }, data, select });
     await recordAudit(
@@ -96,6 +113,8 @@ const optionsKey = (opts: { label: string; price: number }[]) =>
  * (so references stay stable); others are added/removed. Faults not listed are untouched.
  */
 export async function setPrices(deviceModelId: string, { prices }: ModelPricesUpdateData, actor: Actor) {
+  const current = await prisma.deviceModel.findUniqueOrThrow({ where: { id: deviceModelId }, select: { brand: { select: { branchId: true } } } });
+  assertCatalogRow(actor, current.brand.branchId);
   return prisma.$transaction(async (tx) => {
     await assertModelExists(tx, deviceModelId);
     const existing = await readPrices(tx, deviceModelId);

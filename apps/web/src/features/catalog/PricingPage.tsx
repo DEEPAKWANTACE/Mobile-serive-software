@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { priceOptionSchema, type BrandDto, type FaultDto, type ModelDto, type ModelPriceDto } from '@msm/shared';
+import { priceOptionSchema, ROLES, type BrandDto, type FaultDto, type ModelDto, type ModelPriceDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { inputClass } from '@/components/ui/Field';
 import { Combobox } from '@/components/ui/Combobox';
@@ -11,17 +11,22 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { api } from '@/lib/api-client';
 import { useList, useOptions } from '@/lib/crud';
 import { formatCurrency } from '@/lib/format';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function PricingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const brandId = searchParams.get('brandId') ?? '';
   const modelId = searchParams.get('modelId') ?? '';
   const [dirty, setDirty] = useState(false);
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
 
-  const { items: brands } = useOptions<BrandDto>('brands');
-  const { items: models } = useOptions<ModelDto>('models', { brandId }, { enabled: !!brandId });
+  const { items: brands } = useOptions<BrandDto>('brands', scope);
+  const { items: models } = useOptions<ModelDto>('models', { brandId, ...scope }, { enabled: !!brandId });
   // All faults (incl. inactive) so an inactive fault that still has a price is not hidden.
-  const { data: faultPage } = useList<FaultDto>('faults', { pageSize: 200 });
+  const { data: faultPage } = useList<FaultDto>('faults', { pageSize: 200, ...scope });
   const prices = useQuery({
     queryKey: ['models', modelId, 'prices'],
     queryFn: () => api.get<ModelPriceDto[]>(`/models/${modelId}/prices`),
@@ -41,6 +46,7 @@ export function PricingPage() {
     <div>
       <PageHeader title="Repair Pricing" description="Standard price for each fault, per model. Leave blank if the repair is not offered." />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={(v) => { setScopeBranch(v); select({ brandId: '', modelId: '' }); }} />
         <div className="w-56">
           <Combobox
             value={brandId}

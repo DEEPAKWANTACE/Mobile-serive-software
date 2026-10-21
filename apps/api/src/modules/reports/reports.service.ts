@@ -224,7 +224,7 @@ export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
     return {
       job: { id: j.id, jobNumber: j.jobNumber, createdAt: j.createdAt.toISOString(), status: j.status, branchCode: j.branch.code },
       customer: j.customer.name,
-      product: `${j.brand.name} ${j.deviceModel.name}`,
+      product: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory',
       problem: j.faults.map((f) => f.fault.name).join(', '),
       engineer: j.assignedEngineer?.name ?? null,
       assignedAt: j.assignedAt?.toISOString() ?? null,

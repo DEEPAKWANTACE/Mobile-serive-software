@@ -59,6 +59,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   }
   let newFaults: { faultId: string; priceLabel: string | null; price: number | null }[] | null = null;
   if (deviceChanged) {
+    if (!deviceModelId || !brandId) throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
     const model = await prisma.deviceModel.findUnique({ where: { id: deviceModelId }, select: { brandId: true, isActive: true } });
     if (!model || !model.isActive || model.brandId !== brandId) {
       throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });

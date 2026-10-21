@@ -7,10 +7,10 @@ import * as controller from './faults.controller.ts';
 export const faultRoutes = Router();
 
 faultRoutes.get('/', validate({ query: faultListQuerySchema }), controller.list);
-faultRoutes.post('/', authorize(ROLES.SUPER_ADMIN), validate({ body: faultCreateSchema }), controller.create);
+faultRoutes.post('/', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: faultCreateSchema }), controller.create);
 faultRoutes.patch(
   '/:id',
-  authorize(ROLES.SUPER_ADMIN),
+  authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: faultUpdateSchema }),
   controller.update,
 );

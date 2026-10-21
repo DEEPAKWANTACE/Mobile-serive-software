@@ -44,29 +44,31 @@ import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
 export function WorkPanel({ job }: { job: JobDto }) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const isAssignedEngineer = user?.role === ROLES.ENGINEER && job.assignedEngineer?.id === user.id;
-  const canApprove = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER || user?.role === ROLES.SUPER_ADMIN;
+  const canApprove = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
   const [diagnosing, setDiagnosing] = useState(false);
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
   const [action, setAction] = useState<'transfer' | 'spare' | 'spareReceived' | 'rwr' | 'deliver' | null>(null);
   const [loggingCall, setLoggingCall] = useState(false);
   const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
-  const canDeliver = canApprove && atHome && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR') && (!user?.branch || user.branch.id === job.branch.id);
+  const canDeliver = atHome && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR') &&
+    user?.branch?.id === job.branch.id && (job.status === 'RWR' ? user.role === ROLES.BRANCH_MANAGER : canApprove);
 
-  const isManager = user?.role === ROLES.BRANCH_MANAGER || user?.role === ROLES.SUPER_ADMIN;
+  const isManager = user?.role === ROLES.BRANCH_MANAGER;
   const pending = job.pendingTransfer;
   const isTransferTarget = !!pending && pending.to.id === user?.id;
   const canCancelTransfer = !!pending && (pending.from.id === user?.id || isManager);
   const canTransfer = isAssignedEngineer && !pending && TRANSFERABLE_STATUSES.includes(job.status);
   const canHold = isAssignedEngineer && SPARE_HOLD_STATUSES.includes(job.status);
-  const canRwr = (isAssignedEngineer || canApprove) && RWR_STATUSES.includes(job.status);
+  const canRwr = (isAssignedEngineer || user?.role === ROLES.CCO) && RWR_STATUSES.includes(job.status);
   const canMarkSpareReceived = job.status === 'SPARE_PENDING' && (isAssignedEngineer || isManager);
 
   const messageContext = {
     customerName: job.customer.name,
     jobNumber: job.jobNumber,
-    device: `${job.brand.name} ${job.model.name}`,
+    device: job.jobType === 'ACCESSORY' ? (job.accessoryName ?? 'Accessory') : `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim(),
     branchName: job.branch.name,
     branchPhone: job.branch.phone,
     estimate: job.quotedAmount ?? job.estimatedAmount,
@@ -76,6 +78,14 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const agreed = job.approvedAmount ?? job.estimatedAmount;
   const canDiagnose = isAssignedEngineer && DIAGNOSABLE_STATUSES.includes(job.status);
   const transitions = isAssignedEngineer ? (ENGINEER_TRANSITIONS[job.status] ?? []) : [];
+  const finalizeRwr = useMutation({
+    mutationFn: () => api.post(`/jobs/${job.id}/rwr/finalize`, {}),
+    onSuccess: () => {
+      toast.success('RWR finalized — ready for Branch Manager delivery');
+      void queryClient.invalidateQueries();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   if (job.status === 'RECEIVED' && job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id && !job.diagnosedAt) {
     return <L4Panel job={job} />;
@@ -164,6 +174,17 @@ export function WorkPanel({ job }: { job: JobDto }) {
             {canMarkSpareReceived && (
               <Button size="sm" className="mt-3" onClick={() => setAction('spareReceived')}>
                 Spare received — resume work
+              </Button>
+            )}
+          </div>
+        )}
+        {job.status === 'RWR_PENDING' && (
+          <div className="rounded-lg bg-amber-50 p-5 ring-1 ring-amber-300">
+            <div className="font-semibold text-amber-950">RWR requested — locked for CCO and engineer</div>
+            <p className="mt-1 text-sm text-amber-900">{job.rwrNote}</p>
+            {user?.role === ROLES.BRANCH_MANAGER && user.branch?.id === job.branch.id && (
+              <Button className="mt-3" loading={finalizeRwr.isPending} onClick={() => finalizeRwr.mutate()}>
+                Finalize RWR
               </Button>
             )}
           </div>
@@ -363,10 +384,10 @@ export function WorkPanel({ job }: { job: JobDto }) {
 // ─── Diagnosis form (engineer) ──────────────────────────────────────────────
 
 function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
-  const faults = useOptions<FaultDto>('faults');
+  const faults = useOptions<FaultDto>('faults', { branchId: job.branch.id });
   const prices = useQuery({
-    queryKey: ['models', job.model.id, 'prices'],
-    queryFn: () => api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`),
+    queryKey: ['models', job.model?.id ?? 'accessory', 'prices'],
+    queryFn: () => job.model ? api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`) : Promise.resolve([]),
   });
   // Native selects need their options present before the form mounts, or they show the wrong choice.
   if (!faults.data || !prices.data) return <p className="text-sm text-slate-500">Loading…</p>;
@@ -405,8 +426,8 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
   const save = useMutation({
     mutationFn: (data: DiagnosisData) =>
       api.put<{ status: JobStatus; autoApproved: boolean }>(`/jobs/${job.id}/diagnosis`, data),
-    onSuccess: (r) => {
-      toast.success(r.autoApproved ? 'Within the agreed amount — you can start the repair' : 'Estimate sent to the counter for customer approval');
+    onSuccess: () => {
+      toast.success('Estimate sent to the CCO for customer approval');
       void queryClient.invalidateQueries();
       onDone();
     },
@@ -535,14 +556,9 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
       <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3">
         <div className="text-sm text-slate-600">
           Total estimate
-          {agreed !== null && (
-            <span className={`block text-xs ${total > agreed ? 'text-orange-700' : 'text-emerald-700'}`}>
-              {total > agreed
-                ? `More than the agreed ${formatCurrency(agreed)} — counter will call the customer`
-                : `Within the agreed ${formatCurrency(agreed)} — no approval needed`}
-            </span>
-          )}
-          {agreed === null && <span className="block text-xs text-orange-700">No price agreed at intake — counter will call the customer</span>}
+          <span className="block text-xs text-orange-700">
+            CCO must call the customer and record approval{agreed !== null ? ` (earlier amount: ${formatCurrency(agreed)})` : ''}
+          </span>
         </div>
         <span className="text-lg font-semibold">{formatCurrency(total)}</span>
       </div>

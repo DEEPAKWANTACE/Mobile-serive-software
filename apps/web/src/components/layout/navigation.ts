@@ -28,7 +28,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Operations',
     items: [
-      { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.SUPER_ADMIN, ROLES.CCO, ROLES.BRANCH_MANAGER] },
+      { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.CCO] },
       { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
@@ -38,12 +38,12 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: 'Catalog',
     items: [
-      { label: 'Brands', to: '/catalog/brands', roles: [ROLES.SUPER_ADMIN] },
-      { label: 'Models', to: '/catalog/models', roles: [ROLES.SUPER_ADMIN] },
-      { label: 'Fault Categories', to: '/catalog/fault-categories', roles: [ROLES.SUPER_ADMIN] },
-      { label: 'Faults / Problems', to: '/catalog/faults', roles: [ROLES.SUPER_ADMIN] },
-      { label: 'Repair Pricing', to: '/catalog/pricing', roles: [ROLES.SUPER_ADMIN] },
-      { label: 'Spare Parts', to: '/catalog/parts', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Brands', to: '/catalog/brands', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Models', to: '/catalog/models', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Fault Categories', to: '/catalog/fault-categories', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Faults / Problems', to: '/catalog/faults', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Repair Pricing', to: '/catalog/pricing', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'Spare Parts', to: '/catalog/parts', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
     ],
   },
   {
@@ -59,6 +59,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Administration',
     items: [
       { label: 'Shop Settings', to: '/settings/shop', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Job Defaults', to: '/settings/job-defaults', roles: [ROLES.BRANCH_MANAGER] },
       { label: 'Branches', to: '/masters/branches', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Cities', to: '/masters/cities', roles: [ROLES.SUPER_ADMIN] },
       { label: 'States', to: '/masters/states', roles: [ROLES.SUPER_ADMIN] },

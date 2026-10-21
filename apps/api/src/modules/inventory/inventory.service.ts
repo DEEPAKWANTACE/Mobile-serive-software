@@ -181,7 +181,11 @@ export async function requestPart(jobId: string, { code, quantity, note }: PartR
   if (!(PART_REQUEST_JOB_STATUSES as readonly string[]).includes(job.status)) {
     throw HttpError.conflict('Parts cannot be requested at this stage of the job');
   }
-  const part = await prisma.part.findUnique({ where: { code }, select: { id: true, code: true, name: true, sellingPrice: true, isActive: true } });
+  const part = await prisma.part.findFirst({
+    where: { code, isActive: true, OR: [{ branchId: job.currentBranchId }, { branchId: null }] },
+    orderBy: { branchId: { sort: 'asc', nulls: 'last' } },
+    select: { id: true, code: true, name: true, sellingPrice: true, isActive: true },
+  });
   if (!part || !part.isActive) throw HttpError.badRequest('Invalid request', { code: [`No active part with code ${code}`] });
 
   return prisma.$transaction(async (tx) => {
@@ -242,7 +246,7 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
         id: job.id,
         jobNumber: job.jobNumber,
         status: job.status,
-        device: `${job.brand.name} ${job.deviceModel.name}`,
+        device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
         engineer: job.assignedEngineer?.name ?? null,
       },
       stock: qty.get(r.part.id) ?? 0,

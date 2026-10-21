@@ -100,10 +100,9 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
   });
   const total = Math.round(lines.reduce((sum, l) => sum + l.amount, 0) * 100) / 100;
 
-  // The customer already agreed to the intake estimate (or an earlier approval); no call needed within it.
+  // Every engineer-entered estimate returns to the CCO so the customer's decision is explicit.
   const agreed = job.approvedAmount ?? job.estimatedAmount;
-  const withinAgreed = agreed !== null && total <= agreed.toNumber();
-  const status: JobStatus = withinAgreed ? 'IN_REPAIR' : 'AWAITING_APPROVAL';
+  const status: JobStatus = 'AWAITING_APPROVAL';
 
   await prisma.$transaction(async (tx) => {
     await moveFrom(tx, id, access.status, {
@@ -111,10 +110,8 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
       diagnosedAt: new Date(),
       quotedAmount: total,
       status,
-      ...(withinAgreed
-        ? { approvedAmount: agreed }
-        : { customerResponse: null }),
-    }, { actor, remark: withinAgreed ? `Diagnosed: ${data.notes} (within agreed amount)` : `Diagnosed: ${data.notes}` });
+      customerResponse: null,
+    }, { actor, remark: `Diagnosed: ${data.notes}` });
     await tx.jobEstimateLine.deleteMany({ where: { jobId: id } });
     await tx.jobEstimateLine.createMany({ data: lines.map((l) => ({ ...l, jobId: id })) });
     await recordAudit(
@@ -124,13 +121,13 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
         entityType: 'job',
         entityId: id,
         branchId: access.branchId,
-        metadata: { total, status, autoApproved: withinAgreed, agreedAmount: agreed?.toNumber() ?? null, items: lines.length },
+        metadata: { total, status, autoApproved: false, earlierAmount: agreed?.toNumber() ?? null, items: lines.length },
         ip: actor.ip,
       },
       tx,
     );
   });
-  return { status, quotedAmount: total, autoApproved: withinAgreed };
+  return { status, quotedAmount: total, autoApproved: false };
 }
 
 // ─── Customer approval (CCO) ────────────────────────────────────────────────
@@ -274,8 +271,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
 // ─── RWR: return without repair (reason + motherboard photos compulsory) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
-  const isCounterOrManager =
-    actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
+  const isCounterOrManager = actor.role === ROLES.CCO;
   const access = isCounterOrManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
@@ -286,13 +282,13 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
 
   await withStoredPhotos(prepared, () =>
     prisma.$transaction(async (tx) => {
-      await moveFrom(tx, id, access.status, { status: 'RWR', rwrReason: reason, rwrNote: note, rwrAt: new Date(), statusBeforeHold: null }, { actor, remark: note });
+      await moveFrom(tx, id, access.status, { status: 'RWR_PENDING', rwrReason: reason, rwrNote: note, rwrAt: null, statusBeforeHold: null }, { actor, remark: `RWR requested: ${note}` });
       await createPhotoRows(tx, id, prepared, actor);
       await tx.jobTransfer.updateMany({ where: { jobId: id, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
       await recordAudit(
         {
           actorId: actor.sub,
-          action: 'job.rwr',
+          action: 'job.rwr_requested',
           entityType: 'job',
           entityId: id,
           branchId: access.branchId,
@@ -303,5 +299,18 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
       );
     }),
   );
+  return { status: 'RWR_PENDING' as const };
+}
+
+/** Only the owning branch manager can accept an RWR request and release it for delivery. */
+export async function finalizeRwr(id: string, actor: Actor) {
+  if (actor.role !== ROLES.BRANCH_MANAGER || !actor.branchId) throw HttpError.forbidden();
+  const access = await loadForAccess(id, actor);
+  if (access.branchId !== actor.branchId) throw HttpError.forbidden('Only this job\'s Branch Manager can finalize RWR');
+  if (access.status !== 'RWR_PENDING') throw notAllowed(access.status);
+  await prisma.$transaction(async (tx) => {
+    await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date() }, { actor, remark: 'RWR finalized by Branch Manager' });
+    await recordAudit({ actorId: actor.sub, action: 'job.rwr_finalized', entityType: 'job', entityId: id, branchId: access.branchId, ip: actor.ip }, tx);
+  });
   return { status: 'RWR' as const };
 }

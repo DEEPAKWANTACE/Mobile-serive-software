@@ -30,3 +30,21 @@ export type ShopSettingsDto = {
   /** Changes whenever the logo is replaced (cache-busting). */
   logoVersion: string | null;
 };
+
+export const branchWarrantySchema = z.object({
+  warrantyPeriod: optionalText(60),
+  warrantyTerms: optionalText(1000),
+});
+export type BranchWarrantyData = z.output<typeof branchWarrantySchema>;
+
+export const accessoryOptionSchema = z.object({
+  name: z.string().trim().min(1, 'Enter a name').max(100),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+  branchId: z.uuid().nullish(),
+});
+export const accessoryOptionUpdateSchema = accessoryOptionSchema.partial().extend({ isActive: z.boolean().optional() });
+export const accessoryOptionsQuerySchema = z.object({
+  branchId: z.uuid().optional(),
+  scope: z.enum(['effective', 'branch', 'global']).default('effective'),
+});
+export type AccessoryOptionDto = { id: string; name: string; sortOrder: number; isActive: boolean; branchId: string | null; isGlobal: boolean };

@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { brandCreateSchema, type BrandCreateData, type BrandCreateInput, type BrandDto } from '@msm/shared';
+import { brandCreateSchema, ROLES, type BrandCreateData, type BrandCreateInput, type BrandDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -17,10 +17,15 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
 import { useList, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function BrandsPage() {
   const list = useListState({});
-  const { data, isLoading } = useList<BrandDto>('brands', list.params);
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  const { data, isLoading } = useList<BrandDto>('brands', { ...list.params, ...scope });
   const [editing, setEditing] = useState<BrandDto | 'new' | null>(null);
 
   const columns: Column<BrandDto>[] = [
@@ -52,6 +57,7 @@ export function BrandsPage() {
     <div>
       <PageHeader title="Brands" description="Mobile phone brands" actions={<Button onClick={() => setEditing('new')}>Add brand</Button>} />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search brand" />
         <StatusFilter value={list.status} onChange={list.setStatus} />
       </FilterBar>
@@ -59,17 +65,17 @@ export function BrandsPage() {
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={list.setPage} />}
 
       <Modal open={editing !== null} onClose={() => setEditing(null)} title={editing === 'new' ? 'Add brand' : 'Edit brand'} size="sm">
-        {editing && <BrandForm brand={editing === 'new' ? undefined : editing} onDone={() => setEditing(null)} />}
+        {editing && <BrandForm brand={editing === 'new' ? undefined : editing} branchId={scopeBranch || null} onDone={() => setEditing(null)} />}
       </Modal>
     </div>
   );
 }
 
-function BrandForm({ brand, onDone }: { brand?: BrandDto; onDone: () => void }) {
+function BrandForm({ brand, branchId, onDone }: { brand?: BrandDto; branchId: string | null; onDone: () => void }) {
   const save = useSave<BrandCreateData>('brands');
   const { register, handleSubmit, setError, formState: { errors } } = useForm<BrandCreateInput, unknown, BrandCreateData>({
     resolver: zodResolver(brandCreateSchema),
-    defaultValues: { name: brand?.name ?? '' },
+    defaultValues: { name: brand?.name ?? '', branchId },
   });
 
   const onSubmit = handleSubmit((data) =>

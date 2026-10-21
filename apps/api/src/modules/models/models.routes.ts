@@ -14,10 +14,10 @@ import * as controller from './models.controller.ts';
 export const modelRoutes = Router();
 
 modelRoutes.get('/', validate({ query: modelListQuerySchema }), controller.list);
-modelRoutes.post('/', authorize(ROLES.SUPER_ADMIN), validate({ body: modelCreateSchema }), controller.create);
+modelRoutes.post('/', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: modelCreateSchema }), controller.create);
 modelRoutes.patch(
   '/:id',
-  authorize(ROLES.SUPER_ADMIN),
+  authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: modelUpdateSchema }),
   controller.update,
 );
@@ -26,7 +26,7 @@ modelRoutes.patch(
 modelRoutes.get('/:id/prices', validate({ params: idParamSchema }), controller.getPrices);
 modelRoutes.put(
   '/:id/prices',
-  authorize(ROLES.SUPER_ADMIN),
+  authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
   validate({ params: idParamSchema, body: modelPricesUpdateSchema }),
   controller.setPrices,
 );

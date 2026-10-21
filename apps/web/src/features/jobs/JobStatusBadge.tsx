@@ -10,6 +10,7 @@ const styles: Record<JobStatus, string> = {
   TESTING: 'bg-violet-50 text-violet-700',
   READY_FOR_DELIVERY: 'bg-emerald-50 text-emerald-700',
   SPARE_PENDING: 'bg-yellow-100 text-yellow-800',
+  RWR_PENDING: 'bg-amber-100 text-amber-900',
   RWR: 'bg-slate-200 text-slate-700',
   DELIVERED: 'bg-slate-800 text-white',
   CANCELLED: 'bg-slate-100 text-slate-500 line-through',

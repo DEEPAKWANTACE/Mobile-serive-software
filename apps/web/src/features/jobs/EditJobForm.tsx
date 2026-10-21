@@ -31,7 +31,7 @@ export function EditJobForm({ job, onDone }: { job: JobDto; onDone: () => void }
   const { items: faults } = useOptions<FaultDto>('faults');
 
   // Map the stored price label back to the option id for the current model.
-  const prices = useQuery({ queryKey: ['models', job.model.id, 'prices'], queryFn: () => api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`) });
+  const prices = useQuery({ queryKey: ['models', job.model?.id ?? 'accessory', 'prices'], queryFn: () => job.model ? api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`) : Promise.resolve([]) });
   if (!prices.data || (deviceEditable && !faults.length)) return <p className="text-sm text-slate-500">Loading…</p>;
   const initialFaults = job.faults.map((f) => ({
     faultId: f.id,
@@ -68,8 +68,8 @@ function Inner({
         email: job.customer.email ?? '',
         address: job.customer.address ?? '',
       },
-      brandId: job.brand.id,
-      deviceModelId: job.model.id,
+      brandId: job.brand?.id,
+      deviceModelId: job.model?.id,
       color: job.color ?? '',
       faults: initialFaults,
       customerComplaint: job.customerComplaint ?? '',
@@ -80,7 +80,8 @@ function Inner({
       inwardById: job.inwardBy?.id ?? null,
       phoneDamaged: job.phoneDamaged,
       warranty: job.warranty,
-      devicePassword: job.devicePassword ?? '',
+      warrantyPeriod: job.warrantyPeriod ?? '',
+      warrantyTerms: job.warrantyTerms ?? '',
       totalAmount: (job.estimatedAmount ?? '') as unknown as number,
     },
   });
@@ -155,6 +156,7 @@ function Inner({
 
       {deviceEditable ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {job.jobType === 'MOBILE' && <>
           <Field label="Brand" required>
             <Controller
               control={control}
@@ -183,17 +185,18 @@ function Inner({
                     field.onChange(v);
                     setValue('faults', (watch('faults') ?? []).map((f) => ({ faultId: f.faultId, priceId: null })));
                   }}
-                  options={[...(models.some((m) => m.id === job.model.id) || brandId !== job.brand.id ? [] : [{ value: job.model.id, label: job.model.name }]), ...models.map((m) => ({ value: m.id, label: m.name }))]}
+                  options={[...(job.model && job.brand && !models.some((m) => m.id === job.model!.id) && brandId === job.brand.id ? [{ value: job.model.id, label: job.model.name }] : []), ...models.map((m) => ({ value: m.id, label: m.name }))]}
                 />
               )}
             />
           </Field>
+          </>}
           <div className="sm:col-span-2">
             <Controller
               control={control}
               name="faults"
               render={({ field }) => (
-                <FaultPicker faults={faults} value={field.value ?? []} onChange={field.onChange} optionsByFault={optionsByFault} modelChosen={!!modelId} />
+                <FaultPicker faults={faults} value={field.value ?? []} onChange={field.onChange} optionsByFault={optionsByFault} modelChosen={job.jobType === 'MOBILE' && !!modelId} />
               )}
             />
             {errors.faults && <p className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
@@ -201,7 +204,7 @@ function Inner({
         </div>
       ) : (
         <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-          Device and faults can't be changed after the engineer has diagnosed the phone.
+          Device and faults can't be changed after the engineer has diagnosed the device.
         </p>
       )}
 
@@ -211,9 +214,6 @@ function Inner({
             <input {...register('totalAmount')} inputMode="decimal" className={inputClass} />
           </Field>
         )}
-        <Field label="Phone password / pattern" {...err(errors.devicePassword?.message)}>
-          <input {...register('devicePassword')} autoComplete="off" className={`${inputClass} font-mono`} />
-        </Field>
         <Field label="Warranty">
           <select {...register('warranty', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
             <option value="">Not specified</option>
@@ -221,9 +221,15 @@ function Inner({
             <option value="OUT_OF_WARRANTY">Out of warranty</option>
           </select>
         </Field>
+        <Field label="Repair warranty period" {...err(errors.warrantyPeriod?.message)}>
+          <input {...register('warrantyPeriod')} className={inputClass} placeholder="e.g. 30 days" />
+        </Field>
+        <Field label="Repair warranty terms" {...err(errors.warrantyTerms?.message)} className="sm:col-span-2">
+          <textarea {...register('warrantyTerms')} rows={2} className={inputClass} />
+        </Field>
         <label className="flex items-center gap-2 pt-6 text-sm">
           <input type="checkbox" {...register('phoneDamaged')} className="size-4 accent-brand-600" />
-          Phone is physically damaged
+          Device is physically damaged
         </label>
         <Field label="Colour">
           <input {...register('color')} className={inputClass} />

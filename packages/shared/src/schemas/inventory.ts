@@ -15,8 +15,11 @@ export const partCode = z
 // ─── Parts master ───────────────────────────────────────────────────────────
 
 export const partCreateSchema = z.object({
+  branchId: z.uuid().nullish(),
   code: partCode,
   name: z.string().trim().min(2, 'Enter part name').max(150),
+  category: optionalText(100),
+  subcategory: optionalText(100),
   brandId: z.uuid().nullish(),
   deviceModelId: z.uuid().nullish(),
   sellingPrice: priceAmount,
@@ -25,6 +28,8 @@ export const partCreateSchema = z.object({
 });
 export const partUpdateSchema = partCreateSchema.partial().extend({ isActive: z.boolean().optional() });
 export const partListQuerySchema = listQuerySchema.extend({
+  branchId: z.uuid().optional(),
+  scope: z.enum(['effective', 'branch', 'global']).default('effective'),
   brandId: z.uuid().optional(),
   deviceModelId: z.uuid().optional(),
 });
@@ -37,6 +42,10 @@ export type PartDto = {
   id: string;
   code: string;
   name: string;
+  category: string | null;
+  subcategory: string | null;
+  branchId: string | null;
+  isGlobal: boolean;
   brand: { id: string; name: string } | null;
   model: { id: string; name: string } | null;
   sellingPrice: number;

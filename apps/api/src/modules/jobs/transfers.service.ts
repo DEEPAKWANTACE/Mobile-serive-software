@@ -31,7 +31,7 @@ type Row = Prisma.JobTransferGetPayload<{ select: typeof select }>;
 
 const toDto = (t: Row): TransferDto => ({
   id: t.id,
-  job: { id: t.job.id, jobNumber: t.job.jobNumber, status: t.job.status, device: `${t.job.brand.name} ${t.job.deviceModel.name}` },
+  job: { id: t.job.id, jobNumber: t.job.jobNumber, status: t.job.status, device: t.job.brand && t.job.deviceModel ? `${t.job.brand.name} ${t.job.deviceModel.name}` : 'Accessory' },
   from: t.fromEngineer,
   to: t.toEngineer,
   reason: t.reason,

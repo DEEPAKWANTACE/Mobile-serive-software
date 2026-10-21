@@ -3,8 +3,8 @@ import type { FaultListQuery } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import * as service from './faults.service.ts';
 
-export async function list(_req: Request, res: Response<unknown, { query: FaultListQuery }>) {
-  res.json(await service.list(res.locals.query));
+export async function list(req: Request, res: Response<unknown, { query: FaultListQuery }>) {
+  res.json(await service.list(res.locals.query, actorOf(req)));
 }
 
 export async function create(req: Request, res: Response) {

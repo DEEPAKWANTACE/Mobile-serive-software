@@ -40,25 +40,30 @@ type Tab = 'show' | 'add' | 'edit' | 'delete';
 export function JobsPage() {
   const { user } = useAuth();
   const isEngineer = user?.role === ROLES.ENGINEER;
-  const canDelete = user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER;
+  const canAdd = user?.role === ROLES.CCO;
+  const canEdit = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
+  const canCancel = canEdit;
+  const canDelete = user?.role === ROLES.BRANCH_MANAGER;
   const [params, setParams] = useSearchParams();
-  const tab = (isEngineer ? 'show' : (params.get('tab') as Tab | null)) ?? 'show';
+  const allowedTabs: Tab[] = ['show', ...(canAdd ? ['add' as const] : []), ...(canEdit ? ['edit' as const] : []), ...(canCancel ? ['delete' as const] : [])];
+  const requestedTab = params.get('tab') as Tab | null;
+  const tab: Tab = !isEngineer && requestedTab && allowedTabs.includes(requestedTab) ? requestedTab : 'show';
   const setTab = (t: Tab) => setParams(t === 'show' ? {} : { tab: t }, { replace: true });
 
   const tabs: { key: Tab; label: string; icon: typeof Table2 }[] = [
     { key: 'show', label: 'Show', icon: Table2 },
-    { key: 'add', label: 'Add', icon: Plus },
-    { key: 'edit', label: 'Edit', icon: Pencil },
-    { key: 'delete', label: canDelete ? 'Delete / Cancel' : 'Cancel', icon: Trash2 },
+    ...(canAdd ? [{ key: 'add' as const, label: 'Add', icon: Plus }] : []),
+    ...(canEdit ? [{ key: 'edit' as const, label: 'Edit', icon: Pencil }] : []),
+    ...(canCancel ? [{ key: 'delete' as const, label: canDelete ? 'Delete / Cancel' : 'Cancel', icon: Trash2 }] : []),
   ];
 
   return (
     <div className="space-y-4">
       <PageHeader
         title={isEngineer ? 'My Jobs' : 'Job Master'}
-        description={isEngineer ? 'Jobs assigned to you' : 'Create, find, correct and remove job sheets'}
+        description={isEngineer ? 'Jobs assigned to you' : canAdd ? 'Create and manage branch job sheets' : canEdit ? 'Find and manage branch job sheets' : 'View job sheets'}
       />
-      {!isEngineer && (
+      {!isEngineer && tabs.length > 1 && (
         <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map((t) => (
             <button

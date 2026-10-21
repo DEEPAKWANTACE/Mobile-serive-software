@@ -5,7 +5,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  ACCESSORIES,
   jobCreateSchema,
   PAYMENT_MODE_LABELS,
   PAYMENT_MODES,
@@ -21,6 +20,8 @@ import {
   type ModelDto,
   type ModelPriceDto,
   type PhotoKind,
+  type AccessoryOptionDto,
+  type BranchWarrantyData,
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -37,14 +38,13 @@ import { PhotoPicker } from './PhotoPicker';
 import { useAuth } from '@/features/auth/auth-context';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
-const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [] });
+const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [], PHYSICAL_CONDITION: [] });
 
 export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isSuperAdmin = user?.role === ROLES.SUPER_ADMIN;
   const { items: branchOptions } = useOptions<BranchDto>('branches', {}, { enabled: isSuperAdmin });
-  const [showPassword, setShowPassword] = useState(false);
   const [photos, setPhotos] = useState(emptyPhotos);
   const [idProofError, setIdProofError] = useState<string>();
   const [returning, setReturning] = useState<CustomerDto | null>(null);
@@ -58,15 +58,17 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     resolver: zodResolver(jobCreateSchema),
     defaultValues: {
       customer: { phone: '', name: '', city: '', altPhone: '', email: '', address: '' },
+      jobType: 'MOBILE',
+      accessoryName: '',
       branchId: null,
       retailer: '',
       inwardById: null,
       phoneDamaged: false,
       warranty: null,
-      devicePassword: '',
       brandId: '',
       deviceModelId: '',
       imei: '',
+      imei2: '',
       serialNumber: '',
       color: '',
       faults: [],
@@ -74,27 +76,43 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       accessories: [],
       accessoriesOther: '',
       conditionNotes: '',
-      engineerId: null,
+      physicalConditionRemark: '',
+      warrantyPeriod: '',
+      warrantyTerms: '',
+      skipDiagnosis: false,
+      customerAlreadyApproved: false,
+      engineerId: '',
       advance: null,
     },
   });
 
   const brandId = watch('brandId');
   const modelId = watch('deviceModelId');
+  const jobType = watch('jobType');
+  const skipDiagnosis = watch('skipDiagnosis');
   const phone = watch('customer.phone');
   const selectedFaults = watch('faults') ?? [];
+  const formBranch = isSuperAdmin ? (watch('branchId') ?? '') : (user?.branch?.id ?? '');
+  const branchQs = isSuperAdmin ? `?branchId=${formBranch}` : '';
 
-  const { items: brands } = useOptions<BrandDto>('brands');
+  const { items: brands } = useOptions<BrandDto>('brands', { branchId: formBranch || undefined });
   const { items: models } = useOptions<ModelDto>('models', { brandId }, { enabled: !!brandId });
-  const { items: faults } = useOptions<FaultDto>('faults');
+  const { items: faults } = useOptions<FaultDto>('faults', { branchId: formBranch || undefined });
   const prices = useQuery({
     queryKey: ['models', modelId, 'prices'],
     queryFn: () => api.get<ModelPriceDto[]>(`/models/${modelId}/prices`),
-    enabled: !!modelId,
+    enabled: jobType === 'MOBILE' && !!modelId,
   });
-  // Super Admin works for a chosen branch; everyone else for their own.
-  const formBranch = isSuperAdmin ? (watch('branchId') ?? '') : (user?.branch?.id ?? '');
-  const branchQs = isSuperAdmin ? `?branchId=${formBranch}` : '';
+  const accessoryOptions = useQuery({
+    queryKey: ['settings', 'accessories', formBranch || 'own'],
+    queryFn: () => api.get<AccessoryOptionDto[]>(`/settings/accessories${branchQs}`),
+    enabled: !isSuperAdmin || !!formBranch,
+  });
+  const warrantyDefaults = useQuery({
+    queryKey: ['settings', 'branch-warranty', formBranch || 'own'],
+    queryFn: () => api.get<BranchWarrantyData>('/settings/branch-warranty'),
+    enabled: user?.role === ROLES.CCO,
+  });
   const engineers = useQuery({
     queryKey: ['engineers', formBranch || 'own'],
     queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers${branchQs}`),
@@ -105,6 +123,12 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     queryFn: () => api.get<{ id: string; name: string; role: string }[]>(`/jobs/inward-staff${branchQs}`),
     enabled: !isSuperAdmin || !!formBranch,
   });
+
+  useEffect(() => {
+    if (!warrantyDefaults.data) return;
+    setValue('warrantyPeriod', warrantyDefaults.data.warrantyPeriod ?? '');
+    setValue('warrantyTerms', warrantyDefaults.data.warrantyTerms ?? '');
+  }, [warrantyDefaults.data, setValue]);
 
   // Returning customer: prefill details once a valid mobile number is entered.
   useEffect(() => {
@@ -188,7 +212,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       {isSuperAdmin && (
         <Card title="Branch">
           <Field label="Branch receiving the phone" required {...err(errors.branchId?.message)}>
-            <select {...register('branchId', { setValueAs: (v: string | null) => v || null, onChange: () => setValue('engineerId', null) })} className={inputClass}>
+            <select {...register('branchId', { setValueAs: (v: string | null) => v || null, onChange: () => setValue('engineerId', '') })} className={inputClass}>
               <option value="">Select branch</option>
               {branchOptions.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
             </select>
@@ -202,6 +226,9 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             hint={returning ? `Returning customer — ${returning.name}` : undefined}>
             <input {...register('customer.phone')} inputMode="numeric" maxLength={10} autoFocus className={inputClass} />
           </Field>
+          <Field label="Alternate mobile" {...err(errors.customer?.altPhone?.message)}>
+            <input {...register('customer.altPhone')} inputMode="numeric" maxLength={10} className={inputClass} />
+          </Field>
           <Field label="Customer name" required {...err(errors.customer?.name?.message)}>
             <input {...register('customer.name')} className={inputClass} />
           </Field>
@@ -210,9 +237,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           </Field>
           <Field label="Retailer (if from a shop)" {...err(errors.retailer?.message)} hint="Dealer / shopkeeper who brought the phone">
             <input {...register('retailer')} className={inputClass} />
-          </Field>
-          <Field label="Alternate mobile" {...err(errors.customer?.altPhone?.message)}>
-            <input {...register('customer.altPhone')} inputMode="numeric" maxLength={10} className={inputClass} />
           </Field>
           <Field label="Email" {...err(errors.customer?.email?.message)}>
             <input {...register('customer.email')} type="email" className={inputClass} />
@@ -225,16 +249,27 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
 
       <Card title="Device">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Brand" required {...err(errors.brandId?.message)}>
+          <Field label="Job sheet type" required className="sm:col-span-2">
+            <div className="flex gap-5 pt-2 text-sm">
+              <label className="flex items-center gap-2"><input type="radio" value="MOBILE" {...register('jobType')} className="accent-brand-600" /> Mobile</label>
+              <label className="flex items-center gap-2"><input type="radio" value="ACCESSORY" {...register('jobType')} className="accent-brand-600" /> Accessory</label>
+            </div>
+          </Field>
+          {jobType === 'ACCESSORY' && (
+            <Field label="Accessory name" required className="sm:col-span-2" {...err(errors.accessoryName?.message)}>
+              <input {...register('accessoryName')} className={inputClass} placeholder="e.g. Bluetooth speaker, smartwatch, charger" />
+            </Field>
+          )}
+          <Field label="Brand" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.brandId?.message)}>
             <Controller
               control={control}
               name="brandId"
               render={({ field }) => (
                 <Combobox
-                  value={field.value}
+                  value={field.value ?? ''}
                   onChange={(v) => {
                     field.onChange(v);
-                    setValue('deviceModelId', '');
+                    setValue('deviceModelId', null);
                   }}
                   placeholder="Type brand, e.g. Vivo"
                   invalid={!!errors.brandId}
@@ -243,13 +278,13 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               )}
             />
           </Field>
-          <Field label="Model" required {...err(errors.deviceModelId?.message)}>
+          <Field label="Model" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.deviceModelId?.message)}>
             <Controller
               control={control}
               name="deviceModelId"
               render={({ field }) => (
                 <Combobox
-                  value={field.value}
+                  value={field.value ?? ''}
                   onChange={field.onChange}
                   disabled={!brandId}
                   placeholder={brandId ? 'Type model, e.g. Y20' : 'Select brand first'}
@@ -260,25 +295,20 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               )}
             />
           </Field>
-          <Field label="IMEI" {...err(errors.imei?.message)} hint="Optional now (dead phone) — required before delivery. Dial *#06#">
+          <Field label="IMEI 1" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06#">
             <input {...register('imei')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
           </Field>
-          <div className="sm:col-span-2 -mt-2 empty:hidden">
+          <Field label="IMEI 2" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei2?.message)}>
+            <input {...register('imei2')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
+          </Field>
+          <div className={`${jobType === 'MOBILE' ? '' : 'hidden'} sm:col-span-2 -mt-2 empty:hidden`}>
             <ImeiWarning imei={watch('imei')} />
           </div>
-          <Field label="Serial number" {...err(errors.serialNumber?.message)}>
+          <Field label="Serial number" required={jobType === 'ACCESSORY'} className={jobType === 'ACCESSORY' ? '' : 'hidden'} {...err(errors.serialNumber?.message)}>
             <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
           </Field>
           <Field label="Colour" {...err(errors.color?.message)}>
             <input {...register('color')} className={inputClass} />
-          </Field>
-          <Field label="Phone password / pattern" {...err(errors.devicePassword?.message)} hint="Stored encrypted; visible only to counter staff and the assigned engineer">
-            <div className="flex gap-2">
-              <input {...register('devicePassword')} type={showPassword ? 'text' : 'password'} autoComplete="off" className={`${inputClass} font-mono`} />
-              <button type="button" onClick={() => setShowPassword((v) => !v)} className="rounded-md border border-slate-300 px-2 text-xs text-slate-600 hover:bg-slate-50">
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
-            </div>
           </Field>
           <Field label="Warranty">
             <div className="flex flex-wrap gap-4 pt-2 text-sm">
@@ -292,7 +322,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           </Field>
           <label className="flex items-center gap-2 pt-6 text-sm">
             <input type="checkbox" {...register('phoneDamaged')} className="size-4 accent-brand-600" />
-            Phone is physically damaged
+            Device is physically damaged
           </label>
         </div>
       </Card>
@@ -324,6 +354,27 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         <Field label="Total amount (₹)" className="mt-4 max-w-xs" {...err(errors.totalAmount?.message)} hint="Optional — overrides the price-list estimate, e.g. a quote agreed with the customer">
           <input {...register('totalAmount')} inputMode="decimal" className={inputClass} placeholder={pricedTotal > 0 ? String(pricedTotal) : 'To be decided'} />
         </Field>
+        <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50/50 p-4">
+          <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+            <input type="checkbox" {...register('skipDiagnosis')} className="size-4 accent-brand-600" />
+            I know the diagnosis — use this estimate and skip engineer diagnosis
+          </label>
+          {skipDiagnosis && (
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" {...register('customerAlreadyApproved')} className="size-4 accent-brand-600" />
+              Customer has already approved this estimate
+            </label>
+          )}
+          {skipDiagnosis && <p className="mt-2 text-xs text-slate-600">If unchecked, the job waits for the CCO to call and record the customer's decision.</p>}
+        </div>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Repair warranty period" {...err(errors.warrantyPeriod?.message)} hint="Branch default; CCO may change it for this repair">
+            <input {...register('warrantyPeriod')} className={inputClass} placeholder="e.g. 30 days" />
+          </Field>
+          <Field label="Repair warranty terms" {...err(errors.warrantyTerms?.message)}>
+            <textarea {...register('warrantyTerms')} rows={2} className={inputClass} />
+          </Field>
+        </div>
         {needsIdProof.length > 0 && (
           <div className="mt-3 rounded-md bg-red-50 px-4 py-2.5 text-sm text-red-700">
             🔒 Aadhaar photo is compulsory for {needsIdProof.map((f) => f!.name).join(', ')}.
@@ -340,7 +391,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           name="accessories"
           render={({ field }) => (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {ACCESSORIES.map((a) => {
+              {(accessoryOptions.data ?? []).filter((a) => a.isActive).map((option) => {
+                const a = option.name;
                 const checked = field.value?.includes(a) ?? false;
                 return (
                   <label key={a} className="flex items-center gap-2 text-sm">
@@ -364,6 +416,9 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           <Field label="Physical condition" hint="Scratches, dents, cracks, missing screws…" {...err(errors.conditionNotes?.message)}>
             <input {...register('conditionNotes')} className={inputClass} />
           </Field>
+          <Field label="Physical condition remark" className="sm:col-span-2" {...err(errors.physicalConditionRemark?.message)}>
+            <textarea {...register('physicalConditionRemark')} rows={2} className={inputClass} placeholder="Detailed remark about condition at inward" />
+          </Field>
         </div>
       </Card>
 
@@ -385,26 +440,29 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             <div className="sm:col-span-2">
               <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
             </div>
+            <div className="sm:col-span-2">
+              <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
+            </div>
           </div>
         </Card>
       </div>
 
       <Card title="Inward, engineer & advance">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Inward by" {...err(errors.inwardById?.message)} hint="Who took the phone in (defaults to you)">
+          <Field label="Inward by" {...err(errors.inwardById?.message)} hint="Who took the device in (defaults to you)">
             <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
               <option value="">{user?.name} (me)</option>
               {(inwardStaff.data ?? []).filter((u) => u.id !== user?.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
-          <Field label="Assign engineer" {...err(errors.engineerId?.message)} hint="Optional — can be assigned later">
+          <Field label="Assign engineer" required {...err(errors.engineerId?.message)} hint="The job goes to this engineer for diagnosis or repair">
             <Controller
               control={control}
               name="engineerId"
               render={({ field }) => (
                 <Combobox
                   value={field.value ?? ''}
-                  onChange={(v) => field.onChange(v || null)}
+                  onChange={field.onChange}
                   placeholder="Select engineer"
                   emptyText="No active engineers in this branch"
                   options={(engineers.data ?? []).map((e) => ({

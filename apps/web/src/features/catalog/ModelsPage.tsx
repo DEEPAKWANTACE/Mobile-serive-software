@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { modelCreateSchema, type BrandDto, type ModelCreateData, type ModelCreateInput, type ModelDto } from '@msm/shared';
+import { modelCreateSchema, ROLES, type BrandDto, type ModelCreateData, type ModelCreateInput, type ModelDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -17,12 +17,17 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
 import { useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
+import { useAuth } from '@/features/auth/auth-context';
+import { CatalogScopePicker, scopeParams } from './CatalogScopePicker';
 
 export function ModelsPage() {
   const [searchParams] = useSearchParams();
   const list = useListState({ brandId: searchParams.get('brandId') ?? '' });
-  const { data, isLoading } = useList<ModelDto>('models', list.params);
-  const { items: brands } = useOptions<BrandDto>('brands');
+  const { user } = useAuth();
+  const [scopeBranch, setScopeBranch] = useState('');
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  const { data, isLoading } = useList<ModelDto>('models', { ...list.params, ...scope });
+  const { items: brands } = useOptions<BrandDto>('brands', scope);
   const [editing, setEditing] = useState<ModelDto | 'new' | null>(null);
 
   const columns: Column<ModelDto>[] = [
@@ -59,6 +64,7 @@ export function ModelsPage() {
         actions={<Button onClick={() => setEditing('new')}>Add model</Button>}
       />
       <FilterBar>
+        <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search model or brand" />
         <FilterSelect
           value={list.filters.brandId}

@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { ROLE_VALUES } from '../roles.js';
 
 export const loginSchema = z.object({
-  username: z.string().trim().toLowerCase().min(3, 'Username is required').max(50),
+  // Two-character logins are reserved for the explicitly configured temporary role accounts (sa, bm).
+  username: z.string().trim().toLowerCase().min(2, 'Username is required').max(50),
   password: z.string().min(1, 'Password is required').max(128),
 });
 export type LoginInput = z.infer<typeof loginSchema>;

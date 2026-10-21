@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AlertTriangle,
@@ -209,6 +209,7 @@ function EngineerDashboard() {
   const by = stats.data?.byStatus;
   const open = by ? ENGINEER_OPEN_STATUSES.reduce((sum, st) => sum + by[st], 0) : undefined;
   const [status, setStatus] = useState<string>('');
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { data, isLoading } = useList<JobListItemDto>('jobs', { status, sort: 'oldest', pageSize: 50 });
   const rows = status ? data?.items : data?.items.filter((j) => ENGINEER_OPEN_STATUSES.includes(j.status));
 
@@ -235,21 +236,26 @@ function EngineerDashboard() {
   const transfers = incoming.data && outgoing.data ? incoming.data.length + outgoing.data.length : undefined;
   const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
 
+  const hoverPreview = (next: string) => ({
+    onMouseEnter: () => { hoverTimer.current = setTimeout(() => setStatus(next), 2000); },
+    onMouseLeave: () => { if (hoverTimer.current) clearTimeout(hoverTimer.current); },
+    onFocus: () => setStatus(next),
+  });
   const card = (label: string, st: JobStatus, icon: React.ComponentType<{ className?: string }>, tone?: 'warning' | 'brand') => (
-    <button type="button" onClick={() => setStatus(status === st ? '' : st)} className={`rounded-xl text-left ${status === st ? 'ring-2 ring-brand-500' : ''}`}>
+    <Link to={`/jobs?status=${st}`} {...hoverPreview(st)} className={`rounded-xl text-left ${status === st ? 'ring-2 ring-brand-500' : ''}`}>
       <StatCard label={label} value={by?.[st]} tone={tone} icon={icon} />
-    </button>
+    </Link>
   );
 
   return (
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Total assigned" value={stats.data?.total} to="/jobs" icon={Users} hint="All jobs with you" />
-        <button type="button" onClick={() => setStatus('')} className={`rounded-xl text-left ${status === '' ? 'ring-2 ring-brand-500' : ''}`}>
+        <Link to="/jobs?open=true" {...hoverPreview('')}><StatCard label="Total assigned" value={stats.data?.total} icon={Users} hint="All active jobs with you" /></Link>
+        <Link to="/jobs?open=true" {...hoverPreview('')} className={`rounded-xl text-left ${status === '' ? 'ring-2 ring-brand-500' : ''}`}>
           <StatCard label="Pending" value={open} tone="brand" icon={ClipboardList} hint="Diagnosis, repair & testing" />
-        </button>
-        <StatCard label="Completed" value={completed} to="/jobs?status=READY_FOR_DELIVERY" tone="good" icon={PackageCheck} hint="Returned OK / delivered" />
-        <StatCard label="More than 15 days" value={overdue.data?.total} to="/jobs?view=over15" tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" />
+        </Link>
+        <Link to="/jobs?status=READY_FOR_DELIVERY" {...hoverPreview('READY_FOR_DELIVERY')}><StatCard label="Completed" value={completed} tone="good" icon={PackageCheck} hint="Returned OK" /></Link>
+        <Link to="/jobs?view=over15" {...hoverPreview('')}><StatCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" /></Link>
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
@@ -258,7 +264,8 @@ function EngineerDashboard() {
         {card('Repaired', 'REPAIRED', BadgeCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
-        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" />
+        {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
+        <Link to="/jobs?open=true" {...hoverPreview('')}><StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" /></Link>
       </div>
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">

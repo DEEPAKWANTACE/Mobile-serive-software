@@ -97,7 +97,7 @@ async function main() {
   // ── Device catalogue ─────────────────────────────────────────────────────
   const brands: Record<string, string> = {};
   for (const name of ['Samsung', 'Apple', 'Xiaomi']) {
-    const b = await prisma.brand.upsert({ where: { name }, update: {}, create: { name } });
+    const b = (await prisma.brand.findFirst({ where: { name, branchId: null } })) ?? (await prisma.brand.create({ data: { name } }));
     brands[name] = b.id;
   }
   const brand = getter(brands, 'brand');
@@ -129,7 +129,7 @@ async function main() {
   ];
   const cats: Record<string, string> = {};
   for (const c of catDefs) {
-    const row = await prisma.faultCategory.upsert({ where: { name: c.name }, update: {}, create: c });
+    const row = (await prisma.faultCategory.findFirst({ where: { name: c.name, branchId: null } })) ?? (await prisma.faultCategory.create({ data: c }));
     cats[c.name] = row.id;
   }
   const cat = getter(cats, 'fault category');
@@ -144,11 +144,8 @@ async function main() {
   ];
   const faults: Record<string, string> = {};
   for (const f of faultDefs) {
-    const row = await prisma.fault.upsert({
-      where: { name: f.name },
-      update: {},
-      create: { name: f.name, categoryId: cat(f.category), requiresIdProof: f.requiresIdProof, description: f.description },
-    });
+    const row = (await prisma.fault.findFirst({ where: { name: f.name, branchId: null } })) ??
+      (await prisma.fault.create({ data: { name: f.name, categoryId: cat(f.category), requiresIdProof: f.requiresIdProof, description: f.description } }));
     faults[f.name] = row.id;
   }
   const fault = getter(faults, 'fault');
@@ -181,14 +178,11 @@ async function main() {
   ];
   const parts: Record<string, string> = {};
   for (const p of partDefs) {
-    const row = await prisma.part.upsert({
-      where: { code: p.code },
-      update: {},
-      create: {
+    const row = (await prisma.part.findFirst({ where: { code: p.code, branchId: null } })) ??
+      (await prisma.part.create({ data: {
         code: p.code, name: p.name, sellingPrice: p.sellingPrice, costPrice: p.costPrice, reorderLevel: p.reorderLevel,
         brandId: p.brand ? brand(p.brand) : null, deviceModelId: p.model ? model(p.model) : null,
-      },
-    });
+      } }));
     parts[p.code] = row.id;
   }
   const part = getter(parts, 'part');

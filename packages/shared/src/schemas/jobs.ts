@@ -14,6 +14,7 @@ export const JOB_STATUSES = [
   'TESTING',
   'READY_FOR_DELIVERY',
   'SPARE_PENDING',
+  'RWR_PENDING',
   'RWR',
   'DELIVERED',
   'CANCELLED',
@@ -29,6 +30,7 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   TESTING: 'Testing',
   READY_FOR_DELIVERY: 'Ready – returned OK',
   SPARE_PENDING: 'Spare not available',
+  RWR_PENDING: 'RWR awaiting manager',
   RWR: 'Returned without repair (RWR)',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
@@ -61,6 +63,7 @@ export const ENGINEER_OPEN_STATUSES: readonly JobStatus[] = [
   'REPAIRED',
   'TESTING',
   'SPARE_PENDING',
+  'RWR_PENDING',
 ];
 
 /** Engineer can hand the job to another engineer in these statuses. */
@@ -112,32 +115,25 @@ export const ENGINEER_TRANSITIONS: Partial<Record<JobStatus, { to: JobStatus; la
   ],
 };
 
-export const ACCESSORIES = [
-  'Charger',
-  'Cable',
-  'Battery',
-  'Back Cover',
-  'SIM Tray',
-  'SIM Card',
-  'Memory Card',
-  'Earphones',
-  'Box',
-] as const;
-export type Accessory = (typeof ACCESSORIES)[number];
+export const DEFAULT_ACCESSORIES = ['Charger', 'Back Cover', 'SIM Tray', 'SIM Card', 'Memory Card'] as const;
+/** Backwards-compatible alias; active options are loaded from the branch master. */
+export const ACCESSORIES = DEFAULT_ACCESSORIES;
+export type Accessory = string;
 
-export const PHOTO_KINDS = ['CUSTOMER', 'ID_PROOF', 'DEVICE', 'RWR'] as const;
+export const PHOTO_KINDS = ['CUSTOMER', 'ID_PROOF', 'DEVICE', 'PHYSICAL_CONDITION', 'RWR'] as const;
 export type PhotoKind = (typeof PHOTO_KINDS)[number];
 export const PHOTO_KIND_LABELS: Record<PhotoKind, string> = {
   CUSTOMER: 'Customer photo',
   ID_PROOF: 'Aadhaar / ID proof',
   DEVICE: 'Phone photos',
+  PHYSICAL_CONDITION: 'Physical condition',
   RWR: 'RWR / motherboard photos',
 };
 /** Photo kinds the counter uploads at intake (RWR photos come only with an RWR). */
-export const INTAKE_PHOTO_KINDS: readonly PhotoKind[] = ['CUSTOMER', 'ID_PROOF', 'DEVICE'];
+export const INTAKE_PHOTO_KINDS: readonly PhotoKind[] = ['CUSTOMER', 'ID_PROOF', 'DEVICE', 'PHYSICAL_CONDITION'];
 
 /** Engineers only need device photos; customer photo and ID proof are hidden from them. */
-export const ENGINEER_VISIBLE_PHOTO_KINDS: readonly PhotoKind[] = ['DEVICE', 'RWR'];
+export const ENGINEER_VISIBLE_PHOTO_KINDS: readonly PhotoKind[] = ['DEVICE', 'PHYSICAL_CONDITION', 'RWR'];
 
 export const PAYMENT_MODES = ['CASH', 'UPI', 'CARD'] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
@@ -192,6 +188,10 @@ const intakeExtras = {
   warranty: z.enum(WARRANTY_STATUSES).nullish(),
   /** Phone unlock code / pattern. Stored encrypted; "" clears it. */
   devicePassword: optionalText(60),
+  warrantyPeriod: optionalText(60),
+  warrantyTerms: optionalText(1000),
+  skipDiagnosis: z.boolean().default(false),
+  customerAlreadyApproved: z.boolean().default(false),
 };
 
 const imeiField = optionalText(15).refine((v) => !v || isValidImei(v), 'Invalid IMEI (must be 15 digits)');
@@ -203,10 +203,13 @@ const serialField = optionalText(30).refine((v) => !v || /^[A-Za-z0-9-]{4,30}$/.
  */
 export const jobCreateSchema = z
   .object({
+    jobType: z.enum(['MOBILE', 'ACCESSORY']).default('MOBILE'),
+    accessoryName: optionalText(100),
     customer: jobCustomerSchema,
-    brandId: z.uuid('Select a brand'),
-    deviceModelId: z.uuid('Select a model'),
+    brandId: z.uuid('Select a brand').nullish(),
+    deviceModelId: z.uuid('Select a model').nullish(),
     imei: imeiField,
+    imei2: imeiField,
     serialNumber: serialField,
     color: optionalText(30),
     /** Each reported fault, optionally with the chosen price option (null = cost to be decided). */
@@ -216,11 +219,12 @@ export const jobCreateSchema = z
       .max(20)
       .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault'),
     customerComplaint: optionalText(1000),
-    accessories: z.array(z.enum(ACCESSORIES)).max(ACCESSORIES.length).default([]),
+    accessories: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
     accessoriesOther: optionalText(200),
     conditionNotes: optionalText(1000),
-    /** Optional: assign straight away at intake. */
-    engineerId: z.uuid().nullish(),
+    physicalConditionRemark: optionalText(1000),
+    /** Every new job enters the assigned engineer's diagnosis/repair queue. */
+    engineerId: z.uuid('Assign an engineer'),
     /** Only Super Admin chooses the branch; branch staff always use their own. */
     branchId: z.uuid().nullish(),
     ...intakeExtras,
@@ -232,7 +236,21 @@ export const jobCreateSchema = z
       })
       .nullish(),
   })
-  .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] });
+  .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] })
+  .superRefine((v, ctx) => {
+    if (v.jobType === 'MOBILE') {
+      if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
+      if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
+      if (!v.imei) ctx.addIssue({ code: 'custom', message: 'IMEI 1 is required', path: ['imei'] });
+      if (!v.imei2) ctx.addIssue({ code: 'custom', message: 'IMEI 2 is required', path: ['imei2'] });
+    } else {
+      if (!v.accessoryName) ctx.addIssue({ code: 'custom', message: 'Accessory name is required', path: ['accessoryName'] });
+      if (!v.serialNumber) ctx.addIssue({ code: 'custom', message: 'Serial number is required', path: ['serialNumber'] });
+    }
+    if (v.skipDiagnosis) {
+      if (v.totalAmount === null || v.totalAmount === undefined) ctx.addIssue({ code: 'custom', message: 'Enter the estimate', path: ['totalAmount'] });
+    }
+  });
 
 /** Device & faults can be corrected only until the engineer has diagnosed (estimate depends on them). */
 export const DEVICE_EDITABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED'];
@@ -250,9 +268,10 @@ export const jobEditSchema = z.object({
     .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault')
     .optional(),
   customerComplaint: optionalText(1000),
-  accessories: z.array(z.enum(ACCESSORIES)).max(ACCESSORIES.length).optional(),
+  accessories: z.array(z.string().trim().min(1).max(100)).max(30).optional(),
   accessoriesOther: optionalText(200),
   conditionNotes: optionalText(1000),
+  physicalConditionRemark: optionalText(1000),
   ...intakeExtras,
 });
 export type JobEditInput = z.input<typeof jobEditSchema>;
@@ -474,12 +493,12 @@ export const unassignSchema = z.object({ note: optionalText(300) });
 
 export const customerLookupQuerySchema = z.object({ phone: mobileNumber });
 
-export const photoUploadSchema = z.object({ kind: z.enum(['CUSTOMER', 'ID_PROOF', 'DEVICE']) });
+export const photoUploadSchema = z.object({ kind: z.enum(['CUSTOMER', 'ID_PROOF', 'DEVICE', 'PHYSICAL_CONDITION']) });
 
 /** Update IMEI / serial later (e.g. once a dead phone powers on). */
 export const jobDeviceUpdateSchema = z
-  .object({ imei: imeiField, serialNumber: serialField })
-  .refine((v) => v.imei !== undefined || v.serialNumber !== undefined, 'Nothing to update');
+  .object({ imei: imeiField, imei2: imeiField, serialNumber: serialField })
+  .refine((v) => v.imei !== undefined || v.imei2 !== undefined || v.serialNumber !== undefined, 'Nothing to update');
 export type JobDeviceUpdateInput = z.input<typeof jobDeviceUpdateSchema>;
 export type JobDeviceUpdateData = z.output<typeof jobDeviceUpdateSchema>;
 
@@ -540,9 +559,12 @@ export type JobDto = {
   createdAt: string;
   branch: { id: string; code: string; name: string; address: string | null; phone: string | null };
   customer: CustomerDto;
-  brand: { id: string; name: string };
-  model: { id: string; name: string };
+  jobType: 'MOBILE' | 'ACCESSORY';
+  accessoryName: string | null;
+  brand: { id: string; name: string } | null;
+  model: { id: string; name: string } | null;
   imei: string | null;
+  imei2: string | null;
   serialNumber: string | null;
   color: string | null;
   faults: { id: string; name: string; priceLabel: string | null; price: number | null }[];
@@ -552,6 +574,7 @@ export type JobDto = {
   accessories: string[];
   accessoriesOther: string | null;
   conditionNotes: string | null;
+  physicalConditionRemark: string | null;
   createdBy: { id: string; name: string };
   assignedEngineer: { id: string; name: string } | null;
   assignedAt: string | null;
@@ -593,6 +616,8 @@ export type JobDto = {
   rwrReason: RwrReason | null;
   rwrNote: string | null;
   rwrAt: string | null;
+  warrantyPeriod: string | null;
+  warrantyTerms: string | null;
   pendingTransfer: { id: string; from: { id: string; name: string }; to: { id: string; name: string }; reason: string; createdAt: string } | null;
   parts: JobPartDto[];
   estimateLines: {
