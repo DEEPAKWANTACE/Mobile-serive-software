@@ -207,8 +207,13 @@ function StoreDashboard() {
 
 function EngineerDashboard() {
   const stats = useStats();
-  const by = stats.data?.byStatus;
-  const open = by ? ENGINEER_OPEN_STATUSES.reduce((sum, st) => sum + by[st], 0) : undefined;
+  // Cards show today's activity; the hint carries the all-time pending count.
+  const by = stats.data?.today.byStatus;
+  const all = stats.data?.byStatus;
+  const openOf = (b?: Record<JobStatus, number>) => (b ? ENGINEER_OPEN_STATUSES.reduce((sum, st) => sum + b[st], 0) : undefined);
+  const open = openOf(by);
+  const openAll = openOf(all);
+  const totalHint = (n: number | undefined) => (n === undefined ? undefined : `${n} pending total`);
   const [preview, setPreview] = useState<{
     key: string;
     title: string;
@@ -216,12 +221,14 @@ function EngineerDashboard() {
     open?: boolean;
     minAgeDays?: number;
     transfersOnly?: boolean;
-  }>({ key: 'pending', title: 'My pending queue', open: true });
+    today?: boolean;
+  }>({ key: 'pending', title: 'My pending queue · today', open: true, today: true });
   const listRef = useRef<HTMLDivElement>(null);
   const { data, isLoading } = useList<JobListItemDto>('jobs', {
     status: preview.status,
     open: preview.open,
     minAgeDays: preview.minAgeDays,
+    today: preview.today,
     sort: 'oldest',
     pageSize: 50,
   });
@@ -249,6 +256,7 @@ function EngineerDashboard() {
   const overdue = useList<JobListItemDto>('jobs', { open: true, minAgeDays: 15, pageSize: 1 });
   const transfers = incoming.data && outgoing.data ? incoming.data.length + outgoing.data.length : undefined;
   const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
+  const completedAll = all ? all.READY_FOR_DELIVERY + all.DELIVERED : undefined;
 
   const choosePreview = (next: typeof preview) => {
     setPreview(next);
@@ -265,18 +273,19 @@ function EngineerDashboard() {
       value={by?.[st]}
       icon={icon}
       tone={tone}
+      hint={totalHint(all?.[st])}
       selected={preview.key === st}
       viewTo={`/jobs?status=${st}`}
-      onPreview={() => choosePreview({ key: st, title: JOB_STATUS_LABELS[st], status: st })}
+      onPreview={() => choosePreview({ key: st, title: `${JOB_STATUS_LABELS[st]} · today`, status: st, today: true })}
     />
   );
 
   return (
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <EngineerPreviewCard label="Total assigned" value={stats.data?.total} icon={Users} hint="All active jobs with you" selected={preview.key === 'total'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'total', title: 'All active jobs', open: true })} />
-        <EngineerPreviewCard label="Pending" value={open} tone="brand" icon={ClipboardList} hint="Diagnosis, repair & testing" selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue', open: true })} />
-        <EngineerPreviewCard label="Completed" value={completed} tone="good" icon={PackageCheck} hint="Returned OK" selected={preview.key === 'completed'} viewTo="/jobs?status=READY_FOR_DELIVERY" onPreview={() => choosePreview({ key: 'completed', title: JOB_STATUS_LABELS.READY_FOR_DELIVERY, status: 'READY_FOR_DELIVERY' })} />
+        <EngineerPreviewCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} selected={preview.key === 'total'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true })} />
+        <EngineerPreviewCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true })} />
+        <EngineerPreviewCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} selected={preview.key === 'completed'} viewTo="/jobs?status=READY_FOR_DELIVERY" onPreview={() => choosePreview({ key: 'completed', title: `${JOB_STATUS_LABELS.READY_FOR_DELIVERY} · today`, status: 'READY_FOR_DELIVERY', today: true })} />
         <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
       </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

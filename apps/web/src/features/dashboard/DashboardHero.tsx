@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ROLE_LABELS, type AuthUser } from '@msm/shared';
+import { useShopSettings } from '@/features/settings/useShopSettings';
 
 function greeting() {
   const h = Number(new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
@@ -9,13 +10,15 @@ function greeting() {
 /** Welcome band: greeting, role · branch, today's date and role-specific quick actions. */
 export function DashboardHero({ user, actions, subtitle }: { user: AuthUser; actions?: ReactNode; subtitle?: string }) {
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  const { data: shop } = useShopSettings();
   return (
     <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-brand-600 via-brand-700 to-indigo-800 px-6 py-6 text-white shadow-sm">
       <div aria-hidden className="pointer-events-none absolute -top-16 -right-10 size-56 rounded-full bg-white/10 blur-2xl" />
       <div aria-hidden className="pointer-events-none absolute -bottom-20 left-1/3 size-48 rounded-full bg-indigo-400/20 blur-2xl" />
       <div className="relative flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm text-brand-100">{today}</p>
+          {shop?.shopName && <p className="text-xl font-bold tracking-tight sm:text-2xl">{shop.shopName}</p>}
+          <p className={`text-sm text-brand-100 ${shop?.shopName ? 'mt-1' : ''}`}>{today}</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
             {user.role === 'ENGINEER' ? `Welcome, ${user.name}` : `${greeting()}, ${user.role === 'SUPER_ADMIN' ? user.name : user.name.split(' ')[0]}`}
           </h1>

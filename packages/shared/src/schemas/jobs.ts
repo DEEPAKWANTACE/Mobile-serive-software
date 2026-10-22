@@ -323,6 +323,11 @@ export const jobListQuerySchema = listQuerySchema.extend({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  /** true = jobs worked on (updated) today. */
+  today: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   /** true = jobs with an amount still to collect. */
   balanceDue: z
     .enum(['true', 'false'])
@@ -647,6 +652,8 @@ export type JobStatsDto = {
   total: number;
   /** This branch's jobs currently at / travelling to or from the main office. */
   atL4: number;
+  /** Same counts limited to jobs worked on (updated) today. */
+  today: { byStatus: Record<JobStatus, number>; total: number };
 };
 
 export type JobHistoryEntryDto = {
