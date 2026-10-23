@@ -26,6 +26,9 @@ export function JobSheetPrintPage() {
   </div>;
 }
 
+/** Printed serial: only the last 4 digits of the job number, e.g. "0001". */
+const serial = (jobNumber: string) => jobNumber.slice(-4);
+
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return <div className="flex gap-2"><span className="w-28 shrink-0 font-semibold">{label}:</span><span>{children || '—'}</span></div>;
 }
@@ -53,11 +56,11 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
     <header className="grid grid-cols-3 items-start border-b border-slate-700 pb-2">
       <div className="text-xs text-slate-500">{formatDateTime(job.createdAt)}</div>
       <div className="text-center"><div className="font-bold">Inward Slip</div><ShopHeader branch={job.branch} /></div>
-      <div className="text-right"><div className="font-semibold uppercase">{copy === 'customer' ? 'Customer Copy' : 'Office Copy'}</div><div className="font-mono text-lg font-bold">{job.jobNumber}</div></div>
+      <div className="text-right"><div className="font-semibold uppercase">{copy === 'customer' ? 'Customer Copy' : 'Office Copy'}</div><div className="font-mono text-lg font-bold">{serial(job.jobNumber)}</div></div>
     </header>
     <div className="grid grid-cols-3 gap-x-5 border-b border-slate-700 py-2">
       <div className="space-y-1"><Row label="Date">{formatDateTime(job.createdAt)}</Row><Row label="Customer">{job.customer.name}</Row><Row label="Address">{job.customer.address ?? job.customer.city}</Row></div>
-      <div className="space-y-1"><Row label="Job No.">{job.jobNumber}</Row><Row label="Mobile">{job.customer.phone}</Row><Row label="Alternate">{job.customer.altPhone}</Row></div>
+      <div className="space-y-1"><Row label="Job No.">{serial(job.jobNumber)}</Row><Row label="Mobile">{job.customer.phone}</Row><Row label="Alternate">{job.customer.altPhone}</Row></div>
       <div className="space-y-1"><Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row><Row label="Engineer">{job.assignedEngineer?.name}</Row></div>
     </div>
     <div className="grid grid-cols-3 gap-x-5 gap-y-1 border-b border-slate-700 py-2">
@@ -84,13 +87,9 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
     <div className="border-b border-slate-700 py-2 font-bold">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
     {!!advance.length && <div className="border-b border-slate-300 py-2">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
     {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
-    <ol className="list-decimal space-y-1.5 py-3 pl-5 text-[11px] leading-snug text-slate-700">
-      <li>Please bring this job sheet when collecting the device.<span lang="mr" className="block">उपकरण घेण्यासाठी येताना ही जॉब शीट सोबत आणा.</span></li>
-      <li>The estimate may change after inspection; work starts only after customer approval.<span lang="mr" className="block">तपासणीनंतर अंदाजित रक्कम बदलू शकते; ग्राहकाच्या मंजुरीनंतरच काम सुरू केले जाईल.</span></li>
-      <li>We are not responsible for data loss or devices not collected within 30 days of intimation.<span lang="mr" className="block">डेटा गहाळ झाल्यास किंवा कळविल्यानंतर ३० दिवसांच्या आत उपकरण घेऊन न गेल्यास आम्ही जबाबदार राहणार नाही.</span></li>
-      <li>Devices opened or tampered elsewhere may be returned without repair.<span lang="mr" className="block">इतरत्र उघडलेले किंवा छेडछाड केलेले उपकरण दुरुस्ती न करता परत केले जाऊ शकते.</span></li>
-      <li>Repair cost may increase only after customer approval.<span lang="mr" className="block">ग्राहकाच्या मंजुरीनंतरच दुरुस्ती खर्च वाढू शकतो.</span></li>
-    </ol>
+    <p lang="mr" className="py-3 text-[12px] leading-relaxed text-slate-800">
+      <strong>सुचना:</strong> १) पावती आणल्याशिवाय मोबाईल मिळणार नाही. २) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे. ३) आऊट वारंटी मोबाईलमध्ये जी तक्रार आहे, त्यापेक्षा तक्रार वाढू शकते. किंवा मोबाईल बंद पडू शकतो. ४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही. ५) खर्च वाढू शकतो.
+    </p>
     <footer className="mt-8 flex justify-between border-t border-slate-700 pt-10 text-xs font-semibold"><span>Customer Signature</span><span>Authorised Signature</span></footer>
   </article>;
 }

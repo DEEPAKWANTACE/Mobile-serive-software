@@ -22,11 +22,14 @@ export function DashboardHero({ user, actions, subtitle }: { user: AuthUser; act
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
             {user.role === 'ENGINEER' ? `Welcome, ${user.name}` : `${greeting()}, ${user.role === 'SUPER_ADMIN' ? user.name : user.name.split(' ')[0]}`}
           </h1>
-          <p className="mt-1 text-sm text-brand-100">
-            {ROLE_LABELS[user.role]}
-            {user.branch ? ` · ${user.branch.name}` : ''}
-            {subtitle ? ` · ${subtitle}` : ''}
-          </p>
+          {user.role !== 'ENGINEER' && (
+            <p className="mt-1 text-sm text-brand-100">
+              {ROLE_LABELS[user.role]}
+              {user.branch ? ` · ${user.branch.name}` : ''}
+              {subtitle ? ` · ${subtitle}` : ''}
+            </p>
+          )}
+          {user.role === 'ENGINEER' && subtitle && <p className="mt-1 text-sm text-brand-100">{subtitle}</p>}
         </div>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
       </div>

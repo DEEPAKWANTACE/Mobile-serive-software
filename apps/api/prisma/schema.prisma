@@ -488,6 +488,14 @@ model JobCounter {
   @@map("job_counters")
 }
 
+/// Shared monthly sequence so job serials are unique across branches.
+model JobGlobalCounter {
+  period  String @id // YYMM
+  lastSeq Int    @map("last_seq")
+
+  @@map("job_global_counters")
+}
+
 enum PhotoKind {
   CUSTOMER
   ID_PROOF // Aadhaar or other ID

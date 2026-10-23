@@ -13,6 +13,13 @@ export function ShopHeader({ branch }: { branch: { name: string; address: string
         <div className="text-base font-bold">{shop?.shopName ?? branch.name}</div>
         {shop?.legalName && <div className="text-xs text-slate-600">{shop.legalName}</div>}
         {shop?.gstin && <div className="text-xs font-medium">GSTIN: {shop.gstin}</div>}
+        {(shop?.address || shop?.phone) && (
+          <div className="text-xs text-slate-600">
+            {shop.address}
+            {shop.address && shop.phone && ' · '}
+            {shop.phone && `Ph: ${shop.phone}`}
+          </div>
+        )}
         <div className="text-xs text-slate-600">
           {branch.name}
           {branch.address && ` · ${branch.address}`}
