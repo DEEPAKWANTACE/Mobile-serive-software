@@ -34,7 +34,7 @@ export function JobSheetPrintPage() {
 const serial = (jobNumber: string) => jobNumber.slice(-4);
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="flex gap-2"><span className="w-28 shrink-0 font-semibold">{label}:</span><span>{children || '—'}</span></div>;
+  return <div className="flex gap-2"><span className="w-[5.5rem] shrink-0 font-semibold">{label}:</span><span>{children || '—'}</span></div>;
 }
 
 function PatternBoxes() {
@@ -56,7 +56,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
   const otherAccessories = accessories.filter((accessory) => !standardAccessoryNames.has(accessory.trim().toLocaleLowerCase()));
   const advance = job.payments.filter((p) => p.kind === 'ADVANCE');
   const product = job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim();
-  return <article className="min-h-[270mm] rounded-lg border border-slate-700 bg-white p-3 text-[13px] leading-snug print:min-h-0 print:rounded-none print:p-2">
+  return <article className="min-h-[270mm] rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:min-h-0 print:rounded-none print:p-2">
     <header className="grid grid-cols-3 items-start border-b border-slate-700 pb-2">
       <div className="text-xs text-slate-500">{formatDateTime(job.createdAt)}</div>
       <div className="text-center"><div className="font-bold">Inward Slip</div><ShopHeader branch={job.branch} compact /></div>
@@ -94,9 +94,14 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
     <div className="border-b border-slate-700 py-2 font-bold">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
     {!!advance.length && <div className="border-b border-slate-300 py-2">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
     {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
-    <p lang="mr" className="py-3 text-[12px] leading-relaxed text-slate-800">
-      <strong>सुचना:</strong> १) पावती आणल्याशिवाय मोबाईल मिळणार नाही. २) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे. ३) आऊट वारंटी मोबाईलमध्ये जी तक्रार आहे, त्यापेक्षा तक्रार वाढू शकते. किंवा मोबाईल बंद पडू शकतो. ४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही. ५) खर्च वाढू शकतो.
-    </p>
+    <div lang="mr" className="py-3 text-[12px] leading-relaxed text-slate-800">
+      <strong>सुचना:</strong>
+      <p>१) पावती आणल्याशिवाय मोबाईल मिळणार नाही.</p>
+      <p>२) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे.</p>
+      <p>३) आऊट वारंटी मोबाईलमध्ये जी तक्रार आहे, त्यापेक्षा तक्रार वाढू शकते. किंवा मोबाईल बंद पडू शकतो.</p>
+      <p>४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही.</p>
+      <p>५) खर्च वाढू शकतो.</p>
+    </div>
     <footer className="mt-8 flex justify-between border-t border-slate-700 pt-10 text-xs font-semibold"><span>Customer Signature</span><span>Authorised Signature</span></footer>
   </article>;
 }
