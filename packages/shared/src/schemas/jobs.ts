@@ -241,11 +241,8 @@ export const jobCreateSchema = z
     if (v.jobType === 'MOBILE') {
       if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
       if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
-      if (!v.imei) ctx.addIssue({ code: 'custom', message: 'IMEI 1 is required', path: ['imei'] });
-      if (!v.imei2) ctx.addIssue({ code: 'custom', message: 'IMEI 2 is required', path: ['imei2'] });
     } else {
       if (!v.accessoryName) ctx.addIssue({ code: 'custom', message: 'Accessory name is required', path: ['accessoryName'] });
-      if (!v.serialNumber) ctx.addIssue({ code: 'custom', message: 'Serial number is required', path: ['serialNumber'] });
     }
     if (v.skipDiagnosis) {
       if (v.totalAmount === null || v.totalAmount === undefined) ctx.addIssue({ code: 'custom', message: 'Enter the estimate', path: ['totalAmount'] });

@@ -260,7 +260,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               <input {...register('accessoryName')} className={inputClass} placeholder="e.g. Bluetooth speaker, smartwatch, charger" />
             </Field>
           )}
-          <Field label="Brand" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.brandId?.message)}>
+          <Field label="Brand" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.brandId?.message)}>
             <Controller
               control={control}
               name="brandId"
@@ -278,7 +278,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               )}
             />
           </Field>
-          <Field label="Model" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.deviceModelId?.message)}>
+          <Field label="Model" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.deviceModelId?.message)}>
             <Controller
               control={control}
               name="deviceModelId"
@@ -295,16 +295,16 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               )}
             />
           </Field>
-          <Field label="IMEI 1" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06#">
+          <Field label="IMEI 1" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06#">
             <input {...register('imei')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
           </Field>
-          <Field label="IMEI 2" required={jobType === 'MOBILE'} className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei2?.message)}>
+          <Field label="IMEI 2" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei2?.message)}>
             <input {...register('imei2')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
           </Field>
           <div className={`${jobType === 'MOBILE' ? '' : 'hidden'} sm:col-span-2 -mt-2 empty:hidden`}>
             <ImeiWarning imei={watch('imei')} />
           </div>
-          <Field label="Serial number" required={jobType === 'ACCESSORY'} className={jobType === 'ACCESSORY' ? '' : 'hidden'} {...err(errors.serialNumber?.message)}>
+          <Field label="Serial number" className={jobType === 'ACCESSORY' ? '' : 'hidden'} {...err(errors.serialNumber?.message)}>
             <input {...register('serialNumber')} className={`${inputClass} font-mono uppercase`} />
           </Field>
           <Field label="Colour" {...err(errors.color?.message)}>

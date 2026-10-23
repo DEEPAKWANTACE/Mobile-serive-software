@@ -1,8 +1,11 @@
 import { AuthImage } from '@/features/jobs/AuthImage';
 import { useShopSettings } from './useShopSettings';
 
-/** Shop identity block for printed documents: logo, name, legal name, GSTIN, then the branch line. */
-export function ShopHeader({ branch }: { branch: { name: string; address: string | null; phone: string | null } }) {
+/**
+ * Shop identity block for printed documents: logo, name, legal name, GSTIN, then the branch line.
+ * `compact` (job sheet) drops the legal name, GSTIN and branch line.
+ */
+export function ShopHeader({ branch, compact = false }: { branch: { name: string; address: string | null; phone: string | null }; compact?: boolean }) {
   const { data: shop } = useShopSettings();
   return (
     <div className="flex items-start gap-3">
@@ -11,8 +14,8 @@ export function ShopHeader({ branch }: { branch: { name: string; address: string
       )}
       <div>
         <div className="text-base font-bold">{shop?.shopName ?? branch.name}</div>
-        {shop?.legalName && <div className="text-xs text-slate-600">{shop.legalName}</div>}
-        {shop?.gstin && <div className="text-xs font-medium">GSTIN: {shop.gstin}</div>}
+        {!compact && shop?.legalName && <div className="text-xs text-slate-600">{shop.legalName}</div>}
+        {!compact && shop?.gstin && <div className="text-xs font-medium">GSTIN: {shop.gstin}</div>}
         {(shop?.address || shop?.phone) && (
           <div className="text-xs text-slate-600">
             {shop.address}
@@ -20,11 +23,11 @@ export function ShopHeader({ branch }: { branch: { name: string; address: string
             {shop.phone && `Ph: ${shop.phone}`}
           </div>
         )}
-        <div className="text-xs text-slate-600">
+        {!compact && <div className="text-xs text-slate-600">
           {branch.name}
           {branch.address && ` · ${branch.address}`}
           {branch.phone && ` · Ph: ${branch.phone}`}
-        </div>
+        </div>}
       </div>
     </div>
   );
