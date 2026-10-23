@@ -140,7 +140,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <p>२) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे.</p>
       <p>३) आऊट वारंटी मोबाईलमध्ये जी तक्रार आहे, त्यापेक्षा तक्रार वाढू शकते. किंवा मोबाईल बंद पडू शकतो.</p>
       <p>४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही.</p>
-      <p>५) खर्च वाढू शकतो.</p>
+      <p>५) सांगितलेल्या खर्चात बदल होऊ शकतो.</p>
     </div>
     <footer className="mt-8 flex justify-between border-t border-slate-700 pt-10 text-xs font-semibold"><span>Customer Signature</span><span>Authorised Signature</span></footer>
   </article>;
