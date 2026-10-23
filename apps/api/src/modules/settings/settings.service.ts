@@ -10,6 +10,7 @@ import { assertCatalogRow, catalogWhere, writeCatalogBranch } from '../../lib/ca
 
 const ID = 'default';
 const DEFAULT_NAME = 'Mobile Service Centre';
+const DEFAULT_EMAIL = 'dattagurumobile12345@gmail.com';
 
 export async function get(): Promise<ShopSettingsDto> {
   const s = await prisma.shopSettings.findUnique({ where: { id: ID } });
@@ -19,7 +20,7 @@ export async function get(): Promise<ShopSettingsDto> {
     gstin: s?.gstin ?? null,
     address: s?.address ?? null,
     phone: s?.phone ?? null,
-    email: s?.email ?? null,
+    email: s?.email ?? DEFAULT_EMAIL,
     invoiceTerms: s?.invoiceTerms ?? null,
     hasLogo: !!s?.logoKey,
     logoVersion: s?.logoKey ? s.updatedAt.getTime().toString(36) : null,

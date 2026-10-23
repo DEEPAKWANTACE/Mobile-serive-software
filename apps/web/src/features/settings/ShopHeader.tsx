@@ -2,7 +2,7 @@ import { AuthImage } from '@/features/jobs/AuthImage';
 import { useShopSettings } from './useShopSettings';
 
 /**
- * Shop identity block for printed documents: logo, name, legal name, GSTIN, then the branch line.
+ * Shop identity block for printed documents: logo, name, legal name, GSTIN, contact, email, then the branch line.
  * `compact` (job sheet) drops the legal name, GSTIN and branch line.
  */
 export function ShopHeader({ branch, compact = false }: { branch: { name: string; address: string | null; phone: string | null }; compact?: boolean }) {
@@ -23,6 +23,7 @@ export function ShopHeader({ branch, compact = false }: { branch: { name: string
             {shop.phone && `Ph: ${shop.phone}`}
           </div>
         )}
+        {shop?.email && <div className="text-xs text-slate-600">Email: {shop.email}</div>}
         {!compact && <div className="text-xs text-slate-600">
           {branch.name}
           {branch.address && ` · ${branch.address}`}
