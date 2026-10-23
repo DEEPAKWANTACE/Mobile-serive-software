@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { toJpeg } from 'html-to-image';
-import { jsPDF } from 'jspdf';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { PAYMENT_MODE_LABELS, type JobDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
@@ -32,41 +30,18 @@ export function JobSheetPrintPage() {
   </div>;
 }
 
-/** Renders the sheet off-screen, converts it to an A4 PDF and shows it in an embedded viewer. */
+/** Shows one copy and opens the browser print dialog, so "Save as PDF" gives a small text PDF. */
 function SheetPdf({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    let objectUrl: string | null = null;
     const timer = setTimeout(async () => {
-      const node = ref.current;
-      if (!node) return;
-      try {
-        await document.fonts.ready;
-        // Give the logo (fetched with auth) time to load before capturing.
-        await Promise.all([...node.querySelectorAll('img')].map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; })));
-        const img = await toJpeg(node, { pixelRatio: 2, quality: 0.8, backgroundColor: '#ffffff' });
-        const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-        const props = pdf.getImageProperties(img);
-        const width = 200;
-        const height = Math.min((props.height * width) / props.width, 287);
-        pdf.addImage(img, 'JPEG', 5, 5, width, height, undefined, 'FAST');
-        if (cancelled) return;
-        objectUrl = URL.createObjectURL(pdf.output('blob'));
-        setUrl(objectUrl);
-      } catch {
-        if (!cancelled) setFailed(true);
-      }
+      await document.fonts.ready;
+      window.print();
     }, 800);
-    return () => { cancelled = true; clearTimeout(timer); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+    return () => clearTimeout(timer);
   }, [job, copy]);
   return <>
-    <div className="pointer-events-none fixed top-0 -left-[10000px] w-[794px]" aria-hidden><div ref={ref}><Sheet job={job} copy={copy} /></div></div>
-    {url ? <iframe src={url} title="Job sheet PDF" className="h-[85vh] w-full rounded-lg border border-slate-300" />
-      : failed ? <Sheet job={job} copy={copy} />
-      : <div className="p-10 text-center text-slate-500">Generating PDF…</div>}
+    <div className="mb-3 flex justify-end print:hidden"><Button onClick={() => window.print()}>Print / Save as PDF</Button></div>
+    <Sheet job={job} copy={copy} />
   </>;
 }
 

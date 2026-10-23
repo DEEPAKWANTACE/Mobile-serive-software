@@ -23,3 +23,8 @@ body {
     background: white;
   }
 }
+
+@page {
+  size: A4;
+  margin: 6mm;
+}
