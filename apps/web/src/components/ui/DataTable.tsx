@@ -6,15 +6,49 @@ export type Column<T> = {
   className?: string;
 };
 
+const SELECT_HEADER = '__select__';
+
 type Props<T> = {
   columns: Column<T>[];
   rows: T[] | undefined;
   rowKey: (row: T) => string;
   isLoading?: boolean;
   emptyMessage?: string;
+  /** Row selection (checkbox column) — pass both to enable. */
+  selected?: Set<string>;
+  onSelectedChange?: (next: Set<string>) => void;
 };
 
-export function DataTable<T>({ columns, rows, rowKey, isLoading, emptyMessage = 'No records found' }: Props<T>) {
+export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, emptyMessage = 'No records found', selected, onSelectedChange }: Props<T>) {
+  const keys = rows?.map(rowKey) ?? [];
+  const allChecked = keys.length > 0 && keys.every((k) => selected?.has(k));
+  const toggle = (k: string) => {
+    const next = new Set(selected);
+    if (next.has(k)) next.delete(k);
+    else next.add(k);
+    onSelectedChange?.(next);
+  };
+  const toggleAll = () => {
+    const next = new Set(selected);
+    for (const k of keys) {
+      if (allChecked) next.delete(k);
+      else next.add(k);
+    }
+    onSelectedChange?.(next);
+  };
+  const checkbox = 'size-4 cursor-pointer rounded border-slate-300 accent-brand-600';
+  const columns: Column<T>[] =
+    selected && onSelectedChange
+      ? [
+          {
+            header: SELECT_HEADER,
+            className: 'w-8',
+            cell: (row) => <input type="checkbox" aria-label="Select row" className={checkbox} checked={selected.has(rowKey(row))} onChange={() => toggle(rowKey(row))} />,
+          },
+          ...baseColumns,
+        ]
+      : baseColumns;
+
   return (
     <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -22,7 +56,7 @@ export function DataTable<T>({ columns, rows, rowKey, isLoading, emptyMessage = 
           <tr>
             {columns.map((c) => (
               <th key={c.header} className={`px-4 py-2.5 text-left font-medium whitespace-nowrap text-slate-600 ${c.className ?? ''}`}>
-                {c.header}
+                {c.header === SELECT_HEADER ? <input type="checkbox" aria-label="Select all on this page" className={checkbox} checked={allChecked} onChange={toggleAll} /> : c.header}
               </th>
             ))}
           </tr>

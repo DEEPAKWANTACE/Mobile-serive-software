@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { listQuerySchema, optionalText } from './common.js';
 import type { JobPartDto } from './inventory.js';
+import type { Role } from '../roles.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -660,3 +661,36 @@ export type JobHistoryEntryDto = {
   actor: { id: string; name: string } | null;
   metadata: unknown;
 };
+
+// ─── Bulk actions (Job Master) ──────────────────────────────────────────────
+
+export const BULK_JOB_ACTIONS = ['assign', 'unassign', 'status', 'cancel', 'delete'] as const;
+export type BulkJobAction = (typeof BULK_JOB_ACTIONS)[number];
+export const BULK_JOB_ACTION_LABELS: Record<BulkJobAction, string> = {
+  assign: 'Assign engineer',
+  unassign: 'Take back from engineer',
+  status: 'Change status',
+  cancel: 'Cancel jobs',
+  delete: 'Delete permanently',
+};
+/** Who may run each bulk action. Delete is Super Admin only; per-job rules still apply in the services. */
+export const BULK_JOB_ACTION_ROLES: Record<BulkJobAction, readonly Role[]> = {
+  assign: ['BRANCH_MANAGER', 'CCO'],
+  unassign: ['BRANCH_MANAGER', 'CCO'],
+  status: ['SUPER_ADMIN', 'BRANCH_MANAGER'],
+  cancel: ['SUPER_ADMIN', 'BRANCH_MANAGER', 'CCO'],
+  delete: ['SUPER_ADMIN'],
+};
+export const BULK_JOB_MAX = 100;
+
+const bulkIds = z.array(z.uuid()).min(1, 'Select at least one job').max(BULK_JOB_MAX, `At most ${BULK_JOB_MAX} jobs at a time`);
+export const bulkJobActionSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('assign'), jobIds: bulkIds, engineerId: z.uuid('Select an engineer') }),
+  z.object({ action: z.literal('unassign'), jobIds: bulkIds, note: optionalText(300) }),
+  z.object({ action: z.literal('status'), jobIds: bulkIds, status: z.enum(JOB_STATUSES), note: optionalText(500) }),
+  z.object({ action: z.literal('cancel'), jobIds: bulkIds, reason: z.string().trim().min(3, 'Why are the jobs cancelled?').max(300), refundMode: z.enum(PAYMENT_MODES).nullish() }),
+  z.object({ action: z.literal('delete'), jobIds: bulkIds }),
+]);
+export type BulkJobActionInput = z.input<typeof bulkJobActionSchema>;
+export type BulkJobActionData = z.output<typeof bulkJobActionSchema>;
+export type BulkJobResultDto = { results: { jobId: string; ok: boolean; error?: string }[]; succeeded: number; failed: number };

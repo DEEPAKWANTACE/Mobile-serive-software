@@ -37,6 +37,7 @@ import {
   PHOTO_MAX_PER_UPLOAD,
   photoUploadSchema,
   ROLES,
+  bulkJobActionSchema,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
 import { multipartJson } from '../../middleware/multipart-json.ts';
@@ -49,6 +50,7 @@ import * as controller from './jobs.controller.ts';
 import * as service from './jobs.service.ts';
 import * as l4 from './l4.service.ts';
 import * as editing from './edit.service.ts';
+import * as bulk from './bulk.service.ts';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -85,6 +87,10 @@ jobRoutes.get('/stats', authorize(...viewers), validate({ query: jobStatsQuerySc
 jobRoutes.get('/engineers', authorize(...viewers, ROLES.ACCOUNTS), validate({ query: engineerListQuerySchema }), controller.engineers);
 jobRoutes.get('/inward-staff', authorize(...assigners), validate({ query: engineerListQuerySchema }), async (req, res) => {
   res.json(await service.inwardStaff(actorOf(req), (res.locals.query as { branchId?: string }).branchId));
+});
+// Per-action role rules live in BULK_JOB_ACTION_ROLES (delete is Super Admin only).
+jobRoutes.post('/bulk', authorize(...assigners), validate({ body: bulkJobActionSchema }), async (req, res) => {
+  res.json(await bulk.run(req.body, actorOf(req)));
 });
 // Transfers (static paths before "/:id")
 const transferParams = z.object({ transferId: z.uuid() });

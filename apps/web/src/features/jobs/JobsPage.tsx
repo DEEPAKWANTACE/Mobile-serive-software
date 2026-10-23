@@ -28,6 +28,7 @@ import { api, ApiError } from '@/lib/api-client';
 import { toQueryString, useList, useOptions } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
 import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
+import { BulkJobActions, bulkActionsFor } from './BulkJobActions';
 import { EditJobForm } from './EditJobForm';
 import { JobLookup } from './JobLookup';
 import { JobStatusBadge } from './JobStatusBadge';
@@ -121,7 +122,9 @@ export function ShowJobs() {
   const [engineerId, setEngineerId] = useState(searchParams.get('engineer') ?? '');
   const [branchId, setBranchId] = useState('');
   const [view, setView] = useState(searchParams.get('view') ?? '');
-  const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
+  const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
+  const canBulk = bulkActionsFor(user?.role).length > 0;
+  const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1), setSelected(new Map()));
 
   const params = { page, pageSize: 25, sort: 'newest', search, product, from, to, status, engineerId, branchId, ...viewParams(view) };
   const { data, isLoading } = useList<JobListItemDto>('jobs', params);
@@ -226,7 +229,7 @@ export function ShowJobs() {
           />
         )}
         {isSuperAdmin && (
-          <FilterSelect value={branchId} onChange={(v) => (setBranchId(v), setEngineerId(''), setPage(1))} placeholder="All branches" options={branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))} />
+          <FilterSelect value={branchId} onChange={(v) => (setBranchId(v), setEngineerId(''), setPage(1), setSelected(new Map()))} placeholder="All branches" options={branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))} />
         )}
         {!isEngineer && (
           <Button variant="secondary" onClick={() => void exportCsv()}>
@@ -234,7 +237,29 @@ export function ShowJobs() {
           </Button>
         )}
       </FilterBar>
-      <DataTable columns={columns} rows={data?.items} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="No jobs match these filters" />
+      {canBulk && user && (
+        <BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} />
+      )}
+      <DataTable
+        columns={columns}
+        rows={data?.items}
+        rowKey={(j) => j.id}
+        isLoading={isLoading}
+        emptyMessage="No jobs match these filters"
+        {...(canBulk && {
+          selected: new Set(selected.keys()),
+          // Keep rows picked on other pages; add/remove the ones on this page.
+          onSelectedChange: (ids: Set<string>) =>
+            setSelected((prev) => {
+              const next = new Map(prev);
+              for (const j of data?.items ?? []) {
+                if (ids.has(j.id)) next.set(j.id, j);
+                else next.delete(j.id);
+              }
+              return next;
+            }),
+        })}
+      />
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
     </div>
   );
