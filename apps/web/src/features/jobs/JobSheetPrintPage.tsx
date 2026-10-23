@@ -4,18 +4,22 @@ import { PAYMENT_MODE_LABELS, type JobDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDateTime } from '@/lib/format';
 import { useJob } from './api';
+import { makeTestJob } from './testJob';
 import { ShopHeader } from '@/features/settings/ShopHeader';
 
 export function JobSheetPrintPage() {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
   const copy = params.get('copy') === 'office' ? 'office' : params.get('copy') === 'customer' ? 'customer' : null;
-  const { data: job, isLoading, error } = useJob(id);
-  if (isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
+  const isTest = id === 'test';
+  const query = useJob(id, !isTest);
+  const { isLoading, error } = query;
+  const job = isTest ? makeTestJob() : query.data;
+  if (!isTest && isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   if (error || !job) return <div className="p-10 text-center text-slate-600">{error?.message ?? 'Job not found'}</div>;
   return <div className="mx-auto max-w-4xl">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-      <Link to={`/jobs/${job.id}`} className="text-sm text-slate-500 hover:underline">← Back to job</Link>
+      <Link to={isTest ? "/jobs" : `/jobs/${job.id}`} className="text-sm text-slate-500 hover:underline">← Back to job</Link>
       <div className="flex gap-2">
         <Link to={`/jobs/${job.id}/print?copy=customer`} target="_blank"><Button variant="secondary">Customer Copy</Button></Link>
         <Link to={`/jobs/${job.id}/print?copy=office`} target="_blank"><Button variant="secondary">Office Copy</Button></Link>

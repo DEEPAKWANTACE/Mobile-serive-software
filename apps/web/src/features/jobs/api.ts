@@ -3,7 +3,7 @@ import type { JobDto, JobHistoryEntryDto, JobPhotoDto, PhotoKind } from '@msm/sh
 import { api } from '@/lib/api-client';
 import { compressImage } from '@/lib/image';
 
-export const useJob = (id: string) => useQuery({ queryKey: ['jobs', id], queryFn: () => api.get<JobDto>(`/jobs/${id}`) });
+export const useJob = (id: string, enabled = true) => useQuery({ queryKey: ['jobs', id], queryFn: () => api.get<JobDto>(`/jobs/${id}`), enabled });
 
 export const useJobHistory = (id: string) =>
   useQuery({ queryKey: ['jobs', id, 'history'], queryFn: () => api.get<JobHistoryEntryDto[]>(`/jobs/${id}/history`) });

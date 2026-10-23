@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, Pencil, Plus, Table2, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Printer, Table2, Trash2 } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
   JOB_STATUS_LABELS,
@@ -76,6 +76,14 @@ export function JobsPage() {
               {t.label}
             </button>
           ))}
+          <Link
+            to="/jobs/test/print?copy=customer"
+            target="_blank"
+            className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:text-slate-900"
+          >
+            <Printer className="size-4" />
+            Test Print
+          </Link>
         </div>
       )}
       {tab === 'show' && <ShowJobs />}
