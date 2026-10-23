@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -124,7 +124,9 @@ export function ShowJobs() {
   const [view, setView] = useState(searchParams.get('view') ?? '');
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
   const canBulk = bulkActionsFor(user?.role).length > 0;
-  const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1), setSelected(new Map()));
+  const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
+  // Clear the selection only when a filter really changes (SearchInput re-sends its value after every render).
+  useEffect(() => setSelected(new Map()), [search, product, from, to, status, engineerId, branchId, view]);
 
   const params = { page, pageSize: 25, sort: 'newest', search, product, from, to, status, engineerId, branchId, ...viewParams(view) };
   const { data, isLoading } = useList<JobListItemDto>('jobs', params);
@@ -229,7 +231,7 @@ export function ShowJobs() {
           />
         )}
         {isSuperAdmin && (
-          <FilterSelect value={branchId} onChange={(v) => (setBranchId(v), setEngineerId(''), setPage(1), setSelected(new Map()))} placeholder="All branches" options={branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))} />
+          <FilterSelect value={branchId} onChange={(v) => (setBranchId(v), setEngineerId(''), setPage(1))} placeholder="All branches" options={branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))} />
         )}
         {!isEngineer && (
           <Button variant="secondary" onClick={() => void exportCsv()}>
