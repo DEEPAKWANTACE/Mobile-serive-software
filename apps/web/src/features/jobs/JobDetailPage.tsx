@@ -227,9 +227,9 @@ function JobInfo({ job }: { job: JobDto }) {
           )
         }
       >
-        {((job.jobType === 'MOBILE' && (!job.imei || !job.imei2)) || (job.jobType === 'ACCESSORY' && !job.serialNumber)) && job.status !== 'DELIVERED' && (
+        {job.jobType === 'ACCESSORY' && !job.serialNumber && job.status !== 'DELIVERED' && (
           <div className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            {job.jobType === 'MOBILE' ? 'Both IMEIs must be recorded before delivery.' : 'The serial number must be recorded before delivery.'}
+            The serial number must be recorded before delivery.
           </div>
         )}
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">

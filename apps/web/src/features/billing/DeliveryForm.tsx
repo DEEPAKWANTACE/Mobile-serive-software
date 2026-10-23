@@ -41,7 +41,7 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
     if (!touched) setPayments((rows) => (rows.length === 1 ? [{ ...rows[0]!, amount: due > 0 ? String(due) : '' }] : rows));
   }, [due, touched]);
   const collected = roundMoney(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  const missingImei = bill.imeiRequired && !job.imei && !job.serialNumber;
+  const missingImei = bill.imeiRequired && job.jobType === 'ACCESSORY' && !job.serialNumber;
 
   const deliver = useMutation({
     mutationFn: () =>
@@ -86,7 +86,7 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
     >
       {missingImei && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-          IMEI / serial number is missing. Add it on the job (“Add IMEI / serial”) before delivering a repaired phone.
+          Serial number is missing. Add it on the job before delivering a repaired accessory.
         </div>
       )}
 

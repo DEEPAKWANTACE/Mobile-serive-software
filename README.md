@@ -74,7 +74,7 @@ on SPARE_PENDING; issuing the last missing part resumes it automatically.
 Catalogue: per-branch `Brand → DeviceModel`, `FaultCategory → Fault`, parts (with category/subcategory), and received-accessory options. Branch Managers edit their branch; Super Admin manages global defaults or any branch.
 
 Jobs: `Customer` (unique by mobile, shared across branches), `Job` (+ `JobFault` with the chosen price snapshot, `JobPhoto`), `JobCounter`, `Payment` (advance at intake; final payments at delivery).
-Jobs are either MOBILE (brand, model, IMEI 1 and IMEI 2 required) or ACCESSORY (accessory name and serial number required).
+Jobs are either MOBILE (brand and model required; IMEI optional) or ACCESSORY (accessory name and serial number required).
 Job numbers are `<BRANCHCODE>-<YYMM>-<seq>` (e.g. `AND01-2610-0001`), restarting monthly per branch; the counter row is
 locked during creation so concurrent jobs never collide.
 

@@ -138,9 +138,6 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   assertDeliverable(job.status);
   const bill = buildPreview(job);
 
-  if (bill.imeiRequired && job.jobType === 'MOBILE' && (!job.imei || !job.imei2)) {
-    throw invalid('imei', 'Add both IMEI 1 and IMEI 2 before delivering a repaired mobile');
-  }
   if (bill.imeiRequired && job.jobType === 'ACCESSORY' && !job.serialNumber) {
     throw invalid('serialNumber', 'Add the serial number before delivering a repaired accessory');
   }

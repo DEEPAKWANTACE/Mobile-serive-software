@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { toPng } from 'html-to-image';
+import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { PAYMENT_MODE_LABELS, type JobDto } from '@msm/shared';
@@ -47,12 +47,12 @@ function SheetPdf({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         await document.fonts.ready;
         // Give the logo (fetched with auth) time to load before capturing.
         await Promise.all([...node.querySelectorAll('img')].map((img) => img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; })));
-        const png = await toPng(node, { pixelRatio: 2, backgroundColor: '#ffffff' });
-        const pdf = new jsPDF({ unit: 'mm', format: 'a4' });
-        const props = pdf.getImageProperties(png);
+        const img = await toJpeg(node, { pixelRatio: 2, quality: 0.8, backgroundColor: '#ffffff' });
+        const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+        const props = pdf.getImageProperties(img);
         const width = 200;
         const height = Math.min((props.height * width) / props.width, 287);
-        pdf.addImage(png, 'PNG', 5, 5, width, height);
+        pdf.addImage(img, 'JPEG', 5, 5, width, height, undefined, 'FAST');
         if (cancelled) return;
         objectUrl = URL.createObjectURL(pdf.output('blob'));
         setUrl(objectUrl);
