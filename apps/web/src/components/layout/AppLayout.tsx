@@ -93,7 +93,7 @@ export function AppLayout() {
           </div>
         </header>
         <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
-          <div className="min-h-0 flex-1 p-4 sm:p-6 print:p-0">
+          <div className="flex-1 p-4 sm:p-6 print:p-0">
             <Outlet />
           </div>
           <footer className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
