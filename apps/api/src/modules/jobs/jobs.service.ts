@@ -7,6 +7,7 @@ import {
   ENGINEER_OPEN_STATUSES,
   ENGINEER_VISIBLE_PHOTO_KINDS,
   JOB_STATUSES,
+  JOB_PENDING_WITH,
   ROLES,
   roundMoney,
   type EngineerWorkloadDto,
@@ -39,7 +40,7 @@ import { storage } from '../../lib/storage.ts';
 import { businessRange, businessToday, startOfBusinessDay } from '../../lib/business-date.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { jobPartSelect, toJobPartDto } from '../inventory/job-part.ts';
-import { nextJobNumber } from './job-number.ts';
+import { nextJobNumber, publicJobNumber } from './job-number.ts';
 import { encryptSecret, decryptSecret } from '../../lib/secret-box.ts';
 import { endAssignment, recordStatus, startAssignment } from './history.ts';
 
@@ -55,8 +56,20 @@ export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
   return { OR: [{ branchId: scope.branchId }, { currentBranchId: scope.branchId }] };
 }
 
+function engineerJobScope(actor: Actor): Prisma.JobWhereInput {
+  const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000);
+  return {
+    assignedEngineerId: actor.sub,
+    OR: [
+      { status: { in: [...ENGINEER_OPEN_STATUSES] } },
+      { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
+      { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
+    ],
+  };
+}
+
 function jobScope(actor: Actor): Prisma.JobWhereInput {
-  return isEngineer(actor) ? { assignedEngineerId: actor.sub, status: { in: [...ENGINEER_OPEN_STATUSES] } } : jobBranchScope(actor);
+  return isEngineer(actor) ? engineerJobScope(actor) : jobBranchScope(actor);
 }
 
 /** True if the actor's branch owns the job or currently has the phone (Super Admin: always). */
@@ -398,18 +411,24 @@ export async function list(query: JobListQuery, actor: Actor) {
   }
   if (query.delivered) and.push({ status: 'DELIVERED' });
   if (query.today) and.push({ updatedAt: businessRange(businessToday(), businessToday()) });
+  if (query.completed) and.push({ status: { in: ['READY_FOR_DELIVERY', 'DELIVERED'] } });
   if (query.balanceDue) and.push({ id: { in: await jobIdsWithBalanceDue() } });
   if (s) {
-    and.push({
+    for (const term of s.split(/\s+/).filter(Boolean)) and.push({
       OR: [
-        { jobNumber: contains(s) },
-        { customer: { city: contains(s) } },
-        { imei: { startsWith: s } },
-        { imei2: { startsWith: s } },
-        { accessoryName: contains(s) },
-        { serialNumber: contains(s) },
-        { customer: { phone: { startsWith: s } } },
-        { customer: { name: contains(s) } },
+        { jobNumber: contains(term) },
+        { customer: { city: contains(term) } },
+        { imei: { startsWith: term } },
+        { imei2: { startsWith: term } },
+        { accessoryName: contains(term) },
+        { serialNumber: contains(term) },
+        { customer: { phone: { startsWith: term } } },
+        { customer: { name: contains(term) } },
+        { retailer: contains(term) },
+        { customerComplaint: contains(term) },
+        { brand: { name: contains(term) } },
+        { deviceModel: { name: contains(term) } },
+        { faults: { some: { fault: { name: contains(term) } } } },
       ],
     });
   }
@@ -425,8 +444,9 @@ export async function list(query: JobListQuery, actor: Actor) {
   ]);
   const items: JobListItemDto[] = rows.map((j) => ({
     id: j.id,
-    jobNumber: j.jobNumber,
+    jobNumber: publicJobNumber(j.jobNumber),
     status: j.status,
+    pendingWith: JOB_PENDING_WITH[j.status],
     createdAt: j.createdAt.toISOString(),
     customer: { name: j.customer.name, phone: j.customer.phone },
     device: j.jobType === 'ACCESSORY' ? (j.accessoryName ?? 'Accessory') : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim(),
@@ -594,7 +614,7 @@ const detailSelect = {
 export async function loadForAccess(id: string, actor: Actor) {
   const job = await prisma.job.findUnique({
     where: { id },
-    select: { id: true, branchId: true, currentBranchId: true, location: true, status: true, assignedEngineerId: true },
+    select: { id: true, branchId: true, currentBranchId: true, location: true, status: true, assignedEngineerId: true, readyAt: true, deliveredAt: true },
   });
   if (!job) throw HttpError.notFound('Job not found');
   if (!canSeeBranch(actor, job)) throw HttpError.forbidden();
@@ -604,7 +624,10 @@ export async function loadForAccess(id: string, actor: Actor) {
     if (!offered) throw HttpError.forbidden('This job is not assigned to you');
   }
   if (isEngineer(actor) && job.assignedEngineerId === actor.sub && !ENGINEER_OPEN_STATUSES.includes(job.status)) {
-    throw HttpError.forbidden('This job no longer needs engineer action');
+    const completedAt = job.deliveredAt ?? job.readyAt;
+    if (!completedAt || completedAt.getTime() < Date.now() - 2 * 86_400_000) {
+      throw HttpError.forbidden('Completed jobs remain available to engineers for two days');
+    }
   }
   return job;
 }
@@ -649,6 +672,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
   const visiblePhotos = isEngineer(actor) ? photos.filter((p) => ENGINEER_VISIBLE_PHOTO_KINDS.includes(p.kind)) : photos;
   return {
     ...rest,
+    jobNumber: publicJobNumber(rest.jobNumber),
     createdAt: createdAt.toISOString(),
     assignedAt: iso(assignedAt),
     diagnosedAt: iso(diagnosedAt),
@@ -662,7 +686,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     cancelledAt: iso(cancelledAt),
     devicePassword: mayReadPassword ? decryptSecret(devicePasswordEnc) : null,
     ...money,
-    statusHistory: statusHistory.map((h) => ({
+    statusHistory: isEngineer(actor) ? [] : statusHistory.map((h) => ({
       id: String(h.id),
       from: h.fromStatus,
       to: h.toStatus,
@@ -671,7 +695,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
       remark: h.remark,
       at: h.changedAt.toISOString(),
     })),
-    assignments: assignments.map((a) => ({
+    assignments: isEngineer(actor) ? [] : assignments.map((a) => ({
       id: a.id,
       engineer: a.engineer,
       assignedBy: a.assignedBy?.name ?? null,
@@ -709,6 +733,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
 }
 
 export async function history(id: string, actor: Actor): Promise<JobHistoryEntryDto[]> {
+  if (isEngineer(actor)) throw HttpError.forbidden('Job history is not available to engineers');
   await loadForAccess(id, actor);
   const rows = await prisma.auditLog.findMany({
     where: { entityType: 'job', entityId: id },

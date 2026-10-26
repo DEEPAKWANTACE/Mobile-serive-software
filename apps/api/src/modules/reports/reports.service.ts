@@ -20,6 +20,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import type { Prisma } from '../../generated/prisma/client.ts';
 import { toPage } from '../../lib/pagination.ts';
 import { jobMoney } from '../jobs/jobs.service.ts';
+import { publicJobNumber } from '../jobs/job-number.ts';
 
 const TAT_LIMIT_DAYS = 15;
 const DAY = 86_400_000;
@@ -222,7 +223,7 @@ export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
     if (last?.endReason === 'UNASSIGNED') chain.push('Admin');
     if (last?.endReason === 'SENT_TO_L4') chain.push('L4');
     return {
-      job: { id: j.id, jobNumber: j.jobNumber, createdAt: j.createdAt.toISOString(), status: j.status, branchCode: j.branch.code },
+      job: { id: j.id, jobNumber: publicJobNumber(j.jobNumber), createdAt: j.createdAt.toISOString(), status: j.status, branchCode: j.branch.code },
       customer: j.customer.name,
       product: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory',
       problem: j.faults.map((f) => f.fault.name).join(', '),

@@ -55,7 +55,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-dvh overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:hidden">{sidebar}</aside>
 
@@ -68,7 +68,7 @@ export function AppLayout() {
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 print:hidden">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 print:hidden">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setMenuOpen(true)} aria-label="Open menu" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden">
               <Menu className="size-5" />
@@ -92,11 +92,11 @@ export function AppLayout() {
             </button>
           </div>
         </header>
-        <main className="flex min-h-0 flex-1 flex-col overflow-auto print:overflow-visible">
-          <div className="flex-1 p-4 sm:p-6 print:p-0">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
+          <div className="min-h-0 flex-1 p-4 sm:p-6 print:p-0">
             <Outlet />
           </div>
-          <footer className="border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
+          <footer className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
             © {new Date().getFullYear()} {appName} · Repair management system
           </footer>
         </main>

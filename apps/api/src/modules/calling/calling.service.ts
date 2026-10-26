@@ -14,6 +14,7 @@ import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
+import { publicJobNumber } from '../jobs/job-number.ts';
 
 /** Jobs that are waiting on the customer (for calling and pending collection). */
 const OPEN_FOR_CALLS: JobStatus[] = ['READY_FOR_DELIVERY', 'RWR', 'AWAITING_APPROVAL', 'CUSTOMER_REJECTED'];
@@ -49,7 +50,7 @@ function toRow(j: Row, now = Date.now()): CallingRowDto {
   const since = j.status === 'READY_FOR_DELIVERY' ? j.readyAt : j.status === 'RWR' ? j.rwrAt : j.diagnosedAt;
   const last = j.callLogs[0];
   return {
-    job: { id: j.id, jobNumber: j.jobNumber, status: j.status, device: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory', branchCode: j.branch.code },
+    job: { id: j.id, jobNumber: publicJobNumber(j.jobNumber), status: j.status, device: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory', branchCode: j.branch.code },
     customer: j.customer,
     since: since?.toISOString() ?? null,
     daysWaiting: since ? Math.floor((now - since.getTime()) / 86_400_000) : 0,

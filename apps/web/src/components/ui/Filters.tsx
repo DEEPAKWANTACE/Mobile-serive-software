@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { inputClass } from './Field';
 
 export function FilterBar({ children }: { children: ReactNode }) {
@@ -6,19 +6,21 @@ export function FilterBar({ children }: { children: ReactNode }) {
 }
 
 /** Search box that reports its value after the user stops typing. */
-export function SearchInput({ onSearch, placeholder = 'Search…' }: { onSearch: (v: string) => void; placeholder?: string }) {
+export function SearchInput({ onSearch, placeholder = 'Search…', className = '' }: { onSearch: (v: string) => void; placeholder?: string; className?: string }) {
   const [value, setValue] = useState('');
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
   useEffect(() => {
-    const t = setTimeout(() => onSearch(value.trim()), 300);
+    const t = setTimeout(() => onSearchRef.current(value.trim()), 180);
     return () => clearTimeout(t);
-  }, [value, onSearch]);
+  }, [value]);
   return (
     <input
       type="search"
       value={value}
       onChange={(e) => setValue(e.target.value)}
       placeholder={placeholder}
-      className={`${inputClass} w-64!`}
+      className={`${inputClass} w-64! ${className}`}
     />
   );
 }

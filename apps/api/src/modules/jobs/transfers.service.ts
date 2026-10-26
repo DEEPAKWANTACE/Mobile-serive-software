@@ -2,6 +2,7 @@ import { ROLES, TRANSFERABLE_STATUSES, type TransferDto, type TransferListQuery,
 import type { Prisma } from '../../generated/prisma/client.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
+import { publicJobNumber } from './job-number.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { findBranchEngineer, jobBranchScope, loadForAccess } from './jobs.service.ts';
@@ -31,7 +32,7 @@ type Row = Prisma.JobTransferGetPayload<{ select: typeof select }>;
 
 const toDto = (t: Row): TransferDto => ({
   id: t.id,
-  job: { id: t.job.id, jobNumber: t.job.jobNumber, status: t.job.status, device: t.job.brand && t.job.deviceModel ? `${t.job.brand.name} ${t.job.deviceModel.name}` : 'Accessory' },
+  job: { id: t.job.id, jobNumber: publicJobNumber(t.job.jobNumber), status: t.job.status, device: t.job.brand && t.job.deviceModel ? `${t.job.brand.name} ${t.job.deviceModel.name}` : 'Accessory' },
   from: t.fromEngineer,
   to: t.toEngineer,
   reason: t.reason,

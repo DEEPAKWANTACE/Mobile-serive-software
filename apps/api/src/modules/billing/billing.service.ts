@@ -13,7 +13,7 @@ import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
-import { period } from '../jobs/job-number.ts';
+import { period, publicJobNumber } from '../jobs/job-number.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
 import { endAssignment, recordStatus } from '../jobs/history.ts';
 
@@ -287,7 +287,7 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
     createdBy: inv.createdBy,
     job: {
       id: job.id,
-      jobNumber: job.jobNumber,
+      jobNumber: publicJobNumber(job.jobNumber),
       receivedAt: job.createdAt.toISOString(),
       device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
       imei: job.imei,

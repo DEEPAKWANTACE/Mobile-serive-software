@@ -37,6 +37,23 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   CANCELLED: 'Cancelled',
 };
 
+/** The person or team whose action is needed before the job can move forward. */
+export const JOB_PENDING_WITH: Record<JobStatus, string> = {
+  RECEIVED: 'Counter · engineer assignment',
+  ASSIGNED: 'Engineer · diagnosis',
+  AWAITING_APPROVAL: 'Customer · CCO confirmation',
+  IN_REPAIR: 'Engineer · repair',
+  CUSTOMER_REJECTED: 'Engineer · return without repair',
+  REPAIRED: 'Engineer · testing / return',
+  TESTING: 'Engineer · testing',
+  READY_FOR_DELIVERY: 'Counter · customer collection',
+  SPARE_PENDING: 'Store / engineer · spare part',
+  RWR_PENDING: 'Branch Manager · RWR approval',
+  RWR: 'Counter · customer collection',
+  DELIVERED: 'Completed',
+  CANCELLED: 'Closed',
+};
+
 /** Closed jobs: nothing more can happen to them. */
 export const CLOSED_STATUSES: readonly JobStatus[] = ['DELIVERED', 'CANCELLED'];
 /** The counter may cancel a job that has not been repaired / returned yet. */
@@ -326,6 +343,11 @@ export const jobListQuerySchema = listQuerySchema.extend({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  /** true = repaired work handed to the counter or already delivered. */
+  completed: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   /** true = jobs with an amount still to collect. */
   balanceDue: z
     .enum(['true', 'false'])
@@ -521,6 +543,7 @@ export type JobListItemDto = {
   id: string;
   jobNumber: string;
   status: JobStatus;
+  pendingWith: string;
   createdAt: string;
   customer: { name: string; phone: string };
   device: string; // "Samsung Galaxy S24"

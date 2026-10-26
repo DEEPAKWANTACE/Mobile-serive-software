@@ -24,6 +24,7 @@ import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
 import { jobPartSelect, toJobPartDto } from './job-part.ts';
 import { recordStatus } from '../jobs/history.ts';
+import { publicJobNumber } from '../jobs/job-number.ts';
 import { applyMovement } from './stock.ts';
 
 /** Branch the store action applies to: own branch for branch staff; Super Admin must say which. */
@@ -166,6 +167,7 @@ export async function movements(query: MovementListQuery, actor: Actor) {
   ]);
   const items: StockMovementDto[] = rows.map((r) => ({
     ...r,
+    job: r.job ? { ...r.job, jobNumber: publicJobNumber(r.job.jobNumber) } : null,
     unitCost: r.unitCost?.toNumber() ?? null,
     createdAt: r.createdAt.toISOString(),
   }));
@@ -244,7 +246,7 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
       ...toJobPartDto(r),
       job: {
         id: job.id,
-        jobNumber: job.jobNumber,
+        jobNumber: publicJobNumber(job.jobNumber),
         status: job.status,
         device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
         engineer: job.assignedEngineer?.name ?? null,

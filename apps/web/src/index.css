@@ -12,6 +12,7 @@ html,
 body,
 #root {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -19,6 +20,13 @@ body {
 }
 
 @media print {
+  html,
+  body,
+  #root {
+    height: auto;
+    overflow: visible;
+  }
+
   body {
     background: white;
   }

@@ -16,6 +16,7 @@ import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
+import { publicJobNumber } from '../jobs/job-number.ts';
 
 const emptyTotals = (): ModeTotals & { total: number } => ({ CASH: 0, UPI: 0, CARD: 0, total: 0 });
 const add = (t: ModeTotals & { total: number }, mode: PaymentMode, amount: number) => {
@@ -143,7 +144,7 @@ export async function dayBook(query: DayBookQuery, actor: Actor): Promise<DayBoo
       amount: p.amount.toNumber(),
       reference: p.reference,
       createdAt: p.createdAt.toISOString(),
-      job: { id: p.job.id, jobNumber: p.job.jobNumber, customer: p.job.customer.name },
+      job: { id: p.job.id, jobNumber: publicJobNumber(p.job.jobNumber), customer: p.job.customer.name },
       receivedBy: p.receivedBy.name,
     })),
     expenseItems,

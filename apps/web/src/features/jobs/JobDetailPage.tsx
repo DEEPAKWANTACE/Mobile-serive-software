@@ -39,7 +39,7 @@ import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/features/auth/auth-context';
 import { api } from '@/lib/api-client';
 import { handleFormError } from '@/lib/form-errors';
-import { formatCurrency, formatDateTime } from '@/lib/format';
+import { formatCurrency, formatDateTime, formatJobNumber } from '@/lib/format';
 import { AssignEngineerDialog } from './AssignEngineerDialog';
 import { AuthImage } from './AuthImage';
 import { uploadJobPhotos, useJob, useJobHistory } from './api';
@@ -107,11 +107,15 @@ export function JobDetailPage() {
             ← {user?.role === ROLES.ENGINEER ? 'My jobs' : 'Job sheets'}
           </Link>
           <div className="mt-1 flex items-center gap-3">
-            <h1 className="font-mono text-2xl font-semibold">{job.jobNumber}</h1>
+            <h1 className="font-mono text-2xl font-semibold">{formatJobNumber(job.jobNumber)}</h1>
             <JobStatusBadge status={job.status} />
           </div>
           <p className="mt-1 text-sm text-slate-500">
             Received {formatDateTime(job.createdAt)} at {job.branch.name} by {job.inwardBy?.name ?? job.createdBy.name}
+          </p>
+          <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200 sm:hidden">
+            <span className="font-medium text-slate-800">Engineer: {job.assignedEngineer?.name ?? 'Not assigned'}</span>
+            {job.assignedAt && <> · since {formatDateTime(job.assignedAt)}</>}
           </p>
           {user?.role !== ROLES.ENGINEER && (
             <div className="mt-2 flex flex-wrap gap-2">
@@ -144,7 +148,7 @@ export function JobDetailPage() {
             </div>
           )}
         </div>
-        <div className="rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200">
+        <div className="hidden rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200 sm:block">
           <div className="text-xs text-slate-500">Engineer</div>
           <div className="mt-0.5 flex items-center gap-3">
             <span className="font-medium">{job.assignedEngineer?.name ?? <span className="text-amber-700">Not assigned</span>}</span>
@@ -194,9 +198,13 @@ export function JobDetailPage() {
         <div className="space-y-5">
           <JobCallsCard job={job} />
           <MovementsCard job={job} />
-          <StatusTimeline job={job} />
-          <Assignments job={job} />
-          <History jobId={job.id} />
+          {user?.role !== ROLES.ENGINEER && (
+            <>
+              <StatusTimeline job={job} />
+              <Assignments job={job} />
+              <History jobId={job.id} />
+            </>
+          )}
         </div>
       </div>
     </div>

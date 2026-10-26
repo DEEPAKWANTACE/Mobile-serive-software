@@ -14,6 +14,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from './jobs.service.ts';
 import { endAssignment, recordStatus } from './history.ts';
+import { publicJobNumber } from './job-number.ts';
 
 /**
  * L4 / main-office flow. The owning branch (customer side) never changes; `currentBranchId` + `location` track the phone:
@@ -169,7 +170,7 @@ export async function listMovements(query: L4MovementListQuery, actor: Actor): P
     receiveNote: m.receiveNote,
     job: {
       id: m.job.id,
-      jobNumber: m.job.jobNumber,
+      jobNumber: publicJobNumber(m.job.jobNumber),
       status: m.job.status,
       device: m.job.brand && m.job.deviceModel ? `${m.job.brand.name} ${m.job.deviceModel.name}` : 'Accessory',
       customer: m.job.customer.name,

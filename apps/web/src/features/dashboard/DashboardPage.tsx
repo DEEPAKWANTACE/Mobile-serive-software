@@ -55,8 +55,10 @@ import { useAuth } from '@/features/auth/auth-context';
 import { AssignEngineerDialog } from '@/features/jobs/AssignEngineerDialog';
 import { api } from '@/lib/api-client';
 import { useList } from '@/lib/crud';
-import { formatCurrency, timeAgo } from '@/lib/format';
+import { formatCurrency, formatJobNumber, timeAgo } from '@/lib/format';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
+import { InlineJobStatus } from '@/features/jobs/InlineJobStatus';
+import { SearchInput } from '@/components/ui/Filters';
 import { StatCard } from './StatCard';
 import { DashboardHero, HeroAction } from './DashboardHero';
 import { TrendChart } from '@/components/charts/TrendChart';
@@ -70,7 +72,7 @@ const useStats = () => useQuery({ queryKey: ['jobs', 'stats'], queryFn: () => ap
 
 const jobLink = (j: JobListItemDto) => (
   <Link to={`/jobs/${j.id}`} className="font-mono text-sm font-semibold whitespace-nowrap text-brand-600 hover:underline">
-    {j.jobNumber}
+    {formatJobNumber(j.jobNumber)}
   </Link>
 );
 
@@ -222,13 +224,17 @@ function EngineerDashboard() {
     minAgeDays?: number;
     transfersOnly?: boolean;
     today?: boolean;
+    completed?: boolean;
   }>({ key: 'pending', title: 'My pending queue · today', open: true, today: true });
+  const [search, setSearch] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const { data, isLoading } = useList<JobListItemDto>('jobs', {
     status: preview.status,
     open: preview.open,
     minAgeDays: preview.minAgeDays,
     today: preview.today,
+    completed: preview.completed,
+    search,
     sort: 'oldest',
     pageSize: 50,
   });
@@ -236,19 +242,20 @@ function EngineerDashboard() {
 
   const columns: Column<JobListItemDto>[] = [
     { header: 'Job no.', cell: jobLink },
-    { header: 'Device', cell: (j) => <span className="font-medium">{j.device}</span> },
-    { header: 'Faults', cell: (j) => <span className="text-slate-600">{j.faults.join(', ')}</span> },
+    { header: 'Pending with', cell: (j) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
+    { header: 'Model', cell: (j) => <span className="font-medium">{j.device}</span> },
+    { header: 'Problem', cell: (j) => <span className="text-slate-600">{j.faults.join(', ') || j.remark || '—'}</span> },
     {
       header: 'Status',
       cell: (j) => (
         <span className="flex items-center gap-1.5">
-          <JobStatusBadge status={j.status} />
+          <InlineJobStatus job={j} />
           {j.hasPendingTransfer && <span title="Transfer requested">🔁</span>}
         </span>
       ),
     },
-    { header: 'Pending for', cell: (j) => <AgeBadge createdAt={j.createdAt} /> },
-    { header: 'With you since', cell: (j) => <span className="text-slate-600">{j.assignedAt ? timeAgo(j.assignedAt) : '—'}</span> },
+    { header: 'Customer', cell: (j) => <span>{j.customer.name}</span> },
+    { header: 'With you', cell: (j) => <span className="text-slate-600">{j.assignedAt ? timeAgo(j.assignedAt) : '—'}</span> },
   ];
 
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
@@ -266,7 +273,7 @@ function EngineerDashboard() {
     label: string,
     st: JobStatus,
     icon: React.ComponentType<{ className?: string }>,
-    tone?: 'warning' | 'brand',
+    tone?: 'default' | 'warning' | 'brand' | 'good' | 'critical',
   ) => (
     <EngineerPreviewCard
       label={label}
@@ -282,20 +289,18 @@ function EngineerDashboard() {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <EngineerPreviewCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} selected={preview.key === 'total'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true })} />
-        <EngineerPreviewCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true })} />
-        <EngineerPreviewCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} selected={preview.key === 'completed'} viewTo="/jobs?status=READY_FOR_DELIVERY" onPreview={() => choosePreview({ key: 'completed', title: `${JOB_STATUS_LABELS.READY_FOR_DELIVERY} · today`, status: 'READY_FOR_DELIVERY', today: true })} />
-        <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
-      </div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
+        {card('To repair', 'IN_REPAIR', Wrench, 'good')}
+        <EngineerPreviewCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true })} />
         {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
-        {card('To repair', 'IN_REPAIR', Wrench, 'brand')}
+        <EngineerPreviewCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} selected={preview.key === 'completed'} viewTo="/jobs?completed=true&today=true" onPreview={() => choosePreview({ key: 'completed', title: 'Completed today', completed: true, today: true })} />
+        <EngineerPreviewCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} selected={preview.key === 'total'} viewTo="/jobs?today=true" onPreview={() => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true })} />
+        {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
         {card('Repaired', 'REPAIRED', BadgeCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
         {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
+        <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
         <EngineerPreviewCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" selected={preview.key === 'transfers'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'transfers', title: 'Jobs with transfer requests', open: true, transfersOnly: true })} />
       </div>
       {!!incoming.data?.length && (
@@ -334,7 +339,26 @@ function EngineerDashboard() {
       )}
       <div ref={listRef} className="scroll-mt-4">
         <Card title={preview.title} subtitle="Oldest first · use View all to open the full filtered page" icon={ClipboardList}>
-          <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
+          <SearchInput onSearch={setSearch} placeholder="Search job no, customer, phone, model, problem…" className="mb-4 w-full! sm:w-96!" />
+          <div className="hidden md:block">
+            <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
+          </div>
+          <div className="space-y-3 md:hidden">
+            {isLoading && !rows ? <p className="py-8 text-center text-sm text-slate-500">Loading…</p> : !rows?.length ? <p className="py-8 text-center text-sm text-slate-500">Nothing here right now</p> : rows.map((job) => (
+              <article key={job.id} className="rounded-xl border border-slate-200 p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>{jobLink(job)}<div className="mt-1 font-medium">{job.device}</div></div>
+                  <AgeBadge createdAt={job.createdAt} />
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{job.faults.join(', ') || job.remark || 'No problem noted'}</p>
+                <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-500'}`}>Pending with: {job.pendingWith}</p>
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                  <InlineJobStatus job={job} />
+                  <span className="text-xs text-slate-500">{job.customer.name}</span>
+                </div>
+              </article>
+            ))}
+          </div>
         </Card>
       </div>
     </>

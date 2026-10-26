@@ -8,6 +8,7 @@ import {
   diagnosisSchema,
   DIAGNOSABLE_STATUSES,
   ENGINEER_TRANSITIONS,
+  JOB_PENDING_WITH,
   ROLES,
   RWR_REASON_LABELS,
   RWR_STATUSES,
@@ -308,6 +309,9 @@ export function WorkPanel({ job }: { job: JobDto }) {
                 {job.customerResponse && ` (“${job.customerResponse}”)`}
               </p>
             )}
+            <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}`}>
+              Now pending with: {JOB_PENDING_WITH[job.status]}
+            </p>
           </div>
         )}
 

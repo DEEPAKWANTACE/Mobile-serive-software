@@ -46,7 +46,7 @@ function SheetPdf({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
 }
 
 /** Printed serial: only the last 4 digits of the job number, e.g. "0001". */
-const serial = (jobNumber: string) => jobNumber.slice(-4);
+const serial = (jobNumber: string) => jobNumber.match(/\d+$/)?.[0] ?? jobNumber;
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return <div className="flex gap-2"><span className="w-[5.5rem] shrink-0 font-semibold">{label}:</span><span>{children || '—'}</span></div>;

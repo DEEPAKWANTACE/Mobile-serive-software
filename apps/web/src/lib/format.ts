@@ -22,3 +22,6 @@ export const todayIso = (offsetDays = 0) => {
 
 export const formatDate = (ymdOrIso: string) =>
   new Date(ymdOrIso.length === 10 ? `${ymdOrIso}T00:00:00` : ymdOrIso).toLocaleDateString('en-IN', { dateStyle: 'medium' });
+
+/** Legacy records contain branch/month prefixes; the public job sheet uses only its serial. */
+export const formatJobNumber = (jobNumber: string) => jobNumber.match(/\d+$/)?.[0] ?? jobNumber;

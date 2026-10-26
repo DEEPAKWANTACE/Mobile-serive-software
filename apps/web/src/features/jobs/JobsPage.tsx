@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, Pencil, Plus, Printer, Table2, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
   JOB_STATUS_LABELS,
@@ -27,11 +27,12 @@ import { useAuth } from '@/features/auth/auth-context';
 import { api, ApiError } from '@/lib/api-client';
 import { toQueryString, useList, useOptions } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
+import { formatCurrency, formatDate, formatDateTime, formatJobNumber } from '@/lib/format';
 import { BulkJobActions, bulkActionsFor } from './BulkJobActions';
 import { EditJobForm } from './EditJobForm';
 import { JobLookup } from './JobLookup';
 import { JobStatusBadge } from './JobStatusBadge';
+import { InlineJobStatus } from './InlineJobStatus';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 
@@ -122,13 +123,29 @@ export function ShowJobs() {
   const [engineerId, setEngineerId] = useState(searchParams.get('engineer') ?? '');
   const [branchId, setBranchId] = useState('');
   const [view, setView] = useState(searchParams.get('view') ?? '');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
   const canBulk = bulkActionsFor(user?.role).length > 0;
   const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
   // Clear the selection only when a filter really changes (SearchInput re-sends its value after every render).
   useEffect(() => setSelected(new Map()), [search, product, from, to, status, engineerId, branchId, view]);
 
-  const params = { page, pageSize: 25, sort: 'newest', search, product, from, to, status, engineerId, branchId, ...viewParams(view) };
+  const params = {
+    page,
+    pageSize: 25,
+    sort: 'newest',
+    search,
+    product,
+    from,
+    to,
+    status,
+    engineerId,
+    branchId,
+    ...(searchParams.get('open') === 'true' && { open: true }),
+    ...(searchParams.get('today') === 'true' && { today: true }),
+    ...(searchParams.get('completed') === 'true' && { completed: true }),
+    ...viewParams(view),
+  };
   const { data, isLoading } = useList<JobListItemDto>('jobs', params);
   const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: isSuperAdmin });
   const engineerBranch = isSuperAdmin ? branchId : user?.branch?.id;
@@ -140,12 +157,12 @@ export function ShowJobs() {
 
   const money = (v: number) => <span className="tabular-nums">{formatCurrency(v)}</span>;
   const nowrap = (v: React.ReactNode) => <span className="whitespace-nowrap">{v ?? '—'}</span>;
-  const columns: Column<JobListItemDto>[] = [
+  const allColumns: Column<JobListItemDto>[] = [
     {
       header: 'Job No',
       cell: (j) => (
         <Link to={`/jobs/${j.id}`} className="font-mono text-sm font-semibold whitespace-nowrap text-brand-600 hover:underline">
-          {j.jobNumber}
+          {formatJobNumber(j.jobNumber)}
         </Link>
       ),
     },
@@ -159,7 +176,12 @@ export function ShowJobs() {
     { header: 'Remark', cell: (j) => <span className="block max-w-48 truncate text-slate-600" title={j.remark ?? ''}>{j.remark ?? '—'}</span> },
     ...(isEngineer
       ? [
-          { header: 'Status', cell: (j: JobListItemDto) => <JobStatusBadge status={j.status} /> },
+          { header: 'Status', cell: (j: JobListItemDto) => <InlineJobStatus job={j} /> },
+          { header: 'Pending with', cell: (j: JobListItemDto) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
+          { header: 'Problem', cell: (j: JobListItemDto) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ') || j.remark || '—'}</span> },
+          { header: 'Model', cell: (j: JobListItemDto) => nowrap(j.device) },
+          { header: 'Customer', cell: (j: JobListItemDto) => nowrap(j.customer.name) },
+          { header: 'Mobile', cell: (j: JobListItemDto) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
           { header: 'Assigned', cell: (j: JobListItemDto) => nowrap(j.assignedAt ? formatDateTime(j.assignedAt) : null) },
         ]
       : [
@@ -181,6 +203,18 @@ export function ShowJobs() {
           ...(isSuperAdmin ? [{ header: 'Branch', cell: (j: JobListItemDto) => j.branch.code }] : []),
         ]),
   ];
+  const columns: Column<JobListItemDto>[] = isEngineer
+    ? [
+        allColumns[0]!,
+        { header: 'Status', cell: (j) => <InlineJobStatus job={j} /> },
+        { header: 'Pending with', cell: (j) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
+        { header: 'Problem', cell: (j) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ') || j.remark || '—'}</span> },
+        { header: 'Model', cell: (j) => nowrap(j.device) },
+        { header: 'Customer', cell: (j) => nowrap(j.customer.name) },
+        { header: 'Mobile', cell: (j) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
+        { header: 'Assigned', cell: (j) => nowrap(j.assignedAt ? formatDateTime(j.assignedAt) : null) },
+      ]
+    : allColumns;
 
   const exportCsv = async () => {
     const all = await api.get<{ items: JobListItemDto[] }>(`/jobs?${toQueryString({ ...params, page: 1, pageSize: 200 })}`);
@@ -212,7 +246,8 @@ export function ShowJobs() {
         </div>
       )}
       <FilterBar>
-        <SearchInput onSearch={reset(setSearch)} placeholder={isEngineer ? 'Job no, customer, mobile' : 'Job no, customer, mobile, city, IMEI'} />
+        <SearchInput onSearch={reset(setSearch)} placeholder="Search job no, customer, phone, model, IMEI, problem…" className="w-full! sm:w-96!" />
+        <div className={`${filtersOpen ? 'flex' : 'hidden'} w-full flex-wrap items-center gap-3 sm:flex sm:w-auto`}>
         <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" />
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           From <input type="date" value={from} max={to || undefined} onChange={(e) => reset(setFrom)(e.target.value)} className={`${inputClass} w-38!`} />
@@ -238,31 +273,66 @@ export function ShowJobs() {
             <Download className="size-4" /> Excel
           </Button>
         )}
+        </div>
       </FilterBar>
       {canBulk && user && (
         <BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} />
       )}
-      <DataTable
-        columns={columns}
-        rows={data?.items}
-        rowKey={(j) => j.id}
-        isLoading={isLoading}
-        emptyMessage="No jobs match these filters"
-        {...(canBulk && {
-          selected: new Set(selected.keys()),
-          // Keep rows picked on other pages; add/remove the ones on this page.
-          onSelectedChange: (ids: Set<string>) =>
-            setSelected((prev) => {
-              const next = new Map(prev);
-              for (const j of data?.items ?? []) {
-                if (ids.has(j.id)) next.set(j.id, j);
-                else next.delete(j.id);
-              }
-              return next;
-            }),
-        })}
-      />
+      {isEngineer ? (
+        <>
+          <div className="hidden md:block">
+            <DataTable columns={columns} rows={data?.items} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="No jobs match these filters" />
+          </div>
+          <div className="space-y-3 md:hidden">
+            {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
+              <article key={job.id} className="rounded-xl bg-white p-4 ring-1 ring-slate-200 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <Link to={`/jobs/${job.id}`} className="font-mono font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
+                    <div className="mt-1 truncate font-semibold">{job.device}</div>
+                  </div>
+                  <InlineJobStatus job={job} />
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{job.faults.join(', ') || job.remark || 'No problem noted'}</p>
+                <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-500'}`}>Pending with: {job.pendingWith}</p>
+                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  <a href={`tel:${job.customer.phone}`} className="font-medium text-slate-700">{job.customer.name} · {job.customer.phone}</a>
+                  <span>{job.assignedAt ? formatDate(job.assignedAt) : ''}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </>
+      ) : (
+        <DataTable
+          columns={columns}
+          rows={data?.items}
+          rowKey={(j) => j.id}
+          isLoading={isLoading}
+          emptyMessage="No jobs match these filters"
+          {...(canBulk && {
+            selected: new Set(selected.keys()),
+            onSelectedChange: (ids: Set<string>) =>
+              setSelected((prev) => {
+                const next = new Map(prev);
+                for (const j of data?.items ?? []) {
+                  if (ids.has(j.id)) next.set(j.id, j);
+                  else next.delete(j.id);
+                }
+                return next;
+              }),
+          })}
+        />
+      )}
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+      <button
+        type="button"
+        onClick={() => setFiltersOpen((open) => !open)}
+        className="fixed right-4 bottom-5 z-30 grid size-12 place-items-center rounded-full bg-brand-600 text-white shadow-lg ring-4 ring-white sm:hidden"
+        aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
+      >
+        {filtersOpen ? <X className="size-5" /> : <SlidersHorizontal className="size-5" />}
+      </button>
     </div>
   );
 }
