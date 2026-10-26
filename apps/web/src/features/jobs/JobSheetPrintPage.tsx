@@ -87,11 +87,17 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row>
       <Row label="Engineer">{job.assignedEngineer?.name}</Row>
     </div>
-    <div className="grid grid-cols-3 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[14mm] print:shrink-0 print:items-center print:gap-x-2 print:py-1">
-      <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row><Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row><Row label="Colour">{job.color}</Row>
-      {job.imei && <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>}
-      {job.imei2 && <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>}
-      {job.serialNumber && <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>}
+    <div className="space-y-1 border-b border-slate-700 py-2 print:min-h-[20mm] print:shrink-0 print:py-1">
+      <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row>
+      <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
+        <Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
+        <Row label="Colour">{job.color}</Row>
+      </div>
+      <div className="grid grid-cols-3 gap-x-5 print:gap-x-2">
+        <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>
+        <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>
+        <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>
+      </div>
     </div>
     <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
       <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{job.faults.map((f) => f.name).join(', ')}</p><p>{job.customerComplaint}</p></div>
@@ -117,7 +123,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         </div>
       </div>
       <div>
-        <div className="mb-3 flex items-end gap-2"><span className="font-semibold">Password:</span><span className="min-w-28 flex-1 border-b border-slate-900 px-1 font-mono">{job.devicePassword}</span></div>
+        <div className="mb-3 flex items-end gap-2"><span className="font-semibold">Password:</span><span className="min-w-28 flex-1 px-1 font-mono">{job.devicePassword}</span></div>
         <div className="mb-2 font-semibold">Pattern:</div><PatternBoxes />
       </div>
     </div>
