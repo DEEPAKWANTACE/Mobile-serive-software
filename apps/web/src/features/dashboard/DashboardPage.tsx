@@ -513,6 +513,11 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         <MiniStat label="Total jobs" value={stats.data?.total} icon={Users} to="/jobs" />
       </div>
 
+      {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
+
+      {/* Temporarily keep the remaining dashboard sections hidden from CCO users. */}
+      {user.role !== ROLES.CCO && (
+        <>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <TrendCard branchId={branchId} />
@@ -638,6 +643,8 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         }
         onClose={() => setAssigning(null)}
       />
+        </>
+      )}
     </>
   );
 }
