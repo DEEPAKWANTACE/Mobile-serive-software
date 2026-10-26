@@ -7,6 +7,22 @@ import { useShopSettings } from './useShopSettings';
  */
 export function ShopHeader({ branch, compact = false }: { branch: { name: string; address: string | null; phone: string | null }; compact?: boolean }) {
   const { data: shop } = useShopSettings();
+  if (compact) {
+    return (
+      <div className="flex items-start justify-center gap-2 text-center print:gap-1.5">
+        {shop?.hasLogo && <AuthImage src={`/settings/shop/logo?v=${shop.logoVersion}`} alt="Logo" className="h-10 w-auto max-w-20 object-contain print:h-8 print:max-w-14" />}
+        <div className="min-w-0">
+          <div className="text-base leading-tight font-bold print:text-[12px]">{shop?.shopName ?? branch.name}</div>
+          {(shop?.address || shop?.phone) && (
+            <div className="text-xs leading-tight font-medium text-slate-900 print:text-[9px]">
+              {shop.address}{shop.address && shop.phone && ' · '}{shop.phone && `Ph: ${shop.phone}`}
+            </div>
+          )}
+          {shop?.email && <div className="whitespace-nowrap text-xs leading-tight font-medium text-slate-900 print:text-[9px]">Email: {shop.email}</div>}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-start gap-3">
       {shop?.hasLogo && (

@@ -49,7 +49,7 @@ function SheetPdf({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
 const serial = (jobNumber: string) => jobNumber.match(/\d+$/)?.[0] ?? jobNumber;
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="flex gap-2 print:gap-1"><span className="w-[5.5rem] shrink-0 font-semibold print:w-[16mm]">{label}:</span><span>{children || '—'}</span></div>;
+  return <div className="flex min-w-0 gap-2 print:gap-1"><span className="w-[5.5rem] shrink-0 font-semibold print:w-[17mm]">{label}:</span><span className="min-w-0 break-words">{children || '—'}</span></div>;
 }
 
 function PatternBoxes() {
@@ -71,28 +71,33 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
   const otherAccessories = accessories.filter((accessory) => !standardAccessoryNames.has(accessory.trim().toLocaleLowerCase()));
   const advance = job.payments.filter((p) => p.kind === 'ADVANCE');
   const product = job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim();
-  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:h-[198mm] print:w-[136mm] print:break-inside-avoid print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
-    <header className="grid grid-cols-3 items-start border-b border-slate-700 pb-2 print:min-h-[18mm] print:pb-2">
-      <div className="text-xs text-slate-500">{formatDateTime(job.createdAt)}</div>
-      <div className="text-center"><div className="font-bold">Inward Slip</div><ShopHeader branch={job.branch} compact /></div>
-      <div className="text-right"><div className="font-semibold uppercase">{copy === 'customer' ? 'Customer Copy' : 'Office Copy'}</div><div className="font-mono text-lg font-bold">{serial(job.jobNumber)}</div></div>
+  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[198mm] print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
+    <header className="relative border-b border-slate-700 px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
+      <div className="font-bold">Inward Slip</div>
+      <ShopHeader branch={job.branch} compact />
+      <div className="absolute top-0 right-0 text-right font-semibold uppercase">{copy === 'customer' ? 'Customer Copy' : 'Office Copy'}</div>
     </header>
-    <div className="grid grid-cols-3 gap-x-5 border-b border-slate-700 py-2 print:min-h-[24mm] print:items-center print:gap-x-2 print:py-2">
-      <div className="space-y-1"><Row label="Date">{formatDateTime(job.createdAt)}</Row><Row label="Customer">{job.customer.name}</Row><Row label="Address">{job.customer.address ?? job.customer.city}</Row></div>
-      <div className="space-y-1"><Row label="Job No.">{serial(job.jobNumber)}</Row><Row label="Mobile">{job.customer.phone}</Row><Row label="Alternate">{job.customer.altPhone}</Row></div>
-      <div className="space-y-1"><Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row><Row label="Engineer">{job.assignedEngineer?.name}</Row></div>
+    <div className="grid grid-cols-2 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[28mm] print:shrink-0 print:gap-x-3 print:py-1.5">
+      <Row label="Date"><span className="whitespace-nowrap">{formatDateTime(job.createdAt)}</span></Row>
+      <Row label="Job No."><span className="font-mono whitespace-nowrap">{serial(job.jobNumber)}</span></Row>
+      <Row label="Customer">{job.customer.name}</Row>
+      <Row label="Mobile"><span className="whitespace-nowrap">{job.customer.phone}</span></Row>
+      <Row label="Address">{job.customer.address ?? job.customer.city}</Row>
+      <Row label="Alternate"><span className="whitespace-nowrap">{job.customer.altPhone}</span></Row>
+      <Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row>
+      <Row label="Engineer">{job.assignedEngineer?.name}</Row>
     </div>
-    <div className="grid grid-cols-3 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[15mm] print:items-center print:gap-x-2 print:py-2">
+    <div className="grid grid-cols-3 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[14mm] print:shrink-0 print:items-center print:gap-x-2 print:py-1">
       <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row><Row label="Colour">{job.color}</Row><Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
       {job.imei && <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>}
       {job.imei2 && <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>}
       {job.serialNumber && <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>}
     </div>
-    <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[26mm] print:gap-3 print:py-2">
+    <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
       <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{job.faults.map((f) => f.name).join(', ')}</p><p>{job.customerComplaint}</p></div>
       <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
     </div>
-    <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[40mm] print:items-center print:gap-3 print:py-2">
+    <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">
       <div className="space-y-1">
         <PrintCheckbox checked={accessoryChecked('SIM Card', 'SIM')}>SIM Card Return</PrintCheckbox>
         <PrintCheckbox checked={accessoryChecked('Memory Card', 'Memory')}>Memory Card Return</PrintCheckbox>
@@ -106,10 +111,10 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         <div className="mb-2 font-semibold">Pattern:</div><PatternBoxes />
       </div>
     </div>
-    <div className="border-b border-slate-700 py-2 font-bold print:flex print:min-h-[8mm] print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
-    {!!advance.length && <div className="border-b border-slate-300 py-2">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
-    {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
-    <div lang="mr" className="flex-1 py-3 text-[12px] leading-relaxed text-slate-800 print:py-2 print:text-[9.5px] print:leading-relaxed">
+    <div className="border-b border-slate-700 py-2 font-bold print:flex print:min-h-[7mm] print:shrink-0 print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
+    {!!advance.length && <div className="border-b border-slate-300 py-2 print:shrink-0 print:py-1">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
+    {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs print:shrink-0 print:py-1 print:text-[9px]"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
+    <div lang="mr" className="flex-1 py-3 text-[12px] leading-relaxed text-slate-800 print:min-h-0 print:overflow-hidden print:py-1 print:text-[9px] print:leading-snug">
       <strong>सुचना:</strong>
       <p>१) पावती आणल्याशिवाय मोबाईल मिळणार नाही.</p>
       <p>२) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे.</p>
@@ -117,6 +122,6 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <p>४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही.</p>
       <p>५) सांगितलेल्या खर्चात बदल होऊ शकतो.</p>
     </div>
-    <footer className="mt-auto flex min-h-[20mm] items-end justify-between border-t border-slate-700 pt-6 text-xs font-semibold print:min-h-[16mm] print:pb-1 print:text-[9px]"><span>Customer Signature</span><span>Authorised Signature</span></footer>
+    <footer className="mt-auto flex min-h-[20mm] items-end justify-between border-t border-slate-700 pt-6 text-xs font-semibold print:min-h-[14mm] print:shrink-0 print:pb-1 print:pt-2 print:text-[9px]"><span>Customer Signature</span><span>Authorised Signature</span></footer>
   </article>;
 }
