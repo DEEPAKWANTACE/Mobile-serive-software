@@ -30,6 +30,12 @@ body {
   body {
     background: white;
   }
+
+  main,
+  main > div {
+    width: 100%;
+    min-height: 0;
+  }
 }
 
 @page {
