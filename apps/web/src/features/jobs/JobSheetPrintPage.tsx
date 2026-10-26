@@ -88,7 +88,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Engineer">{job.assignedEngineer?.name}</Row>
     </div>
     <div className="grid grid-cols-3 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[14mm] print:shrink-0 print:items-center print:gap-x-2 print:py-1">
-      <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row><Row label="Colour">{job.color}</Row><Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
+      <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row><Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row><Row label="Colour">{job.color}</Row>
       {job.imei && <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>}
       {job.imei2 && <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>}
       {job.serialNumber && <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>}
@@ -98,14 +98,24 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
     </div>
     <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">
-      <div className="space-y-1">
-        <PrintCheckbox checked={accessoryChecked('SIM Card', 'SIM')}>SIM Card Return</PrintCheckbox>
-        <PrintCheckbox checked={accessoryChecked('Memory Card', 'Memory')}>Memory Card Return</PrintCheckbox>
-        <PrintCheckbox checked={accessoryChecked('Back Cover', 'Cover')}>Back Cover Return</PrintCheckbox>
-        {otherAccessories.map((accessory) => <PrintCheckbox key={accessory} checked>{accessory} Return</PrintCheckbox>)}
-        <PrintCheckbox checked={!accessories.length}>No accessory received</PrintCheckbox>
+      <div className="col-span-2">
+        <div className="grid grid-cols-2 gap-x-4">
+          <div className="space-y-1">
+            <PrintCheckbox checked={accessoryChecked('SIM Card', 'SIM')}>SIM Card Return</PrintCheckbox>
+            <PrintCheckbox checked={accessoryChecked('Memory Card', 'Memory')}>Memory Card Return</PrintCheckbox>
+            <PrintCheckbox checked={accessoryChecked('Back Cover', 'Cover')}>Back Cover Return</PrintCheckbox>
+          </div>
+          <div className="space-y-1">
+            <PrintCheckbox checked={job.phoneDamaged}>Device Damaged</PrintCheckbox>
+            <PrintCheckbox checked={job.warranty === 'IN_WARRANTY'}>In Warranty</PrintCheckbox>
+            <PrintCheckbox checked={job.warranty === 'OUT_OF_WARRANTY'}>Out Warranty</PrintCheckbox>
+          </div>
+        </div>
+        <div className="mt-2 border-t border-slate-300 pt-1">
+          <PrintCheckbox checked={!accessories.length}>No accessory received</PrintCheckbox>
+          {!!otherAccessories.length && <div className="mt-1 text-[0.9em] text-slate-700">Other accessories: {otherAccessories.join(', ')}</div>}
+        </div>
       </div>
-      <div className="space-y-1"><PrintCheckbox checked={job.phoneDamaged}>Device Damaged</PrintCheckbox><PrintCheckbox checked={job.warranty === 'IN_WARRANTY'}>In Warranty</PrintCheckbox><PrintCheckbox checked={job.warranty === 'OUT_OF_WARRANTY'}>Out Warranty</PrintCheckbox></div>
       <div>
         <div className="mb-3 flex items-end gap-2"><span className="font-semibold">Password:</span><span className="min-w-28 flex-1 border-b border-slate-900 px-1 font-mono">{job.devicePassword}</span></div>
         <div className="mb-2 font-semibold">Pattern:</div><PatternBoxes />
