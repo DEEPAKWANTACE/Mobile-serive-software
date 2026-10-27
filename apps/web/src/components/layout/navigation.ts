@@ -18,7 +18,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Job Master', to: '/jobs', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'Entry Master', to: '/entries', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'User Master', to: '/staff', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
-      { label: 'Engineer Report', to: '/engineer-report', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS] },
+      { label: 'Engineer Report', to: '/engineer-report', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
     ],
   },
   {

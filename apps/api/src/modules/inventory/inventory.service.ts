@@ -229,6 +229,10 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
           status: true,
           brand: { select: { name: true } },
           deviceModel: { select: { name: true } },
+          manualBrand: true,
+          manualModel: true,
+          jobType: true,
+          accessoryName: true,
           assignedEngineer: { select: { name: true } },
         },
       },
@@ -248,7 +252,11 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
         id: job.id,
         jobNumber: publicJobNumber(job.jobNumber),
         status: job.status,
-        device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
+        device: job.jobType === 'ACCESSORY'
+          ? (job.accessoryName ?? 'Accessory')
+          : (job.manualBrand || job.manualModel
+              ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}`.trim()
+              : `${job.brand?.name ?? ''} ${job.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
         engineer: job.assignedEngineer?.name ?? null,
       },
       stock: qty.get(r.part.id) ?? 0,

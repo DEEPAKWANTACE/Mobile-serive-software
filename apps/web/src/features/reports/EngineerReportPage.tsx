@@ -1,18 +1,21 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Download, Search } from 'lucide-react';
+import { Copy, Download, MessageSquare, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   JOB_STATUS_LABELS,
   JOB_STATUSES,
   ROLES,
   type BranchDto,
+  type DashboardSummaryDto,
   type EngineerReportRowDto,
   type EngineerWorkloadDto,
   type JobStatus,
   type Paginated,
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Field, inputClass } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -22,7 +25,7 @@ import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { api } from '@/lib/api-client';
 import { toQueryString, useOptions } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
-import { formatCurrency, formatDate, formatDateTime } from '@/lib/format';
+import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/format';
 
 const PAYMENT_LABELS: Record<EngineerReportRowDto['paymentStatus'], { label: string; cls: string }> = {
   PAID: { label: 'Paid', cls: 'bg-emerald-50 text-emerald-700' },
@@ -57,6 +60,49 @@ export function EngineerReportPage() {
     queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers?branchId=${engineerBranch}`),
     enabled: !!engineerBranch,
   });
+
+  const summaryRange = applied.from || applied.to ? { from: applied.from, to: applied.to } : {};
+  const summary = useQuery({
+    queryKey: ['reports', 'dashboard-summary', engineerBranch, summaryRange],
+    queryFn: () => api.get<DashboardSummaryDto>(`/reports/dashboard-summary?${toQueryString({ ...summaryRange, branchId: engineerBranch })}`),
+  });
+
+  const copyEngineerDetails = (e: { engineer: string; pending: number; phone: string | null }) => {
+    const periodLabel = applied.from && applied.to
+      ? `(${formatDate(applied.from)} to ${formatDate(applied.to)})`
+      : applied.from
+        ? `(from ${formatDate(applied.from)})`
+        : applied.to
+          ? `(up to ${formatDate(applied.to)})`
+          : '(Today / Open)';
+    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.`;
+    navigator.clipboard.writeText(text);
+    toast.success(`Copied pending details for ${e.engineer}`);
+  };
+
+  const whatsappEngineer = (e: { engineer: string; pending: number; phone: string | null }) => {
+    const periodLabel = applied.from && applied.to
+      ? `(${formatDate(applied.from)} to ${formatDate(applied.to)})`
+      : applied.from
+        ? `(from ${formatDate(applied.from)})`
+        : applied.to
+          ? `(up to ${formatDate(applied.to)})`
+          : '(Today / Open)';
+    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.`;
+    const cleanPhone = (e.phone || '').replace(/\D/g, '');
+    const phoneParam = cleanPhone ? (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone) : '';
+    const url = phoneParam
+      ? `https://api.whatsapp.com/send?phone=${phoneParam}&text=${encodeURIComponent(text)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  const applyQuickRange = (from: string, to: string) => {
+    const next = { ...draft, from, to };
+    setDraft(next);
+    setApplied(next);
+    setPage(1);
+  };
 
   const search = () => {
     setApplied(draft);
@@ -109,6 +155,112 @@ export function EngineerReportPage() {
   return (
     <div className="space-y-4">
       <PageHeader title="Engineer Report" description="Jobs handled by each engineer — including jobs later transferred or reassigned" />
+      
+      {/* Quick date range filters */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
+        <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Quick Date:</span>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const t = todayIso();
+            applyQuickRange(t, t);
+          }}
+        >
+          Today
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const y = todayIso(-1);
+            applyQuickRange(y, y);
+          }}
+        >
+          Yesterday
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const now = new Date();
+            const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+            const to = todayIso();
+            applyQuickRange(from, to);
+          }}
+        >
+          This Month
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            const now = new Date();
+            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+            const from = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-01`;
+            const to = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
+            applyQuickRange(from, to);
+          }}
+        >
+          Last Month
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          onClick={() => applyQuickRange('', '')}
+        >
+          All Time
+        </Button>
+      </div>
+
+      {/* Engineer-wise pending overview with Copy Details and WhatsApp buttons */}
+      {!!summary.data?.engineerPending.length && (
+        <Card title="Engineer-wise Pending Summary" subtitle="End of day pending jobs — copy or WhatsApp status to engineers">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {summary.data.engineerPending.map((e) => (
+              <div
+                key={e.engineerId}
+                className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 p-3 hover:bg-slate-50 transition"
+              >
+                <div>
+                  <div className="font-medium text-sm text-slate-900">{e.engineer}</div>
+                  <div className="text-xs text-slate-500">
+                    <span className="font-semibold text-brand-700">{e.pending}</span> pending jobs
+                    {e.phone ? ` · 📞 ${e.phone}` : ''}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => copyEngineerDetails(e)}
+                    className="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200 hover:bg-slate-100 transition shadow-2xs"
+                    title="Copy details"
+                  >
+                    <Copy className="size-3 text-slate-500" />
+                    Copy
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => whatsappEngineer(e)}
+                    className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700 transition shadow-2xs"
+                    title="Send WhatsApp message"
+                  >
+                    <MessageSquare className="size-3" />
+                    WhatsApp
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
       <form
         onSubmit={(e) => (e.preventDefault(), search())}
         className="grid grid-cols-1 gap-3 rounded-lg bg-white p-4 ring-1 ring-slate-200 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end"

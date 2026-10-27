@@ -226,6 +226,8 @@ export const jobCreateSchema = z
     customer: jobCustomerSchema,
     brandId: z.uuid('Select a brand').nullish(),
     deviceModelId: z.uuid('Select a model').nullish(),
+    manualBrand: optionalText(100),
+    manualModel: optionalText(100),
     imei: imeiField,
     imei2: imeiField,
     serialNumber: serialField,
@@ -257,8 +259,14 @@ export const jobCreateSchema = z
   .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] })
   .superRefine((v, ctx) => {
     if (v.jobType === 'MOBILE') {
-      if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
-      if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
+      const manual = !!v.manualBrand || !!v.manualModel;
+      if (manual) {
+        if (!v.manualBrand) ctx.addIssue({ code: 'custom', message: 'Enter a brand', path: ['manualBrand'] });
+        if (!v.manualModel) ctx.addIssue({ code: 'custom', message: 'Enter a model', path: ['manualModel'] });
+      } else {
+        if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
+        if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
+      }
     } else {
       if (!v.accessoryName) ctx.addIssue({ code: 'custom', message: 'Accessory name is required', path: ['accessoryName'] });
     }
@@ -595,6 +603,8 @@ export type JobDto = {
   accessoryName: string | null;
   brand: { id: string; name: string } | null;
   model: { id: string; name: string } | null;
+  manualBrand: string | null;
+  manualModel: string | null;
   imei: string | null;
   imei2: string | null;
   serialNumber: string | null;
@@ -671,7 +681,7 @@ export const jobTrendQuerySchema = z.object({
 /** Daily counts (business days, oldest first) for the dashboard trend chart. */
 export type JobTrendDto = { date: string; received: number; delivered: number }[];
 
-export type EngineerWorkloadDto = { id: string; name: string; openJobs: number };
+export type EngineerWorkloadDto = { id: string; name: string; phone: string | null; openJobs: number };
 
 /** Job counts by status within the caller's scope (engineers: their own jobs). */
 export type JobStatsDto = {
@@ -681,6 +691,8 @@ export type JobStatsDto = {
   atL4: number;
   /** Same counts limited to jobs worked on (updated) today. */
   today: { byStatus: Record<JobStatus, number>; total: number };
+  /** Jobs received today (createdAt), used by the branch dashboard. */
+  receivedToday: number;
 };
 
 export type JobHistoryEntryDto = {

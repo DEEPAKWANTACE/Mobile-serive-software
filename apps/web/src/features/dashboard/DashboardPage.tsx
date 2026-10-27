@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -50,12 +50,14 @@ import {
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
+import { inputClass } from '@/components/ui/Field';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { useAuth } from '@/features/auth/auth-context';
 import { AssignEngineerDialog } from '@/features/jobs/AssignEngineerDialog';
 import { api } from '@/lib/api-client';
 import { useList } from '@/lib/crud';
-import { formatCurrency, formatJobNumber, timeAgo } from '@/lib/format';
+import { formatCurrency, formatJobNumber, timeAgo, todayIso } from '@/lib/format';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { InlineJobStatus } from '@/features/jobs/InlineJobStatus';
 import { SearchInput } from '@/components/ui/Filters';
@@ -216,47 +218,6 @@ function EngineerDashboard() {
   const open = openOf(by);
   const openAll = openOf(all);
   const totalHint = (n: number | undefined) => (n === undefined ? undefined : `${n} pending total`);
-  const [preview, setPreview] = useState<{
-    key: string;
-    title: string;
-    status?: JobStatus;
-    open?: boolean;
-    minAgeDays?: number;
-    transfersOnly?: boolean;
-    today?: boolean;
-    completed?: boolean;
-  }>({ key: 'pending', title: 'My pending queue · today', open: true, today: true });
-  const [search, setSearch] = useState('');
-  const listRef = useRef<HTMLDivElement>(null);
-  const { data, isLoading } = useList<JobListItemDto>('jobs', {
-    status: preview.status,
-    open: preview.open,
-    minAgeDays: preview.minAgeDays,
-    today: preview.today,
-    completed: preview.completed,
-    search,
-    sort: 'oldest',
-    pageSize: 50,
-  });
-  const rows = preview.transfersOnly ? data?.items.filter((j) => j.hasPendingTransfer) : data?.items;
-
-  const columns: Column<JobListItemDto>[] = [
-    { header: 'Job no.', cell: jobLink },
-    { header: 'Pending with', cell: (j) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
-    { header: 'Model', cell: (j) => <span className="font-medium">{j.device}</span> },
-    { header: 'Problem', cell: (j) => <span className="text-slate-600">{j.faults.join(', ') || j.remark || '—'}</span> },
-    {
-      header: 'Status',
-      cell: (j) => (
-        <span className="flex items-center gap-1.5">
-          <InlineJobStatus job={j} />
-          {j.hasPendingTransfer && <span title="Transfer requested">🔁</span>}
-        </span>
-      ),
-    },
-    { header: 'Customer', cell: (j) => <span>{j.customer.name}</span> },
-    { header: 'With you', cell: (j) => <span className="text-slate-600">{j.assignedAt ? timeAgo(j.assignedAt) : '—'}</span> },
-  ];
 
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
   const outgoing = useQuery({ queryKey: ['jobs', 'transfers', 'outgoing'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=outgoing') });
@@ -265,25 +226,19 @@ function EngineerDashboard() {
   const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
   const completedAll = all ? all.READY_FOR_DELIVERY + all.DELIVERED : undefined;
 
-  const choosePreview = (next: typeof preview) => {
-    setPreview(next);
-    requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
-  };
   const card = (
     label: string,
     st: JobStatus,
     icon: React.ComponentType<{ className?: string }>,
     tone?: 'default' | 'warning' | 'brand' | 'good' | 'critical',
   ) => (
-    <EngineerPreviewCard
+    <StatCard
       label={label}
       value={by?.[st]}
       icon={icon}
       tone={tone}
       hint={totalHint(all?.[st])}
-      selected={preview.key === st}
-      viewTo={`/jobs?status=${st}`}
-      onPreview={() => choosePreview({ key: st, title: `${JOB_STATUS_LABELS[st]} · today`, status: st, today: true })}
+      to={`/jobs?status=${st}`}
     />
   );
 
@@ -291,17 +246,17 @@ function EngineerDashboard() {
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
-        <EngineerPreviewCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true })} />
+        <StatCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} to="/jobs?open=true" />
         {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
-        <EngineerPreviewCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} selected={preview.key === 'completed'} viewTo="/jobs?completed=true&today=true" onPreview={() => choosePreview({ key: 'completed', title: 'Completed today', completed: true, today: true })} />
-        <EngineerPreviewCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} selected={preview.key === 'total'} viewTo="/jobs?today=true" onPreview={() => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true })} />
+        <StatCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} to="/jobs?completed=true&today=true" />
+        <StatCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} to="/jobs?today=true" />
         {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
         {card('Repaired', 'REPAIRED', BadgeCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
         {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
-        <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
-        <EngineerPreviewCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" selected={preview.key === 'transfers'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'transfers', title: 'Jobs with transfer requests', open: true, transfersOnly: true })} />
+        <StatCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" to="/jobs?view=over15" />
+        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" to="/jobs?open=true" />
       </div>
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
@@ -337,72 +292,7 @@ function EngineerDashboard() {
           </ul>
         </Card>
       )}
-      <div ref={listRef} className="scroll-mt-4">
-        <Card title={preview.title} subtitle="Oldest first · use View all to open the full filtered page" icon={ClipboardList}>
-          <SearchInput onSearch={setSearch} placeholder="Search job no, customer, phone, model, problem…" className="mb-4 w-full! sm:w-96!" />
-          <div className="hidden md:block">
-            <DataTable columns={columns} rows={rows} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="Nothing here right now" />
-          </div>
-          <div className="space-y-3 md:hidden">
-            {isLoading && !rows ? <p className="py-8 text-center text-sm text-slate-500">Loading…</p> : !rows?.length ? <p className="py-8 text-center text-sm text-slate-500">Nothing here right now</p> : rows.map((job) => (
-              <article key={job.id} className="rounded-xl border border-slate-200 p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>{jobLink(job)}<div className="mt-1 font-medium">{job.device}</div></div>
-                  <AgeBadge createdAt={job.createdAt} />
-                </div>
-                <p className="mt-2 text-sm text-slate-600">{job.faults.join(', ') || job.remark || 'No problem noted'}</p>
-                <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-500'}`}>Pending with: {job.pendingWith}</p>
-                <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                  <InlineJobStatus job={job} />
-                  <span className="text-xs text-slate-500">{job.customer.name}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </Card>
-      </div>
     </>
-  );
-}
-
-function EngineerPreviewCard({
-  label,
-  value,
-  icon,
-  hint,
-  tone,
-  selected,
-  viewTo,
-  onPreview,
-}: {
-  label: string;
-  value: number | undefined;
-  icon: React.ComponentType<{ className?: string }>;
-  hint?: string;
-  tone?: 'default' | 'brand' | 'good' | 'warning' | 'critical';
-  selected: boolean;
-  viewTo: string;
-  onPreview: () => void;
-}) {
-  return (
-    <div className={`relative rounded-xl transition ${selected ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
-      <button
-        type="button"
-        onClick={onPreview}
-        aria-pressed={selected}
-        aria-label={`Preview ${label} below`}
-        className="block h-full w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none [&>div]:pb-10"
-      >
-        <StatCard label={label} value={value} tone={tone} icon={icon} hint={hint} />
-      </button>
-      <Link
-        to={viewTo}
-        className="absolute right-3 bottom-3 z-10 inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 hover:text-brand-900 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none"
-        aria-label={`View all ${label} jobs`}
-      >
-        View all <ArrowUpRight className="size-3.5" />
-      </Link>
-    </div>
   );
 }
 
@@ -421,8 +311,21 @@ function AdminDashboard({ user }: { user: AuthUser }) {
 // ─── Branch manager / CCO / Super Admin ─────────────────────────────────────
 
 function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string }) {
+  const navigate = useNavigate();
   // Super Admin looking at one branch behaves like that branch's dashboard.
   const isSuperAdmin = user.role === ROLES.SUPER_ADMIN && !branchId;
+  const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [customFrom, setCustomFrom] = useState(todayIso());
+  const [customTo, setCustomTo] = useState(todayIso());
+
+  const openDateFilteredJobs = (from?: string, to?: string) => {
+    setDateModalOpen(false);
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (branchId) params.set('branchId', branchId);
+    navigate(`/jobs${params.toString() ? `?${params.toString()}` : ''}`);
+  };
   const stats = useQuery({
     queryKey: ['jobs', 'stats', branchId],
     queryFn: () => api.get<JobStatsDto>(`/jobs/stats${branchId ? `?branchId=${branchId}` : ''}`),
@@ -510,8 +413,109 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         <MiniStat label="At L4 / in transit" value={stats.data?.atL4} icon={Truck} to="/l4" />
         <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} to="/jobs?status=CUSTOMER_REJECTED" />
         <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} to="/jobs?status=DELIVERED" />
-        <MiniStat label="Total jobs" value={stats.data?.total} icon={Users} to="/jobs" />
+        <button
+          type="button"
+          onClick={() => setDateModalOpen(true)}
+          className="text-left w-full focus-visible:outline-none"
+        >
+          <MiniStat
+            label="Today's jobs"
+            value={stats.data?.receivedToday}
+            icon={Users}
+          />
+        </button>
       </div>
+
+      <Modal open={dateModalOpen} onClose={() => setDateModalOpen(false)} title="Select Jobs Date Range" size="sm">
+        <div className="space-y-4">
+          <p className="text-xs text-slate-500">Filter jobs list by date received:</p>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const t = todayIso();
+                openDateFilteredJobs(t, t);
+              }}
+            >
+              Today
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const y = todayIso(-1);
+                openDateFilteredJobs(y, y);
+              }}
+            >
+              Yesterday
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const now = new Date();
+                const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+                const to = todayIso();
+                openDateFilteredJobs(from, to);
+              }}
+            >
+              This Month
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const now = new Date();
+                const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+                const from = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-01`;
+                const to = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
+                openDateFilteredJobs(from, to);
+              }}
+            >
+              Last Month
+            </Button>
+          </div>
+
+          <div className="border-t border-slate-200 pt-3">
+            <span className="block mb-2 text-xs font-semibold text-slate-700">Custom Date Range</span>
+            <div className="flex gap-2 mb-3">
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className={`${inputClass} text-xs`}
+              />
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className={`${inputClass} text-xs`}
+              />
+            </div>
+            <Button
+              className="w-full"
+              size="sm"
+              onClick={() => openDateFilteredJobs(customFrom, customTo)}
+            >
+              View Jobs
+            </Button>
+          </div>
+
+          <div className="border-t border-slate-100 pt-2 text-center">
+            <button
+              type="button"
+              onClick={() => openDateFilteredJobs()}
+              className="text-xs text-brand-600 hover:underline font-medium"
+            >
+              View All Jobs (No Date Filter)
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
 

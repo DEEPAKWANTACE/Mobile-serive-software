@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
-import { LogOut, Menu, Smartphone, X } from 'lucide-react';
-import { ROLE_LABELS } from '@msm/shared';
+import { LogOut, Menu, Search, Smartphone, X } from 'lucide-react';
+import { ROLE_LABELS, ROLES } from '@msm/shared';
 import { useAuth } from '@/features/auth/auth-context';
 import { useShopSettings } from '@/features/settings/useShopSettings';
+import { FindJobModal } from '@/features/jobs/FindJobModal';
 import { navForRole } from './navigation';
 
 export function AppLayout() {
@@ -11,6 +12,7 @@ export function AppLayout() {
   const { data: shop } = useShopSettings();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [findJobOpen, setFindJobOpen] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const appName = shop?.shopName ?? 'Mobile Service Management';
 
@@ -83,7 +85,18 @@ export function AppLayout() {
               <div className="truncate text-xs text-slate-500 sm:text-sm">{user.branch ? `${user.branch.name} (${user.branch.code})` : 'All branches'}</div>
             </div>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
+            {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const).some((r) => r === user.role) && (
+              <button
+                type="button"
+                onClick={() => setFindJobOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs sm:text-sm font-medium text-slate-700 hover:bg-slate-100 transition shadow-xs"
+                title="Search job by mobile number or job number"
+              >
+                <Search className="size-4 text-slate-500" />
+                <span className="hidden sm:inline">Find a job</span>
+              </button>
+            )}
             <div className="hidden text-right text-sm sm:block">
               <div className="font-medium">{user.name}</div>
               <div className="text-slate-500">{ROLE_LABELS[user.role]}</div>
@@ -97,6 +110,7 @@ export function AppLayout() {
             </button>
           </div>
         </header>
+        <FindJobModal open={findJobOpen} onClose={() => setFindJobOpen(false)} />
         <main ref={mainRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
           <div className="grow shrink-0 p-4 sm:p-6 print:p-0">
             <Outlet />

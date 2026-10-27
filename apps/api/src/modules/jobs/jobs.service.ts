@@ -197,8 +197,17 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     }),
   ]);
   if (!branch || !branch.isActive) throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
-  if (data.jobType === 'MOBILE' && (!model || !model.isActive || model.brandId !== data.brandId)) {
-    throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
+  if (data.jobType === 'MOBILE') {
+    if (data.manualBrand || data.manualModel) {
+      if (!data.manualBrand || !data.manualModel) {
+        throw HttpError.badRequest('Invalid request', {
+          ...(!data.manualBrand && { manualBrand: ['Enter a brand'] }),
+          ...(!data.manualModel && { manualModel: ['Enter a model'] }),
+        });
+      }
+    } else if (!model || !model.isActive || model.brandId !== data.brandId) {
+      throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
+    }
   }
   if (faultRows.length !== faultIds.length) {
     throw HttpError.badRequest('Invalid request', { faults: ['One or more selected faults are invalid'] });
@@ -363,6 +372,8 @@ const listSelect = {
   imei: true,
   jobType: true,
   accessoryName: true,
+  manualBrand: true,
+  manualModel: true,
   customer: { select: { name: true, phone: true, city: true } },
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
@@ -408,7 +419,15 @@ export async function list(query: JobListQuery, actor: Actor) {
     and.push(query.delivered ? { deliveredAt: r } : { createdAt: r });
   }
   if (query.product) {
-    and.push({ OR: [{ brand: { name: contains(query.product) } }, { deviceModel: { name: contains(query.product) } }, { accessoryName: contains(query.product) }] });
+    and.push({
+      OR: [
+        { brand: { name: contains(query.product) } },
+        { deviceModel: { name: contains(query.product) } },
+        { manualBrand: contains(query.product) },
+        { manualModel: contains(query.product) },
+        { accessoryName: contains(query.product) },
+      ],
+    });
   }
   if (query.delivered) and.push({ status: 'DELIVERED' });
   if (query.today) and.push({ updatedAt: businessRange(businessToday(), businessToday()) });
@@ -429,6 +448,8 @@ export async function list(query: JobListQuery, actor: Actor) {
         { customerComplaint: contains(term) },
         { brand: { name: contains(term) } },
         { deviceModel: { name: contains(term) } },
+        { manualBrand: contains(term) },
+        { manualModel: contains(term) },
         { faults: { some: { fault: { name: contains(term) } } } },
       ],
     });
@@ -450,7 +471,11 @@ export async function list(query: JobListQuery, actor: Actor) {
     pendingWith: JOB_PENDING_WITH[j.status],
     createdAt: j.createdAt.toISOString(),
     customer: { name: j.customer.name, phone: j.customer.phone },
-    device: j.jobType === 'ACCESSORY' ? (j.accessoryName ?? 'Accessory') : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim(),
+    device: j.jobType === 'ACCESSORY'
+      ? (j.accessoryName ?? 'Accessory')
+      : (j.manualBrand || j.manualModel
+          ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim()
+          : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
     imei: j.imei,
     faults: j.faults.map((f) => f.fault.name),
     branch: j.branch,
@@ -490,6 +515,8 @@ const detailSelect = {
   imei2: true,
   jobType: true,
   accessoryName: true,
+  manualBrand: true,
+  manualModel: true,
   serialNumber: true,
   color: true,
   customerComplaint: true,
@@ -793,12 +820,13 @@ export async function engineers(actor: Actor, requestedBranchId?: string): Promi
     select: {
       id: true,
       name: true,
+      phone: true,
       _count: { select: { jobsAssigned: { where: { status: { in: [...ENGINEER_OPEN_STATUSES] } } } } },
     },
     orderBy: { name: 'asc' },
   });
   return rows
-    .map((r) => ({ id: r.id, name: r.name, openJobs: r._count.jobsAssigned }))
+    .map((r) => ({ id: r.id, name: r.name, phone: r.phone, openJobs: r._count.jobsAssigned }))
     .sort((a, b) => a.openJobs - b.openJobs);
 }
 
@@ -1005,19 +1033,20 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
       ? { currentBranchId: branch }
       : {};
   const today = businessToday();
-  const [groups, todayGroups, atL4] = await Promise.all([
+  const [groups, todayGroups, atL4, receivedToday] = await Promise.all([
     prisma.job.groupBy({ by: ['status'], where, _count: { _all: true } }),
     prisma.job.groupBy({ by: ['status'], where: { AND: [where, { updatedAt: businessRange(today, today) }] }, _count: { _all: true } }),
     branch && !isEngineer(actor)
       ? prisma.job.count({ where: { branchId: branch, OR: [{ currentBranchId: { not: branch } }, { location: { not: 'AT_BRANCH' } }] } })
       : Promise.resolve(0),
+    prisma.job.count({ where: { AND: [where, { createdAt: businessRange(today, today) }] } }),
   ]);
   const count = (rows: typeof groups) => {
     const byStatus = Object.fromEntries(JOB_STATUSES.map((s) => [s, 0])) as Record<JobStatus, number>;
     for (const g of rows) byStatus[g.status] = g._count._all;
     return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0) };
   };
-  return { ...count(groups), atL4, today: count(todayGroups) };
+  return { ...count(groups), atL4, today: count(todayGroups), receivedToday };
 }
 
 // ─── Dashboard trend ────────────────────────────────────────────────────────

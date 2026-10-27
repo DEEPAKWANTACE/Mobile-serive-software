@@ -9,6 +9,7 @@ export function makeTestJob(): JobDto {
     customer: { id: 'test', name: 'Test Customer', phone: '9876543210', city: 'Khamgaon', altPhone: '9123456780', email: null, address: 'Railway Station Road, Khamgaon' },
     jobType: 'MOBILE', accessoryName: null,
     brand: { id: 'test', name: 'Samsung' }, model: { id: 'test', name: 'Galaxy S24' },
+    manualBrand: null, manualModel: null,
     imei: '356938035643809', imei2: '356938035643817', serialNumber: 'R5CW12ABCDE', color: 'Black',
     faults: [{ id: 'test', name: 'Display broken', priceLabel: null, price: null }],
     estimatedAmount: 2500,

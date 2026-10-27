@@ -207,6 +207,8 @@ export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
         customer: { select: { name: true } },
         brand: { select: { name: true } },
         deviceModel: { select: { name: true } },
+        manualBrand: true,
+        manualModel: true,
         assignedEngineer: { select: { name: true } },
         faults: { select: { fault: { select: { name: true } } } },
         assignments: { select: { engineer: { select: { name: true } }, endReason: true }, orderBy: { assignedAt: 'asc' } },
@@ -225,7 +227,11 @@ export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
     return {
       job: { id: j.id, jobNumber: publicJobNumber(j.jobNumber), createdAt: j.createdAt.toISOString(), status: j.status, branchCode: j.branch.code },
       customer: j.customer.name,
-      product: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory',
+      product: j.manualBrand || j.manualModel
+        ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim()
+        : j.brand && j.deviceModel
+          ? `${j.brand.name} ${j.deviceModel.name}`
+          : 'Accessory',
       problem: j.faults.map((f) => f.fault.name).join(', '),
       engineer: j.assignedEngineer?.name ?? null,
       assignedAt: j.assignedAt?.toISOString() ?? null,
@@ -260,7 +266,7 @@ export async function dashboardSummary(query: { from?: string; to?: string; bran
         estimatedAmount: true,
         invoice: { select: { total: true } },
         payments: { select: { kind: true, amount: true } },
-        assignedEngineer: { select: { id: true, name: true } },
+        assignedEngineer: { select: { id: true, name: true, phone: true } },
       },
     }),
     prisma.job.count({ where: { ...scope, status: 'DELIVERED', ...(range && { deliveredAt: range }) } }),
@@ -268,10 +274,10 @@ export async function dashboardSummary(query: { from?: string; to?: string; bran
   const open = jobs.filter((j) => j.status !== 'DELIVERED' && j.status !== 'CANCELLED');
   const money = jobs.filter((j) => j.status !== 'CANCELLED').map((j) => jobMoney(j));
   const sum = (k: 'totalAmount' | 'paidAmount') => roundMoney(money.reduce((s, m) => s + m[k], 0));
-  const perEngineer = new Map<string, { engineerId: string; engineer: string; pending: number }>();
+  const perEngineer = new Map<string, { engineerId: string; engineer: string; phone: string | null; pending: number }>();
   for (const j of open) {
     if (!j.assignedEngineer) continue;
-    const row = perEngineer.get(j.assignedEngineer.id) ?? { engineerId: j.assignedEngineer.id, engineer: j.assignedEngineer.name, pending: 0 };
+    const row = perEngineer.get(j.assignedEngineer.id) ?? { engineerId: j.assignedEngineer.id, engineer: j.assignedEngineer.name, phone: j.assignedEngineer.phone, pending: 0 };
     row.pending += 1;
     perEngineer.set(row.engineerId, row);
   }

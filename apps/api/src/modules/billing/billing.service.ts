@@ -275,6 +275,10 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
           deliveredTo: true,
           brand: { select: { name: true } },
           deviceModel: { select: { name: true } },
+          manualBrand: true,
+          manualModel: true,
+          accessoryName: true,
+          jobType: true,
           customer: { select: { name: true, phone: true, address: true } },
           payments: {
             select: { kind: true, mode: true, amount: true, reference: true, createdAt: true },
@@ -301,7 +305,11 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
       id: job.id,
       jobNumber: publicJobNumber(job.jobNumber),
       receivedAt: job.createdAt.toISOString(),
-      device: job.brand && job.deviceModel ? `${job.brand.name} ${job.deviceModel.name}` : 'Accessory',
+      device: job.jobType === 'ACCESSORY'
+        ? (job.accessoryName ?? 'Accessory')
+        : (job.manualBrand || job.manualModel
+            ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}`.trim()
+            : `${job.brand?.name ?? ''} ${job.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
       imei: job.imei,
       serialNumber: job.serialNumber,
       status: job.status,

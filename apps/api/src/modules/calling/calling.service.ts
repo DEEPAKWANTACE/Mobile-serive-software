@@ -29,6 +29,10 @@ const rowSelect = {
   quotedAmount: true,
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
+  manualBrand: true,
+  manualModel: true,
+  jobType: true,
+  accessoryName: true,
   branch: { select: { code: true } },
   customer: { select: { name: true, phone: true, altPhone: true } },
   payments: { select: { kind: true, amount: true } },
@@ -50,7 +54,17 @@ function toRow(j: Row, now = Date.now()): CallingRowDto {
   const since = j.status === 'READY_FOR_DELIVERY' ? j.readyAt : j.status === 'RWR' ? j.rwrAt : j.diagnosedAt;
   const last = j.callLogs[0];
   return {
-    job: { id: j.id, jobNumber: publicJobNumber(j.jobNumber), status: j.status, device: j.brand && j.deviceModel ? `${j.brand.name} ${j.deviceModel.name}` : 'Accessory', branchCode: j.branch.code },
+    job: {
+      id: j.id,
+      jobNumber: publicJobNumber(j.jobNumber),
+      status: j.status,
+      device: j.jobType === 'ACCESSORY'
+        ? (j.accessoryName ?? 'Accessory')
+        : (j.manualBrand || j.manualModel
+            ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim()
+            : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
+      branchCode: j.branch.code,
+    },
     customer: j.customer,
     since: since?.toISOString() ?? null,
     daysWaiting: since ? Math.floor((now - since.getTime()) / 86_400_000) : 0,

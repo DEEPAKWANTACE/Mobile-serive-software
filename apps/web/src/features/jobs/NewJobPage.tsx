@@ -49,6 +49,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [idProofError, setIdProofError] = useState<string>();
   const [returning, setReturning] = useState<CustomerDto | null>(null);
   const [takeAdvance, setTakeAdvance] = useState(false);
+  const [manualDevice, setManualDevice] = useState(false);
 
   const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<
     JobCreateInput,
@@ -67,6 +68,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       warranty: null,
       brandId: '',
       deviceModelId: '',
+      manualBrand: '',
+      manualModel: '',
       imei: '',
       imei2: '',
       serialNumber: '',
@@ -260,41 +263,85 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               <input {...register('accessoryName')} className={inputClass} placeholder="e.g. Bluetooth speaker, smartwatch, charger" />
             </Field>
           )}
-          <Field label="Brand" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.brandId?.message)}>
-            <Controller
-              control={control}
-              name="brandId"
-              render={({ field }) => (
-                <Combobox
-                  value={field.value ?? ''}
-                  onChange={(v) => {
-                    field.onChange(v);
-                    setValue('deviceModelId', null);
+          {jobType === 'MOBILE' && (
+            <div className="sm:col-span-2 -mt-2 mb-1 flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={manualDevice}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setManualDevice(checked);
+                    if (checked) {
+                      setValue('brandId', null);
+                      setValue('deviceModelId', null);
+                    } else {
+                      setValue('manualBrand', '');
+                      setValue('manualModel', '');
+                    }
                   }}
-                  placeholder="Type brand, e.g. Vivo"
-                  invalid={!!errors.brandId}
-                  options={brands.map((b) => ({ value: b.id, label: b.name }))}
+                  className="size-4 accent-brand-600 rounded"
                 />
-              )}
-            />
-          </Field>
-          <Field label="Model" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.deviceModelId?.message)}>
-            <Controller
-              control={control}
-              name="deviceModelId"
-              render={({ field }) => (
-                <Combobox
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  disabled={!brandId}
-                  placeholder={brandId ? 'Type model, e.g. Y20' : 'Select brand first'}
-                  invalid={!!errors.deviceModelId}
-                  emptyText="Model not found — ask admin to add it"
-                  options={models.map((m) => ({ value: m.id, label: m.name }))}
+                Enter brand and model manually (not saved in catalogue)
+              </label>
+            </div>
+          )}
+          {jobType === 'MOBILE' && manualDevice ? (
+            <>
+              <Field label="Brand" required {...err(errors.manualBrand?.message)}>
+                <input
+                  {...register('manualBrand')}
+                  className={inputClass}
+                  placeholder="e.g. Vivo, Samsung, Apple"
                 />
-              )}
-            />
-          </Field>
+              </Field>
+              <Field label="Model" required {...err(errors.manualModel?.message)}>
+                <input
+                  {...register('manualModel')}
+                  className={inputClass}
+                  placeholder="e.g. Y20, Galaxy A52, iPhone 13"
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Brand" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.brandId?.message)}>
+                <Controller
+                  control={control}
+                  name="brandId"
+                  render={({ field }) => (
+                    <Combobox
+                      value={field.value ?? ''}
+                      onChange={(v) => {
+                        field.onChange(v);
+                        setValue('deviceModelId', null);
+                      }}
+                      placeholder="Type brand, e.g. Vivo"
+                      invalid={!!errors.brandId}
+                      options={brands.map((b) => ({ value: b.id, label: b.name }))}
+                    />
+                  )}
+                />
+              </Field>
+              <Field label="Model" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.deviceModelId?.message)}>
+                <Controller
+                  control={control}
+                  name="deviceModelId"
+                  render={({ field }) => (
+                    <Combobox
+                      value={field.value ?? ''}
+                      onChange={field.onChange}
+                      disabled={!brandId}
+                      placeholder={brandId ? 'Type model, e.g. Y20' : 'Select brand first'}
+                      invalid={!!errors.deviceModelId}
+                      emptyText="Model not found — ask admin to add it"
+                      options={models.map((m) => ({ value: m.id, label: m.name }))}
+                    />
+                  )}
+                />
+              </Field>
+            </>
+          )}
           <Field label="IMEI 1" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06#">
             <input {...register('imei')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
           </Field>
@@ -342,6 +389,14 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           )}
         />
         {errors.faults && <p className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
+
+        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+          <h3 className="mb-3 text-sm font-semibold text-slate-800">Device Photos</h3>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
+            <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
+          </div>
+        </div>
 
         {selectedFaults.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-4 py-3">
@@ -423,7 +478,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       </Card>
 
       <div id="photos">
-        <Card title="Photos">
+        <Card title="Customer Photos">
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <PhotoPicker label={PHOTO_KIND_LABELS.CUSTOMER} files={photos.CUSTOMER} onChange={(f) => setPhotos((p) => ({ ...p, CUSTOMER: f }))} />
             <PhotoPicker
@@ -437,12 +492,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               }}
               multiple
             />
-            <div className="sm:col-span-2">
-              <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
-            </div>
-            <div className="sm:col-span-2">
-              <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
-            </div>
           </div>
         </Card>
       </div>

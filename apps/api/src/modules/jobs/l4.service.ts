@@ -140,6 +140,10 @@ const movementSelect = {
       status: true,
       brand: { select: { name: true } },
       deviceModel: { select: { name: true } },
+      manualBrand: true,
+      manualModel: true,
+      jobType: true,
+      accessoryName: true,
       customer: { select: { name: true } },
     },
   },
@@ -172,7 +176,11 @@ export async function listMovements(query: L4MovementListQuery, actor: Actor): P
       id: m.job.id,
       jobNumber: publicJobNumber(m.job.jobNumber),
       status: m.job.status,
-      device: m.job.brand && m.job.deviceModel ? `${m.job.brand.name} ${m.job.deviceModel.name}` : 'Accessory',
+      device: m.job.jobType === 'ACCESSORY'
+        ? (m.job.accessoryName ?? 'Accessory')
+        : (m.job.manualBrand || m.job.manualModel
+            ? `${m.job.manualBrand ?? ''} ${m.job.manualModel ?? ''}`.trim()
+            : `${m.job.brand?.name ?? ''} ${m.job.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
       customer: m.job.customer.name,
     },
   }));

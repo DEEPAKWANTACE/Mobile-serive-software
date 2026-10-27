@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ROLES, type Role } from '../roles.js';
 import { businessDate } from './accounts.js';
 
-export const REPORT_ROLES: readonly Role[] = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS];
+export const REPORT_ROLES: readonly Role[] = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS];
 
 export const reportQuerySchema = z.object({
   from: businessDate,
@@ -119,5 +119,5 @@ export type DashboardSummaryDto = {
   totalAmount: number;
   totalPaid: number;
   totalBalance: number;
-  engineerPending: { engineerId: string; engineer: string; pending: number }[];
+  engineerPending: { engineerId: string; engineer: string; phone: string | null; pending: number }[];
 };

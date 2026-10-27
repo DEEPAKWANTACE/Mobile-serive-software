@@ -29,14 +29,14 @@ async function main() {
   await prisma.shopSettings.upsert({
     where: { id: 'default' },
     update: {
-      shopName: 'Dattagaru Mobile Shopee',
-      legalName: 'Dattagaru Mobile Shopee',
+      shopName: 'Dattagaru Mobile',
+      legalName: 'Dattagaru Mobile',
       email: 'dattagurumobile12345@gmail.com',
     },
     create: {
       id: 'default',
-      shopName: 'Dattagaru Mobile Shopee',
-      legalName: 'Dattagaru Mobile Shopee',
+      shopName: 'Dattagaru Mobile',
+      legalName: 'Dattagaru Mobile',
       gstin: '27ABCDE1234F1Z5',
       address: 'Railway Station Road, Near Ashoka Guest House, Khamgaon 444303',
       phone: '8180084000',

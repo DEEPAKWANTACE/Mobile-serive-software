@@ -94,7 +94,7 @@ export const router = createBrowserRouter([
             ],
           },
           {
-            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS]} />,
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS]} />,
             children: [
               { path: 'reports', element: <ReportsPage /> },
               { path: 'engineer-report', element: <EngineerReportPage /> },

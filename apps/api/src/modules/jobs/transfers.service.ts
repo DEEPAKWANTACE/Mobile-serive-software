@@ -24,7 +24,17 @@ const select = {
   fromEngineer: { select: { id: true, name: true } },
   toEngineer: { select: { id: true, name: true } },
   job: {
-    select: { id: true, jobNumber: true, status: true, brand: { select: { name: true } }, deviceModel: { select: { name: true } } },
+    select: {
+      id: true,
+      jobNumber: true,
+      status: true,
+      brand: { select: { name: true } },
+      deviceModel: { select: { name: true } },
+      manualBrand: true,
+      manualModel: true,
+      jobType: true,
+      accessoryName: true,
+    },
   },
 } satisfies Prisma.JobTransferSelect;
 
@@ -32,7 +42,16 @@ type Row = Prisma.JobTransferGetPayload<{ select: typeof select }>;
 
 const toDto = (t: Row): TransferDto => ({
   id: t.id,
-  job: { id: t.job.id, jobNumber: publicJobNumber(t.job.jobNumber), status: t.job.status, device: t.job.brand && t.job.deviceModel ? `${t.job.brand.name} ${t.job.deviceModel.name}` : 'Accessory' },
+  job: {
+    id: t.job.id,
+    jobNumber: publicJobNumber(t.job.jobNumber),
+    status: t.job.status,
+    device: t.job.jobType === 'ACCESSORY'
+      ? (t.job.accessoryName ?? 'Accessory')
+      : (t.job.manualBrand || t.job.manualModel
+          ? `${t.job.manualBrand ?? ''} ${t.job.manualModel ?? ''}`.trim()
+          : `${t.job.brand?.name ?? ''} ${t.job.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
+  },
   from: t.fromEngineer,
   to: t.toEngineer,
   reason: t.reason,
