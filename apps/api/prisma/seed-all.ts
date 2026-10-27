@@ -28,15 +28,19 @@ async function main() {
   // ── Shop settings (single row) ───────────────────────────────────────────
   await prisma.shopSettings.upsert({
     where: { id: 'default' },
-    update: {},
+    update: {
+      shopName: 'Dattagaru Mobile Shopee',
+      legalName: 'Dattagaru Mobile Shopee',
+      email: 'dattagurumobile12345@gmail.com',
+    },
     create: {
       id: 'default',
-      shopName: 'DATTAGURU MOBILE SHOPEE',
-      legalName: 'QuickFix Services Pvt Ltd',
+      shopName: 'Dattagaru Mobile Shopee',
+      legalName: 'Dattagaru Mobile Shopee',
       gstin: '27ABCDE1234F1Z5',
       address: 'Railway Station Road, Near Ashoka Guest House, Khamgaon 444303',
       phone: '8180084000',
-      email: 'care@quickfix.example',
+      email: 'dattagurumobile12345@gmail.com',
       invoiceTerms: 'Goods once serviced will not be taken back. Warranty 30 days on repair only.',
     },
   });
@@ -59,17 +63,17 @@ async function main() {
 
   // ── Users: one per role (+ a second engineer for transfers) ──────────────
   const userDefs = [
-    { role: 'SUPER_ADMIN', username: 'superadmin', name: 'Super Admin (demo)', branchId: null, email: 'superadmin@quickfix.example', phone: '+91 90000 00001' },
-    { role: 'BRANCH_MANAGER', username: 'manager', name: 'Branch Manager', branchId: serviceCenter.id, email: 'manager@quickfix.example', phone: '+91 90000 00002' },
-    { role: 'BRANCH_MANAGER', username: 'gajanan', name: 'Gajanan', branchId: serviceCenter.id, email: 'gajanan@quickfix.example', phone: '+91 91000 00001' },
-    { role: 'CCO', username: 'cco', name: 'Customer Care Officer', branchId: serviceCenter.id, email: 'cco@quickfix.example', phone: '+91 90000 00003' },
-    { role: 'CCO', username: 'santosh', name: 'Santosh', branchId: serviceCenter.id, email: 'santosh@quickfix.example', phone: '+91 91000 00002' },
-    { role: 'ENGINEER', username: 'engineer', name: 'Engineer One', branchId: serviceCenter.id, email: 'engineer1@quickfix.example', phone: '+91 90000 00004' },
-    { role: 'ENGINEER', username: 'engineer2', name: 'Engineer Two', branchId: serviceCenter.id, email: 'engineer2@quickfix.example', phone: '+91 90000 00005' },
-    { role: 'ENGINEER', username: 'purushottam', name: 'Purushottam', branchId: serviceCenter.id, email: 'purushottam@quickfix.example', phone: '+91 91000 00003' },
-    { role: 'ENGINEER', username: 'ankit', name: 'Ankit', branchId: serviceCenter.id, email: 'ankit@quickfix.example', phone: '+91 91000 00004' },
-    { role: 'STOREKEEPER', username: 'storekeeper', name: 'Storekeeper', branchId: serviceCenter.id, email: 'store@quickfix.example', phone: '+91 90000 00006' },
-    { role: 'ACCOUNTS', username: 'accounts', name: 'Accounts', branchId: serviceCenter.id, email: 'accounts@quickfix.example', phone: '+91 90000 00007' },
+    { role: 'SUPER_ADMIN', username: 'superadmin', name: 'Super Admin (demo)', branchId: null, email: 'superadmin@dattagaru.example', phone: '+91 90000 00001' },
+    { role: 'BRANCH_MANAGER', username: 'manager', name: 'Branch Manager', branchId: serviceCenter.id, email: 'manager@dattagaru.example', phone: '+91 90000 00002' },
+    { role: 'BRANCH_MANAGER', username: 'gajanan', name: 'Gajanan', branchId: serviceCenter.id, email: 'gajanan@dattagaru.example', phone: '+91 91000 00001' },
+    { role: 'CCO', username: 'cco', name: 'Customer Care Officer', branchId: serviceCenter.id, email: 'cco@dattagaru.example', phone: '+91 90000 00003' },
+    { role: 'CCO', username: 'santosh', name: 'Santosh', branchId: serviceCenter.id, email: 'santosh@dattagaru.example', phone: '+91 91000 00002' },
+    { role: 'ENGINEER', username: 'engineer', name: 'Engineer One', branchId: serviceCenter.id, email: 'engineer1@dattagaru.example', phone: '+91 90000 00004' },
+    { role: 'ENGINEER', username: 'engineer2', name: 'Engineer Two', branchId: serviceCenter.id, email: 'engineer2@dattagaru.example', phone: '+91 90000 00005' },
+    { role: 'ENGINEER', username: 'purushottam', name: 'Purushottam', branchId: serviceCenter.id, email: 'purushottam@dattagaru.example', phone: '+91 91000 00003' },
+    { role: 'ENGINEER', username: 'ankit', name: 'Ankit', branchId: serviceCenter.id, email: 'ankit@dattagaru.example', phone: '+91 91000 00004' },
+    { role: 'STOREKEEPER', username: 'storekeeper', name: 'Storekeeper', branchId: serviceCenter.id, email: 'store@dattagaru.example', phone: '+91 90000 00006' },
+    { role: 'ACCOUNTS', username: 'accounts', name: 'Accounts', branchId: serviceCenter.id, email: 'accounts@dattagaru.example', phone: '+91 90000 00007' },
   ] satisfies Array<{ role: Role; username: string; name: string; branchId: string | null; email: string; phone: string }>;
   const users: Record<string, string> = {};
   for (const u of userDefs) {

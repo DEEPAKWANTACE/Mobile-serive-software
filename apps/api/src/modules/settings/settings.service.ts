@@ -9,7 +9,7 @@ import { recordAudit } from '../audit/audit.service.ts';
 import { assertCatalogRow, catalogWhere, writeCatalogBranch } from '../../lib/catalog-scope.ts';
 
 const ID = 'default';
-const DEFAULT_NAME = 'Mobile Service Centre';
+const DEFAULT_NAME = 'Dattagaru Mobile Shopee';
 const DEFAULT_EMAIL = 'dattagurumobile12345@gmail.com';
 
 export async function get(): Promise<ShopSettingsDto> {
