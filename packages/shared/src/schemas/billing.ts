@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { optionalText } from './common.js';
-import { PAYMENT_MODES, type JobStatus, type PaymentMode } from './jobs.js';
+import { isValidImei, PAYMENT_MODES, type JobStatus, type PaymentMode } from './jobs.js';
 
 /** Jobs the counter can hand back: repaired, or returned without repair. */
 export const DELIVERABLE_STATUSES: readonly JobStatus[] = ['READY_FOR_DELIVERY', 'RWR'];
@@ -21,6 +21,8 @@ export const deliverySchema = z
     deliveredTo: z.string().trim().min(2, 'Who collected the phone?').max(100),
     accessoriesReturned: z.boolean().default(false),
     note: optionalText(500),
+    /** Required for mobile delivery; "N/A" must be an explicit counter choice. */
+    imei: z.string().trim().refine((v) => v === 'N/A' || isValidImei(v), 'Enter a valid 15-digit IMEI or select N/A').optional(),
   })
   .refine((v) => v.discount === 0 || v.discountReason, { message: 'Enter the reason for the discount', path: ['discountReason'] });
 export type DeliveryInput = z.input<typeof deliverySchema>;
@@ -34,6 +36,7 @@ export type BillPreviewDto = {
   /** Advances etc. already received (net of refunds). */
   paid: number;
   imeiRequired: boolean;
+  serialNumberRequired: boolean;
   accessories: string[];
 };
 

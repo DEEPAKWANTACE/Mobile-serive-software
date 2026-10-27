@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { PAYMENT_MODE_LABELS, PAYMENT_MODES, roundMoney, type BillPreviewDto, type JobDto, type PaymentMode } from '@msm/shared';
+import { isValidImei, PAYMENT_MODE_LABELS, PAYMENT_MODES, roundMoney, type BillPreviewDto, type JobDto, type PaymentMode } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Field, inputClass } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api-client';
@@ -27,6 +27,8 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
   const [deliveredTo, setDeliveredTo] = useState(job.customer.name);
   const [accessoriesReturned, setAccessoriesReturned] = useState(false);
   const [note, setNote] = useState('');
+  const [imeiChoice, setImeiChoice] = useState<'IMEI' | 'NA'>(job.imei === 'N/A' ? 'NA' : 'IMEI');
+  const [imei, setImei] = useState(job.imei && job.imei !== 'N/A' ? job.imei : '');
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
   const subtotal = bill.kind === 'RWR' ? Number(inspection) || 0 : bill.subtotal;
@@ -41,7 +43,9 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
     if (!touched) setPayments((rows) => (rows.length === 1 ? [{ ...rows[0]!, amount: due > 0 ? String(due) : '' }] : rows));
   }, [due, touched]);
   const collected = roundMoney(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  const missingImei = bill.imeiRequired && job.jobType === 'ACCESSORY' && !job.serialNumber;
+  const missingImei = bill.imeiRequired && imeiChoice === 'IMEI' && !isValidImei(imei.trim());
+  const missingSerialNumber = bill.serialNumberRequired && !job.serialNumber;
+  const missingIdentification = missingImei || missingSerialNumber;
 
   const deliver = useMutation({
     mutationFn: () =>
@@ -54,6 +58,7 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         deliveredTo,
         accessoriesReturned,
         note: note || null,
+        ...(bill.imeiRequired && { imei: imeiChoice === 'NA' ? 'N/A' : imei.trim() }),
       }),
     onSuccess: (r) => {
       toast.success(`Delivered — invoice ${r.invoiceNumber}`);
@@ -84,10 +89,38 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
       }}
       className="space-y-5"
     >
-      {missingImei && (
+      {missingSerialNumber && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           Serial number is missing. Add it on the job before delivering a repaired accessory.
         </div>
+      )}
+
+      {bill.imeiRequired && (
+        <fieldset className="rounded-md border border-slate-200 p-3">
+          <legend className="px-1 text-sm font-medium text-slate-700">IMEI <span className="text-red-600">*</span></legend>
+          <div className="flex flex-wrap gap-5 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="radio" name="imeiChoice" checked={imeiChoice === 'IMEI'} onChange={() => setImeiChoice('IMEI')} className="accent-brand-600" />
+              Enter IMEI
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" name="imeiChoice" checked={imeiChoice === 'NA'} onChange={() => setImeiChoice('NA')} className="accent-brand-600" />
+              N/A (not available)
+            </label>
+          </div>
+          {imeiChoice === 'IMEI' && (
+            <input
+              value={imei}
+              onChange={(e) => setImei(e.target.value.replace(/\D/g, '').slice(0, 15))}
+              inputMode="numeric"
+              maxLength={15}
+              className={`${inputClass} mt-3 font-mono`}
+              placeholder="15-digit IMEI"
+            />
+          )}
+          {missingImei && <p className="mt-1 text-xs text-red-600">Enter a valid 15-digit IMEI or select N/A.</p>}
+          {errors.imei && <p className="mt-1 text-xs text-red-600">{errors.imei}</p>}
+        </fieldset>
       )}
 
       {/* Bill */}
@@ -208,13 +241,11 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
           </span>
         </label>
       )}
-      {errors.imei && <p className="text-sm text-red-600">{errors.imei}</p>}
-
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onDone}>
           Cancel
         </Button>
-        <Button type="submit" loading={deliver.isPending} disabled={missingImei}>
+        <Button type="submit" loading={deliver.isPending} disabled={missingIdentification}>
           Deliver & create invoice
         </Button>
       </div>

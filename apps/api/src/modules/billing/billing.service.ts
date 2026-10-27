@@ -82,7 +82,8 @@ function buildPreview(job: BillJob): BillPreviewDto {
     lines,
     subtotal: roundMoney(lines.reduce((s, l) => s + l.amount, 0)),
     paid: netPaid(job.payments),
-    imeiRequired: !isRwr,
+    imeiRequired: job.jobType === 'MOBILE',
+    serialNumberRequired: !isRwr && job.jobType === 'ACCESSORY',
     accessories: [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])],
   };
 }
@@ -138,7 +139,11 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   assertDeliverable(job.status);
   const bill = buildPreview(job);
 
-  if (bill.imeiRequired && job.jobType === 'ACCESSORY' && !job.serialNumber) {
+  const deliveryImei = job.jobType === 'MOBILE' ? (data.imei ?? job.imei) : null;
+  if (bill.imeiRequired && !deliveryImei) {
+    throw invalid('imei', 'Enter the IMEI or explicitly select N/A before delivery');
+  }
+  if (bill.serialNumberRequired && !job.serialNumber) {
     throw invalid('serialNumber', 'Add the serial number before delivering a repaired accessory');
   }
   if (bill.accessories.length && !data.accessoriesReturned) throw invalid('accessoriesReturned', 'Confirm the accessories were returned');
@@ -162,7 +167,14 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   return prisma.$transaction(async (tx) => {
     const { count } = await tx.job.updateMany({
       where: { id: jobId, status: job.status },
-      data: { status: 'DELIVERED', deliveredAt: now, deliveredById: actor.sub, deliveredTo: data.deliveredTo, deliveryNote: data.note ?? null },
+      data: {
+        status: 'DELIVERED',
+        deliveredAt: now,
+        deliveredById: actor.sub,
+        deliveredTo: data.deliveredTo,
+        deliveryNote: data.note ?? null,
+        ...(deliveryImei && { imei: deliveryImei }),
+      },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
     await endAssignment(tx, jobId, 'CLOSED');
