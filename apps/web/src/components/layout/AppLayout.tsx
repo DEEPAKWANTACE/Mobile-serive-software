@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router';
 import { LogOut, Menu, Smartphone, X } from 'lucide-react';
 import { ROLE_LABELS } from '@msm/shared';
@@ -11,10 +11,15 @@ export function AppLayout() {
   const { data: shop } = useShopSettings();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
   const appName = shop?.shopName ?? 'Mobile Service Management';
 
   // Close the mobile menu on navigation; keep the browser tab titled with the shop name.
   useEffect(() => setMenuOpen(false), [location.pathname, location.search]);
+  // The app shell owns the scroll container, so reset it when opening another page.
+  useEffect(() => {
+    if (mainRef.current) mainRef.current.scrollTop = 0;
+  }, [location.pathname]);
   useEffect(() => {
     document.title = appName;
   }, [appName]);
@@ -92,7 +97,7 @@ export function AppLayout() {
             </button>
           </div>
         </header>
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
+        <main ref={mainRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
           <div className="grow shrink-0 p-4 sm:p-6 print:p-0">
             <Outlet />
           </div>

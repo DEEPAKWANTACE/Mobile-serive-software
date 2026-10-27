@@ -498,18 +498,18 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Awaiting assignment" value={by?.RECEIVED} tone={by?.RECEIVED ? 'warning' : 'default'} icon={UserCheck} hint="Phones here without an engineer" />
-        <StatCard label="With engineers" value={withEngineer} tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
-        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
-        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
+        <StatCard label="Awaiting assignment" value={by?.RECEIVED} to="/jobs?status=RECEIVED" tone={by?.RECEIVED ? 'warning' : 'default'} icon={UserCheck} hint="Phones here without an engineer" />
+        <StatCard label="With engineers" value={withEngineer} to="/jobs?view=engineers" tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
+        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to="/jobs?view=ready" tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
+        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to="/jobs?status=AWAITING_APPROVAL" tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} />
+        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} to="/jobs?status=SPARE_PENDING" />
         <MiniStat label="Follow-ups due" value={followUps.data?.followUpsDue} icon={CalendarClock} to="/calling" />
         <MiniStat label="At L4 / in transit" value={stats.data?.atL4} icon={Truck} to="/l4" />
-        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} />
-        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} />
+        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} to="/jobs?status=CUSTOMER_REJECTED" />
+        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} to="/jobs?status=DELIVERED" />
         <MiniStat label="Total jobs" value={stats.data?.total} icon={Users} to="/jobs" />
       </div>
 

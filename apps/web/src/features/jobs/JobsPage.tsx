@@ -101,13 +101,21 @@ export function JobsPage() {
 const VIEWS = [
   ['', 'All'],
   ['pending', 'Pending works'],
+  ['engineers', 'With engineers'],
+  ['ready', 'Ready for collection'],
   ['out', 'Out (delivered)'],
   ['balance', 'Balance due'],
   ['over15', 'More than 15 days'],
 ] as const;
 
 const viewParams = (v: string) =>
-  v === 'pending' ? { open: true } : v === 'out' ? { delivered: true } : v === 'balance' ? { balanceDue: true } : v === 'over15' ? { open: true, minAgeDays: 15 } : {};
+  v === 'pending' ? { open: true }
+    : v === 'engineers' ? { statuses: 'ASSIGNED,IN_REPAIR,REPAIRED,TESTING' }
+      : v === 'ready' ? { statuses: 'READY_FOR_DELIVERY,RWR' }
+        : v === 'out' ? { delivered: true }
+          : v === 'balance' ? { balanceDue: true }
+            : v === 'over15' ? { open: true, minAgeDays: 15 }
+              : {};
 
 export function ShowJobs() {
   const { user } = useAuth();

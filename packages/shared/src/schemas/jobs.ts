@@ -307,6 +307,12 @@ export type JobCreateData = z.output<typeof jobCreateSchema>;
 
 export const jobListQuerySchema = listQuerySchema.extend({
   status: z.enum(JOB_STATUSES).optional(),
+  /** Filter by one of several statuses (comma-separated in the query string). */
+  statuses: z
+    .string()
+    .transform((value) => value.split(',').filter(Boolean))
+    .pipe(z.array(z.enum(JOB_STATUSES)).min(1))
+    .optional(),
   branchId: z.uuid().optional(),
   /** Filter by engineer; "none" = unassigned jobs. Engineers always see only their own jobs. */
   engineerId: z.union([z.uuid(), z.literal('none')]).optional(),

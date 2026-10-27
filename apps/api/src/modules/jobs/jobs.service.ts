@@ -393,6 +393,7 @@ export async function list(query: JobListQuery, actor: Actor) {
   const s = query.search;
   const and: Prisma.JobWhereInput[] = [jobScope(actor)];
   if (query.status) and.push({ status: query.status });
+  if (query.statuses) and.push({ status: { in: query.statuses } });
   if (query.branchId) and.push({ OR: [{ branchId: query.branchId }, { currentBranchId: query.branchId }] });
   if (query.engineerId) and.push({ assignedEngineerId: query.engineerId === 'none' ? null : query.engineerId });
   // "here"/"owned" use the caller's branch, or the branch a Super Admin is looking at (franchise view).
