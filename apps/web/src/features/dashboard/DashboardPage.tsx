@@ -4,7 +4,6 @@ import { Link } from 'react-router';
 import {
   AlertTriangle,
   ArrowLeftRight,
-  ArrowUpRight,
   BadgeCheck,
   Banknote,
   Boxes,
@@ -59,7 +58,7 @@ import { formatCurrency, formatJobNumber, timeAgo } from '@/lib/format';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { InlineJobStatus } from '@/features/jobs/InlineJobStatus';
 import { SearchInput } from '@/components/ui/Filters';
-import { StatCard } from './StatCard';
+import { DashboardMetricList, type DashboardMetricItem } from './DashboardMetricList';
 import { DashboardHero, HeroAction } from './DashboardHero';
 import { TrendChart } from '@/components/charts/TrendChart';
 import { BarList } from '@/components/charts/BarList';
@@ -124,7 +123,6 @@ function heroActions(role: string) {
       return null;
   }
 }
-
 export function DashboardPage() {
   const { user } = useAuth();
   if (!user) return null;
@@ -154,13 +152,13 @@ function AccountsDashboard() {
   const money = (v?: number) => (v === undefined ? undefined : formatCurrency(v));
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-        <StatCard label="Received today" value={money(book.data?.received.total)} to="/accounts/day-book" tone="brand" icon={Banknote} />
-        <StatCard label="Expenses today" value={money(book.data?.expenses.total)} to="/accounts/day-book" icon={Receipt} />
-        <StatCard label="Net today" value={money(book.data?.net)} to="/accounts/day-book" tone="brand" icon={CircleDollarSign} />
-        <StatCard label="Cash in hand" value={money(book.data?.cashInHand)} to="/accounts/day-book" icon={Wallet} />
-        <StatCard label="Pending collection" value={money(pending.data?.ready.amount)} to="/calling" tone="warning" icon={HandCoins} />
-      </div>
+      <DashboardMetricList items={[
+        { key: 'received', label: 'Received today', value: money(book.data?.received.total), to: '/accounts/day-book', tone: 'brand', icon: Banknote },
+        { key: 'expenses', label: 'Expenses today', value: money(book.data?.expenses.total), to: '/accounts/day-book', icon: Receipt },
+        { key: 'net', label: 'Net today', value: money(book.data?.net), to: '/accounts/day-book', tone: 'brand', icon: CircleDollarSign },
+        { key: 'cash', label: 'Cash in hand', value: money(book.data?.cashInHand), to: '/accounts/day-book', icon: Wallet },
+        { key: 'collection', label: 'Pending collection', value: money(pending.data?.ready.amount), to: '/calling', tone: 'warning', icon: HandCoins },
+      ]} />
       <DashboardSummary linkable={false} />
       <TrendCard />
     </>
@@ -181,12 +179,12 @@ function StoreDashboard() {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard label="Part requests to handle" value={pending} to="/store/requests" tone={pending ? 'warning' : 'default'} icon={Inbox} />
-        <StatCard label="Waiting for stock" value={waiting} to="/store/requests" icon={PackageSearch} />
-        <StatCard label="Low-stock parts" value={low.data?.total} to="/store/stock" tone={low.data?.total ? 'critical' : 'default'} icon={AlertTriangle} />
-        <StatCard label="Parts to receive" value={incoming.data?.length} to="/store/transfers" tone="brand" icon={ArrowLeftRight} hint="From other branches" />
-      </div>
+      <DashboardMetricList items={[
+        { key: 'requests', label: 'Part requests to handle', value: pending, to: '/store/requests', tone: pending ? 'warning' : 'default', icon: Inbox },
+        { key: 'waiting', label: 'Waiting for stock', value: waiting, to: '/store/requests', icon: PackageSearch },
+        { key: 'low', label: 'Low-stock parts', value: low.data?.total, to: '/store/stock', tone: low.data?.total ? 'critical' : 'default', icon: AlertTriangle },
+        { key: 'incoming', label: 'Parts to receive', value: incoming.data?.length, to: '/store/transfers', tone: 'brand', icon: ArrowLeftRight, hint: 'From other branches' },
+      ]} />
       {!!low.data?.items.length && (
         <Card title="Low stock — reorder" icon={AlertTriangle} subtitle="At or below the reorder level">
           <ul className="divide-y divide-slate-100 text-sm">
@@ -274,35 +272,36 @@ function EngineerDashboard() {
     st: JobStatus,
     icon: React.ComponentType<{ className?: string }>,
     tone?: 'default' | 'warning' | 'brand' | 'good' | 'critical',
-  ) => (
-    <EngineerPreviewCard
-      label={label}
-      value={by?.[st]}
-      icon={icon}
-      tone={tone}
-      hint={totalHint(all?.[st])}
-      selected={preview.key === st}
-      viewTo={`/jobs?status=${st}`}
-      onPreview={() => choosePreview({ key: st, title: `${JOB_STATUS_LABELS[st]} · today`, status: st, today: true })}
-    />
-  );
+  ): DashboardMetricItem => ({
+    key: st,
+    label,
+    value: by?.[st],
+    icon,
+    tone,
+    hint: totalHint(all?.[st]),
+    selected: preview.key === st,
+    to: `/jobs?status=${st}`,
+    onSelect: () => choosePreview({ key: st, title: `${JOB_STATUS_LABELS[st]} · today`, status: st, today: true }),
+  });
+
+  const metrics: DashboardMetricItem[] = [
+    card('To repair', 'IN_REPAIR', Wrench, 'good'),
+    { key: 'pending', label: 'Pending today', value: open, tone: 'brand', icon: ClipboardList, hint: totalHint(openAll), selected: preview.key === 'pending', to: '/jobs?open=true', onSelect: () => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true }) },
+    card('Awaiting approval', 'AWAITING_APPROVAL', Clock),
+    { key: 'completed', label: 'Completed today', value: completed, tone: 'good', icon: PackageCheck, hint: completedAll === undefined ? undefined : `${completedAll} completed total`, selected: preview.key === 'completed', to: '/jobs?completed=true&today=true', onSelect: () => choosePreview({ key: 'completed', title: 'Completed today', completed: true, today: true }) },
+    { key: 'total', label: 'Total assigned today', value: stats.data?.today.total, icon: Users, hint: stats.data ? `${stats.data.total} assigned total` : undefined, selected: preview.key === 'total', to: '/jobs?today=true', onSelect: () => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true }) },
+    card('To diagnose', 'ASSIGNED', Stethoscope, 'brand'),
+    card('Repaired', 'REPAIRED', BadgeCheck),
+    card('Testing', 'TESTING', TestTube2),
+    card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning'),
+    card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning'),
+    { key: 'over15', label: 'More than 15 days', value: overdue.data?.total, tone: overdue.data?.total ? 'critical' : 'default', icon: AlertTriangle, hint: 'Still open', selected: preview.key === 'over15', to: '/jobs?view=over15', onSelect: () => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 }) },
+    { key: 'transfers', label: 'Transfer jobs', value: transfers, icon: ArrowLeftRight, hint: 'Requests to / from you', selected: preview.key === 'transfers', to: '/jobs?open=true', onSelect: () => choosePreview({ key: 'transfers', title: 'Jobs with transfer requests', open: true, transfersOnly: true }) },
+  ];
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-        {card('To repair', 'IN_REPAIR', Wrench, 'good')}
-        <EngineerPreviewCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} selected={preview.key === 'pending'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'pending', title: 'My pending queue · today', open: true, today: true })} />
-        {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
-        <EngineerPreviewCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} selected={preview.key === 'completed'} viewTo="/jobs?completed=true&today=true" onPreview={() => choosePreview({ key: 'completed', title: 'Completed today', completed: true, today: true })} />
-        <EngineerPreviewCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} selected={preview.key === 'total'} viewTo="/jobs?today=true" onPreview={() => choosePreview({ key: 'total', title: 'Jobs worked on today', today: true })} />
-        {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
-        {card('Repaired', 'REPAIRED', BadgeCheck)}
-        {card('Testing', 'TESTING', TestTube2)}
-        {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
-        {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
-        <EngineerPreviewCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" selected={preview.key === 'over15'} viewTo="/jobs?view=over15" onPreview={() => choosePreview({ key: 'over15', title: 'Open for more than 15 days', open: true, minAgeDays: 15 })} />
-        <EngineerPreviewCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" selected={preview.key === 'transfers'} viewTo="/jobs?open=true" onPreview={() => choosePreview({ key: 'transfers', title: 'Jobs with transfer requests', open: true, transfersOnly: true })} />
-      </div>
+      <DashboardMetricList items={metrics} />
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
           <ul className="divide-y divide-slate-100">
@@ -362,47 +361,6 @@ function EngineerDashboard() {
         </Card>
       </div>
     </>
-  );
-}
-
-function EngineerPreviewCard({
-  label,
-  value,
-  icon,
-  hint,
-  tone,
-  selected,
-  viewTo,
-  onPreview,
-}: {
-  label: string;
-  value: number | undefined;
-  icon: React.ComponentType<{ className?: string }>;
-  hint?: string;
-  tone?: 'default' | 'brand' | 'good' | 'warning' | 'critical';
-  selected: boolean;
-  viewTo: string;
-  onPreview: () => void;
-}) {
-  return (
-    <div className={`relative rounded-xl transition ${selected ? 'ring-2 ring-brand-500 ring-offset-2' : ''}`}>
-      <button
-        type="button"
-        onClick={onPreview}
-        aria-pressed={selected}
-        aria-label={`Preview ${label} below`}
-        className="block h-full w-full rounded-xl text-left focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none [&>div]:pb-10"
-      >
-        <StatCard label={label} value={value} tone={tone} icon={icon} hint={hint} />
-      </button>
-      <Link
-        to={viewTo}
-        className="absolute right-3 bottom-3 z-10 inline-flex items-center gap-1 rounded px-1.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 hover:text-brand-900 focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none"
-        aria-label={`View all ${label} jobs`}
-      >
-        View all <ArrowUpRight className="size-3.5" />
-      </Link>
-    </div>
   );
 }
 
@@ -497,21 +455,18 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Awaiting assignment" value={by?.RECEIVED} to="/jobs?status=RECEIVED" tone={by?.RECEIVED ? 'warning' : 'default'} icon={UserCheck} hint="Phones here without an engineer" />
-        <StatCard label="With engineers" value={withEngineer} to="/jobs?view=engineers" tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
-        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to="/jobs?view=ready" tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
-        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to="/jobs?status=AWAITING_APPROVAL" tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} to="/jobs?status=SPARE_PENDING" />
-        <MiniStat label="Follow-ups due" value={followUps.data?.followUpsDue} icon={CalendarClock} to="/calling" />
-        <MiniStat label="At L4 / in transit" value={stats.data?.atL4} icon={Truck} to="/l4" />
-        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} to="/jobs?status=CUSTOMER_REJECTED" />
-        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} to="/jobs?status=DELIVERED" />
-        <MiniStat label="Total jobs" value={stats.data?.total} icon={Users} to="/jobs" />
-      </div>
+      <DashboardMetricList items={[
+        { key: 'received', label: 'Awaiting assignment', value: by?.RECEIVED, to: '/jobs?status=RECEIVED', tone: by?.RECEIVED ? 'warning' : 'default', icon: UserCheck, hint: 'Phones here without an engineer' },
+        { key: 'engineers', label: 'With engineers', value: withEngineer, to: '/jobs?view=engineers', tone: 'brand', icon: Wrench, hint: 'Diagnosis, repair & testing' },
+        { key: 'ready', label: 'Ready for collection', value: by ? by.READY_FOR_DELIVERY + by.RWR : undefined, to: '/jobs?view=ready', tone: 'good', icon: PackageCheck, hint: toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined },
+        { key: 'approval', label: 'Approval needed', value: by?.AWAITING_APPROVAL, to: '/jobs?status=AWAITING_APPROVAL', tone: by?.AWAITING_APPROVAL ? 'warning' : 'default', icon: PhoneCall, hint: 'Call these customers' },
+        { key: 'spare', label: 'Spare not available', value: by?.SPARE_PENDING, to: '/jobs?status=SPARE_PENDING', icon: PackageSearch },
+        { key: 'followups', label: 'Follow-ups due', value: followUps.data?.followUpsDue, to: '/calling', icon: CalendarClock },
+        { key: 'l4', label: 'At L4 / in transit', value: stats.data?.atL4, to: '/l4', icon: Truck },
+        { key: 'rejected', label: 'Customer rejected', value: by?.CUSTOMER_REJECTED, to: '/jobs?status=CUSTOMER_REJECTED', icon: ShieldAlert },
+        { key: 'delivered', label: 'Delivered', value: by?.DELIVERED, to: '/jobs?status=DELIVERED', icon: FilePlus2 },
+        { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users },
+      ]} />
 
       {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
 
@@ -700,17 +655,4 @@ function TrendCard({ branchId }: { branchId?: string }) {
       )}
     </Card>
   );
-}
-
-function MiniStat({ label, value, icon: Icon, to }: { label: string; value: number | undefined; icon: React.ComponentType<{ className?: string }>; to?: string }) {
-  const body = (
-    <div className="flex items-center gap-3 rounded-xl bg-white px-3.5 py-3 ring-1 ring-slate-200/80 transition hover:shadow-sm">
-      <Icon className="size-4 shrink-0 text-slate-400" />
-      <div className="min-w-0">
-        <div className="truncate text-xs text-slate-500">{label}</div>
-        <div className="text-lg leading-tight font-semibold text-slate-900 tabular-nums">{value ?? '–'}</div>
-      </div>
-    </div>
-  );
-  return to ? <Link to={to}>{body}</Link> : body;
 }
