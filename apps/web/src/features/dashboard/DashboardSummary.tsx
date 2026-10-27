@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownToLine, ArrowUpFromLine, CalendarRange, Hourglass, IndianRupee, LayoutList, Wrench } from 'lucide-react';
 import type { DashboardSummaryDto } from '@msm/shared';
+import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { api } from '@/lib/api-client';
@@ -51,6 +52,7 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
             <>
               <input type="date" aria-label="From" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className={`${inputClass} w-36!`} />
               <input type="date" aria-label="To" value={to} min={from} onChange={(e) => setTo(e.target.value)} className={`${inputClass} w-36!`} />
+              <QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t))} allowAll={false} label={false} />
             </>
           )}
         </div>

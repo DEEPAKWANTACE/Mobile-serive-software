@@ -16,6 +16,7 @@ import {
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Field, inputClass } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -157,66 +158,8 @@ export function EngineerReportPage() {
       <PageHeader title="Engineer Report" description="Jobs handled by each engineer — including jobs later transferred or reassigned" />
       
       {/* Quick date range filters */}
-      <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-3 ring-1 ring-slate-200">
-        <span className="text-xs font-semibold text-slate-500 uppercase mr-1">Quick Date:</span>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const t = todayIso();
-            applyQuickRange(t, t);
-          }}
-        >
-          Today
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const y = todayIso(-1);
-            applyQuickRange(y, y);
-          }}
-        >
-          Yesterday
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const now = new Date();
-            const from = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-            const to = todayIso();
-            applyQuickRange(from, to);
-          }}
-        >
-          This Month
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const now = new Date();
-            const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-            const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
-            const from = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-01`;
-            const to = `${lastMonthEnd.getFullYear()}-${String(lastMonthEnd.getMonth() + 1).padStart(2, '0')}-${String(lastMonthEnd.getDate()).padStart(2, '0')}`;
-            applyQuickRange(from, to);
-          }}
-        >
-          Last Month
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => applyQuickRange('', '')}
-        >
-          All Time
-        </Button>
+      <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
+        <QuickDateRange onSelect={applyQuickRange} />
       </div>
 
       {/* Engineer-wise pending overview with Copy Details and WhatsApp buttons */}

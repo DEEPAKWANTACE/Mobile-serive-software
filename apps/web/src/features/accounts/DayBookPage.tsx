@@ -12,6 +12,7 @@ import {
   type ExpenseDto,
   type PaymentMode,
 } from '@msm/shared';
+import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -47,7 +48,6 @@ export function DayBookPage() {
     setFrom(f);
     setTo(t);
   };
-  const monthStart = `${todayIso().slice(0, 8)}01`;
 
   const paymentColumns: Column<DayBookDto['payments'][number]>[] = [
     { header: 'Time', cell: (p) => <span className="whitespace-nowrap text-slate-600">{formatDateTime(p.createdAt)}</span> },
@@ -113,9 +113,7 @@ export function DayBookPage() {
         <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="From" className={`${inputClass} w-40!`} />
         <span className="text-slate-500">to</span>
         <input type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} aria-label="To" className={`${inputClass} w-40!`} />
-        <Button variant="secondary" size="sm" onClick={() => quick(todayIso(), todayIso())}>Today</Button>
-        <Button variant="secondary" size="sm" onClick={() => quick(todayIso(-1), todayIso(-1))}>Yesterday</Button>
-        <Button variant="secondary" size="sm" onClick={() => quick(monthStart, todayIso())}>This month</Button>
+        <QuickDateRange onSelect={quick} allowAll={false} label={false} />
       </FilterBar>
 
       {error && <p className="text-sm text-red-600">{error.message}</p>}

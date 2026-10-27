@@ -15,6 +15,7 @@ import {
   type JobListItemDto,
   type PaymentMode,
 } from '@msm/shared';
+import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
@@ -263,6 +264,7 @@ export function ShowJobs() {
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
           To <input type="date" value={to} min={from || undefined} onChange={(e) => reset(setTo)(e.target.value)} className={`${inputClass} w-38!`} />
         </label>
+        <QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t), setPage(1))} label={false} />
         <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
         {!isEngineer && (
           <FilterSelect

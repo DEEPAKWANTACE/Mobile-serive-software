@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ROLE_LABELS, ROLES, type ReportBranchRow, type ReportCcoRow, type ReportDto, type ReportEngineerRow } from '@msm/shared';
+import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -33,15 +34,6 @@ export function ReportsPage() {
     queryKey: ['reports', params],
     queryFn: () => api.get<ReportDto>(`/reports?${toQueryString(params)}`),
   });
-
-  const lastMonth = () => {
-    const d = new Date(`${monthStart}T00:00:00`);
-    d.setMonth(d.getMonth() - 1);
-    const start = d.toISOString().slice(0, 10).slice(0, 8) + '01';
-    const end = new Date(new Date(`${monthStart}T00:00:00`).getTime() - 86_400_000);
-    setFrom(start);
-    setTo(new Intl.DateTimeFormat('en-CA').format(end));
-  };
 
   const period = `${from}_to_${to}`;
   const branchColumns: Column<ReportBranchRow>[] = [
@@ -111,9 +103,7 @@ export function ReportsPage() {
         <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="From" className={`${inputClass} w-40!`} />
         <span className="text-slate-500">to</span>
         <input type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} aria-label="To" className={`${inputClass} w-40!`} />
-        <Button variant="secondary" size="sm" onClick={() => (setFrom(todayIso()), setTo(todayIso()))}>Today</Button>
-        <Button variant="secondary" size="sm" onClick={() => (setFrom(monthStart), setTo(todayIso()))}>This month</Button>
-        <Button variant="secondary" size="sm" onClick={lastMonth}>Last month</Button>
+        <QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t))} allowAll={false} label={false} />
       </FilterBar>
       {error && <p className="text-sm text-red-600">{error.message}</p>}
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
