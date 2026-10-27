@@ -52,7 +52,7 @@ import { Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { useAuth } from '@/features/auth/auth-context';
 import { AssignEngineerDialog } from '@/features/jobs/AssignEngineerDialog';
-import { ShowJobs } from '@/features/jobs/JobsPage';
+import { JobsPage } from '@/features/jobs/JobsPage';
 import { api } from '@/lib/api-client';
 import { useList } from '@/lib/crud';
 import { formatCurrency, formatJobNumber, timeAgo } from '@/lib/format';
@@ -131,7 +131,12 @@ export function DashboardPage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <DashboardHero user={user} actions={heroActions(user.role)} />
-      {user.role === ROLES.ENGINEER && <EngineerDashboard />}
+      {user.role === ROLES.ENGINEER && (
+        <>
+          <EngineerDashboard />
+          <JobsPage embedded />
+        </>
+      )}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
       {user.role === ROLES.SUPER_ADMIN && <AdminDashboard user={user} />}
@@ -153,7 +158,7 @@ function AccountsDashboard() {
   const money = (v?: number) => (v === undefined ? undefined : formatCurrency(v));
   return (
     <>
-      <DashboardMetricList items={[
+      <DashboardMetricList columns={3} items={[
         { key: 'received', label: 'Received today', value: money(book.data?.received.total), to: '/accounts/day-book', tone: 'brand', icon: Banknote },
         { key: 'expenses', label: 'Expenses today', value: money(book.data?.expenses.total), to: '/accounts/day-book', icon: Receipt },
         { key: 'net', label: 'Net today', value: money(book.data?.net), to: '/accounts/day-book', tone: 'brand', icon: CircleDollarSign },
@@ -180,7 +185,7 @@ function StoreDashboard() {
 
   return (
     <>
-      <DashboardMetricList items={[
+      <DashboardMetricList columns={3} items={[
         { key: 'requests', label: 'Part requests to handle', value: pending, to: '/store/requests', tone: pending ? 'warning' : 'default', icon: Inbox },
         { key: 'waiting', label: 'Waiting for stock', value: waiting, to: '/store/requests', icon: PackageSearch },
         { key: 'low', label: 'Low-stock parts', value: low.data?.total, to: '/store/stock', tone: low.data?.total ? 'critical' : 'default', icon: AlertTriangle },
@@ -302,7 +307,7 @@ function EngineerDashboard() {
 
   return (
     <>
-      <DashboardMetricList items={metrics} />
+      <DashboardMetricList columns={3} items={metrics} />
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
           <ul className="divide-y divide-slate-100">
@@ -463,25 +468,22 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <DashboardMetricList columns={user.role === ROLES.CCO ? 3 : 1} items={[
-        { key: 'received', label: 'Awaiting assignment', value: by?.RECEIVED, to: '/jobs?status=RECEIVED', tone: by?.RECEIVED ? 'warning' : 'default', icon: UserCheck, hint: 'Phones here without an engineer', selected: user.role === ROLES.CCO && jobFilter.key === 'received', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'received', status: 'RECEIVED' }) : undefined },
-        { key: 'engineers', label: 'With engineers', value: withEngineer, to: '/jobs?view=engineers', tone: 'brand', icon: Wrench, hint: 'Diagnosis, repair & testing', selected: user.role === ROLES.CCO && jobFilter.key === 'engineers', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'engineers', view: 'engineers' }) : undefined },
-        { key: 'ready', label: 'Ready for collection', value: by ? by.READY_FOR_DELIVERY + by.RWR : undefined, to: '/jobs?view=ready', tone: 'good', icon: PackageCheck, hint: toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined, selected: user.role === ROLES.CCO && jobFilter.key === 'ready', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'ready', view: 'ready' }) : undefined },
-        { key: 'approval', label: 'Approval needed', value: by?.AWAITING_APPROVAL, to: '/jobs?status=AWAITING_APPROVAL', tone: by?.AWAITING_APPROVAL ? 'warning' : 'default', icon: PhoneCall, hint: 'Call these customers', selected: user.role === ROLES.CCO && jobFilter.key === 'approval', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'approval', status: 'AWAITING_APPROVAL' }) : undefined },
-        { key: 'spare', label: 'Spare not available', value: by?.SPARE_PENDING, to: '/jobs?status=SPARE_PENDING', icon: PackageSearch, selected: user.role === ROLES.CCO && jobFilter.key === 'spare', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'spare', status: 'SPARE_PENDING' }) : undefined },
+      <DashboardMetricList columns={3} items={[
+        { key: 'received', label: 'Awaiting assignment', value: by?.RECEIVED, to: '/jobs?status=RECEIVED', tone: by?.RECEIVED ? 'warning' : 'default', icon: UserCheck, hint: 'Phones here without an engineer', selected: jobFilter.key === 'received', onSelect: () => filterJobs({ key: 'received', status: 'RECEIVED' }) },
+        { key: 'engineers', label: 'With engineers', value: withEngineer, to: '/jobs?view=engineers', tone: 'brand', icon: Wrench, hint: 'Diagnosis, repair & testing', selected: jobFilter.key === 'engineers', onSelect: () => filterJobs({ key: 'engineers', view: 'engineers' }) },
+        { key: 'ready', label: 'Ready for collection', value: by ? by.READY_FOR_DELIVERY + by.RWR : undefined, to: '/jobs?view=ready', tone: 'good', icon: PackageCheck, hint: toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined, selected: jobFilter.key === 'ready', onSelect: () => filterJobs({ key: 'ready', view: 'ready' }) },
+        { key: 'approval', label: 'Approval needed', value: by?.AWAITING_APPROVAL, to: '/jobs?status=AWAITING_APPROVAL', tone: by?.AWAITING_APPROVAL ? 'warning' : 'default', icon: PhoneCall, hint: 'Call these customers', selected: jobFilter.key === 'approval', onSelect: () => filterJobs({ key: 'approval', status: 'AWAITING_APPROVAL' }) },
+        { key: 'spare', label: 'Spare not available', value: by?.SPARE_PENDING, to: '/jobs?status=SPARE_PENDING', icon: PackageSearch, selected: jobFilter.key === 'spare', onSelect: () => filterJobs({ key: 'spare', status: 'SPARE_PENDING' }) },
         { key: 'followups', label: 'Follow-ups due', value: followUps.data?.followUpsDue, to: '/calling', icon: CalendarClock },
         { key: 'l4', label: 'At L4 / in transit', value: stats.data?.atL4, to: '/l4', icon: Truck },
-        { key: 'rejected', label: 'Customer rejected', value: by?.CUSTOMER_REJECTED, to: '/jobs?status=CUSTOMER_REJECTED', icon: ShieldAlert, selected: user.role === ROLES.CCO && jobFilter.key === 'rejected', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'rejected', status: 'CUSTOMER_REJECTED' }) : undefined },
-        { key: 'delivered', label: 'Delivered', value: by?.DELIVERED, to: '/jobs?status=DELIVERED', icon: FilePlus2, selected: user.role === ROLES.CCO && jobFilter.key === 'delivered', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'delivered', status: 'DELIVERED' }) : undefined },
-        { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users, selected: user.role === ROLES.CCO && jobFilter.key === 'total', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'total' }) : undefined },
+        { key: 'rejected', label: 'Customer rejected', value: by?.CUSTOMER_REJECTED, to: '/jobs?status=CUSTOMER_REJECTED', icon: ShieldAlert, selected: jobFilter.key === 'rejected', onSelect: () => filterJobs({ key: 'rejected', status: 'CUSTOMER_REJECTED' }) },
+        { key: 'delivered', label: 'Delivered', value: by?.DELIVERED, to: '/jobs?status=DELIVERED', icon: FilePlus2, selected: jobFilter.key === 'delivered', onSelect: () => filterJobs({ key: 'delivered', status: 'DELIVERED' }) },
+        { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users, selected: jobFilter.key === 'total', onSelect: () => filterJobs({ key: 'total' }) },
       ]} />
 
-      {user.role === ROLES.CCO && (
-        <section ref={jobMasterRef} id="job-master" className="space-y-3 scroll-mt-4">
-          <SectionTitle>Job Master</SectionTitle>
-          <ShowJobs key={jobFilter.key} initialStatus={jobFilter.status} initialView={jobFilter.view} />
-        </section>
-      )}
+      <section ref={jobMasterRef} id="job-master" className="scroll-mt-4">
+        <JobsPage key={jobFilter.key} embedded initialStatus={jobFilter.status} initialView={jobFilter.view} />
+      </section>
 
       {/* Temporarily keep the remaining dashboard sections hidden from CCO users. */}
       {user.role !== ROLES.CCO && (

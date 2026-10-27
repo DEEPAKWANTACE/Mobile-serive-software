@@ -39,7 +39,7 @@ import { useJob } from './api';
 type Tab = 'show' | 'add' | 'edit' | 'delete';
 
 /** Job Master: Show / Add / Edit / Delete. Engineers get "My Jobs" (show only, their own jobs). */
-export function JobsPage() {
+export function JobsPage({ embedded = false, initialStatus, initialView }: { embedded?: boolean; initialStatus?: string; initialView?: string } = {}) {
   const { user } = useAuth();
   const isEngineer = user?.role === ROLES.ENGINEER;
   const canAdd = user?.role === ROLES.CCO;
@@ -47,10 +47,12 @@ export function JobsPage() {
   const canCancel = canEdit;
   const canDelete = user?.role === ROLES.BRANCH_MANAGER;
   const [params, setParams] = useSearchParams();
+  const [embeddedTab, setEmbeddedTab] = useState<Tab>('show');
   const allowedTabs: Tab[] = ['show', ...(canAdd ? ['add' as const] : []), ...(canEdit ? ['edit' as const] : []), ...(canCancel ? ['delete' as const] : [])];
   const requestedTab = params.get('tab') as Tab | null;
-  const tab: Tab = !isEngineer && requestedTab && allowedTabs.includes(requestedTab) ? requestedTab : 'show';
-  const setTab = (t: Tab) => setParams(t === 'show' ? {} : { tab: t }, { replace: true });
+  const routeTab: Tab = !isEngineer && requestedTab && allowedTabs.includes(requestedTab) ? requestedTab : 'show';
+  const tab = embedded ? embeddedTab : routeTab;
+  const setTab = (t: Tab) => embedded ? setEmbeddedTab(t) : setParams(t === 'show' ? {} : { tab: t }, { replace: true });
 
   const tabs: { key: Tab; label: string; icon: typeof Table2 }[] = [
     { key: 'show', label: 'Show', icon: Table2 },
@@ -88,7 +90,7 @@ export function JobsPage() {
           </Link>
         </div>
       )}
-      {tab === 'show' && <ShowJobs />}
+      {tab === 'show' && <ShowJobs initialStatus={initialStatus} initialView={initialView} />}
       {tab === 'add' && <NewJobPage embedded />}
       {tab === 'edit' && <EditTab />}
       {tab === 'delete' && <DeleteTab canDelete={canDelete} />}
