@@ -392,9 +392,9 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
           <h3 className="mb-3 text-sm font-semibold text-slate-800">Device Photos</h3>
-          <div className="space-y-4">
-            <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
+            <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
           </div>
         </div>
 
