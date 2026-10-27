@@ -60,7 +60,7 @@ export function AppLayout() {
   );
 
   return (
-    <div className="flex h-dvh overflow-hidden">
+    <div className="flex h-full min-h-0 overflow-hidden">
       {/* Desktop sidebar */}
       <aside className="hidden min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:hidden">{sidebar}</aside>
 
