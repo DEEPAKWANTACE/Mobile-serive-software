@@ -117,7 +117,7 @@ const viewParams = (v: string) =>
             : v === 'over15' ? { open: true, minAgeDays: 15 }
               : {};
 
-export function ShowJobs() {
+export function ShowJobs({ initialStatus, initialView }: { initialStatus?: string; initialView?: string } = {}) {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === ROLES.SUPER_ADMIN;
   const isEngineer = user?.role === ROLES.ENGINEER;
@@ -127,10 +127,10 @@ export function ShowJobs() {
   const [product, setProduct] = useState('');
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
-  const [status, setStatus] = useState(searchParams.get('status') ?? '');
+  const [status, setStatus] = useState(initialStatus ?? searchParams.get('status') ?? '');
   const [engineerId, setEngineerId] = useState(searchParams.get('engineer') ?? '');
   const [branchId, setBranchId] = useState('');
-  const [view, setView] = useState(searchParams.get('view') ?? '');
+  const [view, setView] = useState(initialView ?? searchParams.get('view') ?? '');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
   const canBulk = bulkActionsFor(user?.role).length > 0;

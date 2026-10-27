@@ -405,7 +405,14 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
     enabled: !!engineerBranch,
   });
   const [assigning, setAssigning] = useState<JobListItemDto | null>(null);
+  const [jobFilter, setJobFilter] = useState<{ key: string; status?: string; view?: string }>({ key: 'total' });
+  const jobMasterRef = useRef<HTMLElement>(null);
   const withEngineer = by ? (['ASSIGNED', 'IN_REPAIR', 'REPAIRED', 'TESTING'] as const).reduce((s, st) => s + by[st], 0) : undefined;
+
+  const filterJobs = (filter: { key: string; status?: string; view?: string }) => {
+    setJobFilter(filter);
+    requestAnimationFrame(() => jobMasterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
 
   const branchCol = isSuperAdmin ? [{ header: 'Branch', cell: (j: JobListItemDto) => j.branch.code }] : [];
 
@@ -456,23 +463,23 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <DashboardMetricList items={[
-        { key: 'received', label: 'Awaiting assignment', value: by?.RECEIVED, to: '/jobs?status=RECEIVED', tone: by?.RECEIVED ? 'warning' : 'default', icon: UserCheck, hint: 'Phones here without an engineer' },
-        { key: 'engineers', label: 'With engineers', value: withEngineer, to: '/jobs?view=engineers', tone: 'brand', icon: Wrench, hint: 'Diagnosis, repair & testing' },
-        { key: 'ready', label: 'Ready for collection', value: by ? by.READY_FOR_DELIVERY + by.RWR : undefined, to: '/jobs?view=ready', tone: 'good', icon: PackageCheck, hint: toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined },
-        { key: 'approval', label: 'Approval needed', value: by?.AWAITING_APPROVAL, to: '/jobs?status=AWAITING_APPROVAL', tone: by?.AWAITING_APPROVAL ? 'warning' : 'default', icon: PhoneCall, hint: 'Call these customers' },
-        { key: 'spare', label: 'Spare not available', value: by?.SPARE_PENDING, to: '/jobs?status=SPARE_PENDING', icon: PackageSearch },
+      <DashboardMetricList columns={user.role === ROLES.CCO ? 3 : 1} items={[
+        { key: 'received', label: 'Awaiting assignment', value: by?.RECEIVED, to: '/jobs?status=RECEIVED', tone: by?.RECEIVED ? 'warning' : 'default', icon: UserCheck, hint: 'Phones here without an engineer', selected: user.role === ROLES.CCO && jobFilter.key === 'received', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'received', status: 'RECEIVED' }) : undefined },
+        { key: 'engineers', label: 'With engineers', value: withEngineer, to: '/jobs?view=engineers', tone: 'brand', icon: Wrench, hint: 'Diagnosis, repair & testing', selected: user.role === ROLES.CCO && jobFilter.key === 'engineers', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'engineers', view: 'engineers' }) : undefined },
+        { key: 'ready', label: 'Ready for collection', value: by ? by.READY_FOR_DELIVERY + by.RWR : undefined, to: '/jobs?view=ready', tone: 'good', icon: PackageCheck, hint: toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined, selected: user.role === ROLES.CCO && jobFilter.key === 'ready', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'ready', view: 'ready' }) : undefined },
+        { key: 'approval', label: 'Approval needed', value: by?.AWAITING_APPROVAL, to: '/jobs?status=AWAITING_APPROVAL', tone: by?.AWAITING_APPROVAL ? 'warning' : 'default', icon: PhoneCall, hint: 'Call these customers', selected: user.role === ROLES.CCO && jobFilter.key === 'approval', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'approval', status: 'AWAITING_APPROVAL' }) : undefined },
+        { key: 'spare', label: 'Spare not available', value: by?.SPARE_PENDING, to: '/jobs?status=SPARE_PENDING', icon: PackageSearch, selected: user.role === ROLES.CCO && jobFilter.key === 'spare', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'spare', status: 'SPARE_PENDING' }) : undefined },
         { key: 'followups', label: 'Follow-ups due', value: followUps.data?.followUpsDue, to: '/calling', icon: CalendarClock },
         { key: 'l4', label: 'At L4 / in transit', value: stats.data?.atL4, to: '/l4', icon: Truck },
-        { key: 'rejected', label: 'Customer rejected', value: by?.CUSTOMER_REJECTED, to: '/jobs?status=CUSTOMER_REJECTED', icon: ShieldAlert },
-        { key: 'delivered', label: 'Delivered', value: by?.DELIVERED, to: '/jobs?status=DELIVERED', icon: FilePlus2 },
-        { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users },
+        { key: 'rejected', label: 'Customer rejected', value: by?.CUSTOMER_REJECTED, to: '/jobs?status=CUSTOMER_REJECTED', icon: ShieldAlert, selected: user.role === ROLES.CCO && jobFilter.key === 'rejected', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'rejected', status: 'CUSTOMER_REJECTED' }) : undefined },
+        { key: 'delivered', label: 'Delivered', value: by?.DELIVERED, to: '/jobs?status=DELIVERED', icon: FilePlus2, selected: user.role === ROLES.CCO && jobFilter.key === 'delivered', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'delivered', status: 'DELIVERED' }) : undefined },
+        { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users, selected: user.role === ROLES.CCO && jobFilter.key === 'total', onSelect: user.role === ROLES.CCO ? () => filterJobs({ key: 'total' }) : undefined },
       ]} />
 
       {user.role === ROLES.CCO && (
-        <section id="job-master" className="space-y-3 scroll-mt-4">
+        <section ref={jobMasterRef} id="job-master" className="space-y-3 scroll-mt-4">
           <SectionTitle>Job Master</SectionTitle>
-          <ShowJobs />
+          <ShowJobs key={jobFilter.key} initialStatus={jobFilter.status} initialView={jobFilter.view} />
         </section>
       )}
 
