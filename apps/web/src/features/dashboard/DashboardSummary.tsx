@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowDownToLine, ArrowUpFromLine, CalendarRange, Hourglass, IndianRupee, LayoutList, Wrench } from 'lucide-react';
 import type { DashboardSummaryDto } from '@msm/shared';
@@ -7,7 +8,7 @@ import { inputClass } from '@/components/ui/Field';
 import { api } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
 import { formatCurrency, todayIso } from '@/lib/format';
-import { DashboardMetricList } from './DashboardMetricList';
+import { StatCard } from './StatCard';
 
 /**
  * The old system's summary strip: All / Datewise, Total In, Total Out, Total Balance,
@@ -55,28 +56,45 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
         </div>
       }
     >
-      <DashboardMetricList
-        items={[
-          { key: 'in', label: 'Total in', value: d?.totalIn, to: jobs(), tone: 'brand', icon: ArrowDownToLine, hint: 'Jobs received' },
-          { key: 'out', label: 'Total out', value: d?.totalOut, to: jobs({ view: 'out' }), tone: 'good', icon: ArrowUpFromLine, hint: 'Delivered' },
-          { key: 'pending', label: 'Pending works', value: d?.pending, to: jobs({ view: 'pending' }), icon: Wrench, hint: d ? `${d.underRepair} with engineers` : undefined },
-          { key: 'over15', label: 'More than 15 days', value: d?.over15Days, to: jobs({ view: 'over15' }), tone: d?.over15Days ? 'critical' : 'default', icon: Hourglass, hint: 'Still open' },
-          { key: 'amount', label: 'Total amount', value: money(d?.totalAmount), to: jobs(), icon: IndianRupee, hint: d ? `${money(d.totalPaid)} paid` : undefined },
-          { key: 'balance', label: 'Total balance', value: money(d?.totalBalance), to: jobs({ view: 'balance' }), tone: d?.totalBalance ? 'warning' : 'default', icon: CalendarRange, hint: 'To collect' },
-        ]}
-      />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <StatCard label="Total in" value={d?.totalIn} to={jobs()} tone="brand" icon={ArrowDownToLine} hint="Jobs received" />
+        <StatCard label="Total out" value={d?.totalOut} to={jobs({ view: 'out' })} tone="good" icon={ArrowUpFromLine} hint="Delivered" />
+        <StatCard label="Pending works" value={d?.pending} to={jobs({ view: 'pending' })} icon={Wrench} hint={d ? `${d.underRepair} with engineers` : undefined} />
+        <StatCard
+          label="More than 15 days"
+          value={d?.over15Days}
+          to={jobs({ view: 'over15' })}
+          tone={d?.over15Days ? 'critical' : 'default'}
+          icon={Hourglass}
+          hint="Still open"
+        />
+        <StatCard label="Total amount" value={money(d?.totalAmount)} to={jobs()} icon={IndianRupee} hint={d ? `${money(d.totalPaid)} paid` : undefined} />
+        <StatCard
+          label="Total balance"
+          value={money(d?.totalBalance)}
+          to={jobs({ view: 'balance' })}
+          tone={d?.totalBalance ? 'warning' : 'default'}
+          icon={CalendarRange}
+          hint="To collect"
+        />
+      </div>
       {!!d?.engineerPending.length && (
         <div className="mt-5">
           <div className="mb-2 text-xs font-semibold tracking-wider text-slate-500 uppercase">Engineer-wise pending</div>
-          <DashboardMetricList
-            valueLabel="Pending"
-            items={d.engineerPending.map((e) => ({
-              key: e.engineerId,
-              label: e.engineer,
-              value: e.pending,
-              to: jobs({ view: 'pending', engineer: e.engineerId }),
-            }))}
-          />
+          <ul className="flex flex-wrap gap-2">
+            {d.engineerPending.map((e) => (
+              <li key={e.engineerId}>
+                <Link
+                  to={jobs({ view: 'pending', engineer: e.engineerId }) ?? '#'}
+                  onClick={(ev) => !linkable && ev.preventDefault()}
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-sm ring-1 ring-slate-200 hover:bg-slate-100"
+                >
+                  {e.engineer}
+                  <span className="rounded-full bg-white px-1.5 text-xs font-semibold tabular-nums ring-1 ring-slate-200">{e.pending}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </Card>
