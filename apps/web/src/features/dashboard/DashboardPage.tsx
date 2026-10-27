@@ -52,6 +52,7 @@ import { Card } from '@/components/ui/Card';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { useAuth } from '@/features/auth/auth-context';
 import { AssignEngineerDialog } from '@/features/jobs/AssignEngineerDialog';
+import { ShowJobs } from '@/features/jobs/JobsPage';
 import { api } from '@/lib/api-client';
 import { useList } from '@/lib/crud';
 import { formatCurrency, formatJobNumber, timeAgo } from '@/lib/format';
@@ -468,7 +469,12 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         { key: 'total', label: 'Total jobs', value: stats.data?.total, to: '/jobs', icon: Users },
       ]} />
 
-      {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
+      {user.role === ROLES.CCO && (
+        <section id="job-master" className="space-y-3 scroll-mt-4">
+          <SectionTitle>Job Master</SectionTitle>
+          <ShowJobs />
+        </section>
+      )}
 
       {/* Temporarily keep the remaining dashboard sections hidden from CCO users. */}
       {user.role !== ROLES.CCO && (
