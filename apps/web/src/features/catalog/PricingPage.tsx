@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { priceOptionSchema, ROLES, type BrandDto, type FaultDto, type ModelDto, type ModelPriceDto } from '@msm/shared';
+import { StickyActions } from '@/components/ui/StickyActions';
 import { Button } from '@/components/ui/Button';
 import { inputClass } from '@/components/ui/Field';
 import { Combobox } from '@/components/ui/Combobox';
@@ -256,7 +257,7 @@ function PriceGrid({ modelId, modelLabel, faults, prices, onDirtyChange }: GridP
       ))}
       {visible.length === 0 && <div className="px-4 py-8 text-center text-sm text-slate-500">No faults match "{filter}"</div>}
 
-      <div className="sticky bottom-0 flex items-center justify-between gap-3 rounded-b-lg border-t border-slate-200 bg-white px-4 py-3">
+      <StickyActions>
         <span className="text-sm text-slate-600">
           {changes.length ? `${changes.length} fault${changes.length === 1 ? '' : 's'} changed` : 'No changes'}
         </span>
@@ -268,7 +269,7 @@ function PriceGrid({ modelId, modelLabel, faults, prices, onDirtyChange }: GridP
             Save prices
           </Button>
         </div>
-      </div>
+      </StickyActions>
     </div>
   );
 }

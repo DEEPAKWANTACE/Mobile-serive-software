@@ -23,6 +23,7 @@ import {
   type AccessoryOptionDto,
   type BranchWarrantyData,
 } from '@msm/shared';
+import { StickyActions } from '@/components/ui/StickyActions';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Combobox } from '@/components/ui/Combobox';
@@ -551,14 +552,14 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </Card>
 
-      <div className="sticky bottom-0 -mx-6 flex justify-end gap-2 border-t border-slate-200 bg-white/90 px-6 py-3 backdrop-blur">
+      <StickyActions>
         <Button variant="secondary" onClick={() => navigate('/jobs')}>
           Cancel
         </Button>
         <Button type="submit" loading={submit.isPending}>
           {submit.isPending ? 'Saving…' : 'Create job sheet'}
         </Button>
-      </div>
+      </StickyActions>
     </form>
   );
 }
