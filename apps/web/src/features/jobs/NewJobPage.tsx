@@ -630,15 +630,17 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
           {current[1].faults.map((f) => {
             const checked = selectedIds.has(f.id);
             return (
-              <label
+              <button
                 key={f.id}
+                type="button"
+                aria-pressed={checked}
+                onClick={() => toggle(f)}
                 className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm select-none ${checked ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
               >
-                <input type="checkbox" className="sr-only" checked={checked} onChange={() => toggle(f)} />
                 {checked ? '✓ ' : ''}
                 {f.name}
                 {f.requiresIdProof && ' 🔒'}
-              </label>
+              </button>
             );
           })}
         </div>
