@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   idParamSchema,
+  modelBulkImportSchema,
   modelCreateSchema,
   modelListQuerySchema,
   modelPricesUpdateSchema,
@@ -15,6 +16,12 @@ export const modelRoutes = Router();
 
 modelRoutes.get('/', validate({ query: modelListQuerySchema }), controller.list);
 modelRoutes.post('/', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: modelCreateSchema }), controller.create);
+modelRoutes.post(
+  '/bulk-import',
+  authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),
+  validate({ body: modelBulkImportSchema }),
+  controller.bulkImport,
+);
 modelRoutes.patch(
   '/:id',
   authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER),

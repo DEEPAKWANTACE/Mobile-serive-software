@@ -25,6 +25,21 @@ export type ModelCreateData = z.output<typeof modelCreateSchema>;
 export type ModelUpdateData = z.output<typeof modelUpdateSchema>;
 export type ModelListQuery = z.output<typeof modelListQuerySchema>;
 
+export const modelBulkImportSchema = z.object({
+  branchId: z.uuid().nullish(),
+  rows: z
+    .array(z.object({ brand: name, model: name }))
+    .min(1, 'CSV must contain at least one data row')
+    .max(5000, 'A maximum of 5,000 rows can be imported at once'),
+});
+export type ModelBulkImportData = z.output<typeof modelBulkImportSchema>;
+export type ModelBulkImportResultDto = {
+  totalRows: number;
+  createdBrands: number;
+  createdModels: number;
+  skippedModels: number;
+};
+
 export type ModelDto = {
   id: string;
   name: string;

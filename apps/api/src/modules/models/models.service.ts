@@ -1,5 +1,7 @@
 import type {
   ModelCreateData,
+  ModelBulkImportData,
+  ModelBulkImportResultDto,
   ModelDto,
   ModelListQuery,
   ModelPriceDto,
@@ -12,7 +14,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
 import { recordAudit } from '../audit/audit.service.ts';
-import { assertCatalogRow, catalogWhere } from '../../lib/catalog-scope.ts';
+import { assertCatalogRow, catalogWhere, writeCatalogBranch } from '../../lib/catalog-scope.ts';
 
 const select = {
   id: true,
@@ -62,6 +64,64 @@ export async function create(data: ModelCreateData, actor: Actor) {
       tx,
     );
     return toDto(row);
+  });
+}
+
+export async function bulkImport(data: ModelBulkImportData, actor: Actor): Promise<ModelBulkImportResultDto> {
+  const branchId = writeCatalogBranch(actor, data.branchId);
+
+  return prisma.$transaction(async (tx) => {
+    let brands = await tx.brand.findMany({
+      where: { branchId },
+      select: { id: true, name: true },
+    });
+    let brandsByName = new Map(brands.map((brand) => [brand.name.toLocaleLowerCase(), brand]));
+    const missingBrands = new Map<string, string>();
+    for (const item of data.rows) {
+      const key = item.brand.toLocaleLowerCase();
+      if (!brandsByName.has(key) && !missingBrands.has(key)) missingBrands.set(key, item.brand);
+    }
+
+    const brandInsert = await tx.brand.createMany({
+      data: [...missingBrands.values()].map((brandName) => ({ name: brandName, branchId })),
+      skipDuplicates: true,
+    });
+    brands = await tx.brand.findMany({ where: { branchId }, select: { id: true, name: true } });
+    brandsByName = new Map(brands.map((brand) => [brand.name.toLocaleLowerCase(), brand]));
+
+    const existingModels = await tx.deviceModel.findMany({
+      where: { brandId: { in: brands.map((brand) => brand.id) } },
+      select: { brandId: true, name: true },
+    });
+    const modelKeys = new Set(existingModels.map((model) => `${model.brandId}:${model.name.toLocaleLowerCase()}`));
+    const modelsToCreate: { brandId: string; name: string }[] = [];
+    for (const item of data.rows) {
+      const brand = brandsByName.get(item.brand.toLocaleLowerCase())!;
+      const key = `${brand.id}:${item.model.toLocaleLowerCase()}`;
+      if (modelKeys.has(key)) continue;
+      modelKeys.add(key);
+      modelsToCreate.push({ brandId: brand.id, name: item.model });
+    }
+    const modelInsert = await tx.deviceModel.createMany({ data: modelsToCreate, skipDuplicates: true });
+
+    const result = {
+      totalRows: data.rows.length,
+      createdBrands: brandInsert.count,
+      createdModels: modelInsert.count,
+      skippedModels: data.rows.length - modelInsert.count,
+    };
+    await recordAudit(
+      {
+        actorId: actor.sub,
+        action: 'model.bulk_imported',
+        entityType: 'device_model',
+        branchId,
+        metadata: result,
+        ip: actor.ip,
+      },
+      tx,
+    );
+    return result;
   });
 }
 

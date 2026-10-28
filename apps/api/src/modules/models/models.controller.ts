@@ -11,6 +11,10 @@ export async function create(req: Request, res: Response) {
   res.status(201).json(await service.create(req.body, actorOf(req)));
 }
 
+export async function bulkImport(req: Request, res: Response) {
+  res.status(201).json(await service.bulkImport(req.body, actorOf(req)));
+}
+
 export async function update(req: Request<{ id: string }>, res: Response) {
   res.json(await service.update(req.params.id, req.body, actorOf(req)));
 }
