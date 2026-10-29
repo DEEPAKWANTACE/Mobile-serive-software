@@ -22,6 +22,7 @@ export function JobSheetPrintPage() {
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
       <Link to={isTest ? "/jobs" : `/jobs/${job.id}`} className="text-sm text-slate-500 hover:underline">← Back to job</Link>
       <div className="flex gap-2">
+        {!copy && <Button onClick={() => window.print()}>Print Both Copies</Button>}
         <Link to={`/jobs/${job.id}/print?copy=customer`} target="_blank"><Button variant="secondary">Customer Copy</Button></Link>
         <Link to={`/jobs/${job.id}/print?copy=office`} target="_blank"><Button variant="secondary">Office Copy</Button></Link>
       </div>
