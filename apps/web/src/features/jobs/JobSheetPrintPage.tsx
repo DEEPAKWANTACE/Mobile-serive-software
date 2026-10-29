@@ -50,7 +50,9 @@ export function JobSheetPrintPage() {
           {copy === 'customer' ? 'Customer Copy' : 'Office Copy'}
         </button>)}
       </div>
-      <div className="xl:hidden"><Sheet job={job} copy={previewCopy} /></div>
+      <div className="xl:hidden max-[559px]:overflow-x-auto max-[559px]:pb-2">
+        <div className="max-[559px]:min-w-[560px]"><Sheet job={job} copy={previewCopy} /></div>
+      </div>
       <div className="hidden gap-4 xl:grid xl:grid-cols-2">
         <Sheet job={job} copy="customer" />
         <Sheet job={job} copy="office" />
