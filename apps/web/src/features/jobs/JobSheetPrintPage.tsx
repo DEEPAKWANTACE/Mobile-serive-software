@@ -1,5 +1,5 @@
-import { useEffect, useMemo, type ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Link, useParams } from 'react-router';
 import { PAYMENT_MODE_LABELS, type JobDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { formatCurrency, formatDateTime } from '@/lib/format';
@@ -9,8 +9,8 @@ import { ShopHeader } from '@/features/settings/ShopHeader';
 
 export function JobSheetPrintPage() {
   const { id = '' } = useParams();
-  const [params] = useSearchParams();
-  const copy = params.get('copy') === 'office' ? 'office' : params.get('copy') === 'customer' ? 'customer' : null;
+  const [previewCopy, setPreviewCopy] = useState<'customer' | 'office'>('customer');
+  const [printTarget, setPrintTarget] = useState<'both' | 'customer' | 'office'>('both');
   const isTest = id === 'test';
   const query = useJob(id, !isTest);
   const { isLoading, error } = query;
@@ -18,32 +18,50 @@ export function JobSheetPrintPage() {
   const job = testJob ?? query.data;
   if (!isTest && isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   if (error || !job) return <div className="p-10 text-center text-slate-600">{error?.message ?? 'Job not found'}</div>;
-  return <div className="mx-auto max-w-4xl">
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-      <Link to={isTest ? "/jobs" : `/jobs/${job.id}`} className="text-sm text-slate-500 hover:underline">← Back to job</Link>
-      <div className="flex gap-2">
-        {!copy && <Button onClick={() => window.print()}>Print Both Copies</Button>}
-        <Link to={`/jobs/${job.id}/print?copy=customer`} target="_blank"><Button variant="secondary">Customer Copy</Button></Link>
-        <Link to={`/jobs/${job.id}/print?copy=office`} target="_blank"><Button variant="secondary">Office Copy</Button></Link>
-      </div>
-    </div>
-    {copy ? <SheetPdf job={job} copy={copy} /> : <div className="space-y-6"><Sheet job={job} copy="customer" /><Sheet job={job} copy="office" /></div>}
-  </div>;
-}
 
-/** Shows one copy and opens the browser print dialog, so "Save as PDF" gives a small text PDF. */
-function SheetPdf({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
-  useEffect(() => {
-    const timer = setTimeout(async () => {
+  const printCopies = (target: 'both' | 'customer' | 'office') => {
+    setPrintTarget(target);
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
       await document.fonts.ready;
       window.print();
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [job, copy]);
-  return <>
-    <div className="mb-3 flex justify-end print:hidden"><Button onClick={() => window.print()}>Print / Save as PDF</Button></div>
-    <Sheet job={job} copy={copy} />
-  </>;
+    }));
+  };
+
+  return <div className="mx-auto max-w-[1600px]">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
+      <Link to={isTest ? "/jobs" : `/jobs/${job.id}`} className="text-sm text-slate-500 hover:underline">← Back to job</Link>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => printCopies('both')}>Print Both</Button>
+        <Button variant="secondary" onClick={() => printCopies('customer')}>Print Customer</Button>
+        <Button variant="secondary" onClick={() => printCopies('office')}>Print Office Copy</Button>
+      </div>
+    </div>
+
+    <div className="print:hidden">
+      <div className="mb-4 flex border-b border-slate-300 xl:hidden" role="tablist" aria-label="Job sheet copy preview">
+        {(['customer', 'office'] as const).map((copy) => <button
+          key={copy}
+          type="button"
+          role="tab"
+          aria-selected={previewCopy === copy}
+          onClick={() => setPreviewCopy(copy)}
+          className={`border-b-2 px-5 py-2.5 text-sm font-medium transition-colors ${previewCopy === copy ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+        >
+          {copy === 'customer' ? 'Customer Copy' : 'Office Copy'}
+        </button>)}
+      </div>
+      <div className="xl:hidden"><Sheet job={job} copy={previewCopy} /></div>
+      <div className="hidden gap-4 xl:grid xl:grid-cols-2">
+        <Sheet job={job} copy="customer" />
+        <Sheet job={job} copy="office" />
+      </div>
+    </div>
+
+    <div className="hidden print:block print:space-y-0">
+      {(printTarget === 'both' || printTarget === 'customer') && <Sheet job={job} copy="customer" />}
+      {(printTarget === 'both' || printTarget === 'office') && <Sheet job={job} copy="office" />}
+    </div>
+  </div>;
 }
 
 /** Printed serial without the legacy branch/month prefix. */
