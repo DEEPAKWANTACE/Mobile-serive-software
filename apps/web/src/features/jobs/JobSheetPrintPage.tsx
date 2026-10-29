@@ -45,7 +45,7 @@ export function JobSheetPrintPage() {
           role="tab"
           aria-selected={previewCopy === copy}
           onClick={() => setPreviewCopy(copy)}
-          className={`border-b-2 px-5 py-2.5 text-sm font-medium transition-colors ${previewCopy === copy ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+          className={`flex-1 border-b-2 px-5 py-2.5 text-center text-sm font-medium transition-colors ${previewCopy === copy ? 'border-brand-600 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
         >
           {copy === 'customer' ? 'Customer Copy' : 'Office Copy'}
         </button>)}
