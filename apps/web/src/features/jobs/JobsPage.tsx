@@ -124,7 +124,7 @@ export function ShowJobs() {
   const isEngineer = user?.role === ROLES.ENGINEER;
   const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(searchParams.get('search') ?? '');
   const [product, setProduct] = useState('');
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
@@ -255,7 +255,12 @@ export function ShowJobs() {
         </div>
       )}
       <FilterBar>
-        <SearchInput onSearch={reset(setSearch)} placeholder="Search job no, customer, phone, model, IMEI, problem…" className="w-full! sm:w-96!" />
+        <SearchInput
+          onSearch={reset(setSearch)}
+          initialValue={search}
+          placeholder="Search job no, customer, phone, model, IMEI, problem…"
+          className="w-full! sm:w-96!"
+        />
         <div className={`${filtersOpen ? 'flex' : 'hidden'} w-full flex-wrap items-center gap-3 sm:flex sm:w-auto`}>
         <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" />
         <label className="flex items-center gap-1.5 text-sm text-slate-600">

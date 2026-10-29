@@ -87,7 +87,7 @@ const link = (to: string, label: string, Icon: React.ComponentType<{ className?:
   </Link>
 );
 
-function heroActions(role: string) {
+function heroActions(role: string, onFindJob: () => void) {
   switch (role) {
     case ROLES.CCO:
     case ROLES.BRANCH_MANAGER:
@@ -95,7 +95,12 @@ function heroActions(role: string) {
         <>
           {link('/jobs/new', 'New job sheet', Plus)}
           {link('/calling', 'Customer calling', PhoneCall)}
-          {link('/jobs', 'Find a job', Search)}
+          <button type="button" onClick={onFindJob}>
+            <HeroAction>
+              <Search className="size-4" />
+              Find a job
+            </HeroAction>
+          </button>
         </>
       );
     case ROLES.ENGINEER:
@@ -129,16 +134,51 @@ function heroActions(role: string) {
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [findJobOpen, setFindJobOpen] = useState(false);
+  const [jobSearch, setJobSearch] = useState('');
   if (!user) return null;
+
+  const findJob = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const search = jobSearch.trim();
+    if (!search) return;
+    setFindJobOpen(false);
+    navigate(`/jobs?search=${encodeURIComponent(search)}`);
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <DashboardHero user={user} actions={heroActions(user.role)} />
+      <DashboardHero user={user} actions={heroActions(user.role, () => setFindJobOpen(true))} />
       {user.role === ROLES.ENGINEER && <EngineerDashboard />}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
       {user.role === ROLES.SUPER_ADMIN && <AdminDashboard user={user} />}
       {(user.role === ROLES.BRANCH_MANAGER || user.role === ROLES.CCO) && <BranchDashboard user={user} />}
+      <Modal open={findJobOpen} onClose={() => setFindJobOpen(false)} title="Find a job" size="sm">
+        <form onSubmit={findJob} className="space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Search jobs</span>
+            <input
+              type="search"
+              value={jobSearch}
+              onChange={(event) => setJobSearch(event.target.value)}
+              placeholder="Mobile, job no., customer or device"
+              className={inputClass}
+              autoFocus
+            />
+          </label>
+          <p className="text-xs text-slate-500">You can also search by IMEI, serial number, city or problem.</p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setFindJobOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!jobSearch.trim()}>
+              <Search className="size-4" /> Find job
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

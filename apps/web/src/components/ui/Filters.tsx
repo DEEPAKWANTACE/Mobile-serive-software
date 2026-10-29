@@ -6,8 +6,18 @@ export function FilterBar({ children }: { children: ReactNode }) {
 }
 
 /** Search box that reports its value after the user stops typing. */
-export function SearchInput({ onSearch, placeholder = 'Search…', className = '' }: { onSearch: (v: string) => void; placeholder?: string; className?: string }) {
-  const [value, setValue] = useState('');
+export function SearchInput({
+  onSearch,
+  placeholder = 'Search…',
+  className = '',
+  initialValue = '',
+}: {
+  onSearch: (v: string) => void;
+  placeholder?: string;
+  className?: string;
+  initialValue?: string;
+}) {
+  const [value, setValue] = useState(initialValue);
   const onSearchRef = useRef(onSearch);
   onSearchRef.current = onSearch;
   useEffect(() => {
