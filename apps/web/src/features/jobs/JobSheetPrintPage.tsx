@@ -59,7 +59,7 @@ export function JobSheetPrintPage() {
 
     <div className="hidden print:block print:space-y-0">
       {(printTarget === 'both' || printTarget === 'customer') && <Sheet job={job} copy="customer" />}
-      {(printTarget === 'both' || printTarget === 'office') && <Sheet job={job} copy="office" />}
+      {(printTarget === 'both' || printTarget === 'office') && <div className={printTarget === 'both' ? 'print:break-before-page' : ''}><Sheet job={job} copy="office" /></div>}
     </div>
   </div>;
 }
@@ -94,7 +94,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}`.trim()
       : `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()
   );
-  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[197mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
+  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[196mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
     <header className="relative border-b border-slate-700 px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
       <div className="font-bold">Inward Slip</div>
       <ShopHeader branch={job.branch} compact />
