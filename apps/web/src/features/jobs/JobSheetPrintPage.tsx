@@ -70,7 +70,11 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
   const standardAccessoryNames = new Set(['sim card', 'sim', 'memory card', 'memory', 'back cover', 'cover']);
   const otherAccessories = accessories.filter((accessory) => !standardAccessoryNames.has(accessory.trim().toLocaleLowerCase()));
   const advance = job.payments.filter((p) => p.kind === 'ADVANCE');
-  const product = job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim();
+  const product = job.accessoryName ?? (
+    job.manualBrand || job.manualModel
+      ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}`.trim()
+      : `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()
+  );
   return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[197mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
     <header className="relative border-b border-slate-700 px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
       <div className="font-bold">Inward Slip</div>
