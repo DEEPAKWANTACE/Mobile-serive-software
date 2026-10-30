@@ -52,6 +52,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [returning, setReturning] = useState<CustomerDto | null>(null);
   const [takeAdvance, setTakeAdvance] = useState(false);
   const [manualDevice, setManualDevice] = useState(false);
+  const [manualProblem, setManualProblem] = useState(false);
 
   const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<
     JobCreateInput,
@@ -72,6 +73,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       deviceModelId: '',
       manualBrand: '',
       manualModel: '',
+      manualFault: '',
       imei: '',
       imei2: '',
       serialNumber: '',
@@ -380,20 +382,55 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       </Card>
 
       <Card title="Problem & estimate">
-        <Controller
-          control={control}
-          name="faults"
-          render={({ field }) => (
-            <FaultPicker
-              faults={faults}
-              value={field.value ?? []}
-              onChange={field.onChange}
-              optionsByFault={optionsByFault}
-              modelChosen={!!modelId}
+        <div className="mb-4">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={manualProblem}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setManualProblem(checked);
+                if (checked) {
+                  setValue('faults', []);
+                } else {
+                  setValue('manualFault', '');
+                }
+              }}
+              className="size-4 accent-brand-600 rounded"
             />
-          )}
-        />
+            Enter problem / fault manually (not in catalogue)
+          </label>
+        </div>
+
+        {manualProblem ? (
+          <Field label="Problem / Fault description" required {...err(errors.manualFault?.message)}>
+            <input
+              {...register('manualFault')}
+              className={inputClass}
+              placeholder="e.g. Dead, Screen flickering, Not powering on"
+            />
+          </Field>
+        ) : (
+          <Controller
+            control={control}
+            name="faults"
+            render={({ field }) => (
+              <FaultPicker
+                faults={faults}
+                value={field.value ?? []}
+                onChange={field.onChange}
+                optionsByFault={optionsByFault}
+                modelChosen={!!modelId}
+                onEnterManually={() => {
+                  setManualProblem(true);
+                  setValue('faults', []);
+                }}
+              />
+            )}
+          />
+        )}
         {errors.faults && <p className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
+        {errors.manualFault && <p className="mt-1 text-xs text-red-600">{errors.manualFault.message}</p>}
 
         <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
           <h3 className="mb-3 text-sm font-semibold text-slate-800">Device Photos</h3>
@@ -578,9 +615,10 @@ type PickerProps = {
   onChange: (v: Selected[]) => void;
   optionsByFault: Map<string, ModelPriceDto[]>;
   modelChosen: boolean;
+  onEnterManually?: () => void;
 };
 
-export function FaultPicker({ faults, value, onChange, optionsByFault, modelChosen }: PickerProps) {
+export function FaultPicker({ faults, value, onChange, optionsByFault, modelChosen, onEnterManually }: PickerProps) {
   const categories = useMemo(() => {
     const m = new Map<string, { name: string; faults: FaultDto[] }>();
     for (const f of faults) {
@@ -603,7 +641,23 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
     onChange([...value, { faultId: f.id, priceId: opts.length === 1 ? opts[0]!.id : null }]);
   };
 
-  if (!faults.length) return <p className="text-sm text-slate-500">No faults configured. Ask the admin to add them.</p>;
+  if (!faults.length) {
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <p className="font-medium">No faults configured in catalogue for this branch.</p>
+        <p className="mt-1 text-xs text-amber-700">You can type the problem manually instead so intake is not blocked.</p>
+        {onEnterManually && (
+          <button
+            type="button"
+            onClick={onEnterManually}
+            className="mt-3 inline-flex items-center rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+          >
+            Enter problem manually
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">

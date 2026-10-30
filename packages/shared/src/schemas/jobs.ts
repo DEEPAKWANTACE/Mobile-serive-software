@@ -230,6 +230,7 @@ export const jobCreateSchema = z
     deviceModelId: z.uuid('Select a model').nullish(),
     manualBrand: optionalText(100),
     manualModel: optionalText(100),
+    manualFault: optionalText(500),
     imei: imeiField,
     imei2: imeiField,
     serialNumber: serialField,
@@ -263,6 +264,9 @@ export const jobCreateSchema = z
     if (v.dueAt && new Date(v.dueAt).getTime() <= Date.now()) {
       ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
     }
+    if (!v.manualFault?.trim() && (!v.faults || v.faults.length === 0)) {
+      ctx.addIssue({ code: 'custom', message: 'Select at least one fault or enter problem manually', path: ['faults'] });
+    }
     if (v.jobType === 'MOBILE') {
       const manual = !!v.manualBrand || !!v.manualModel;
       if (manual) {
@@ -286,6 +290,7 @@ export const DEVICE_EDITABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSI
 /** Correct a job sheet after saving. Omitted fields are unchanged. */
 export const jobEditSchema = z.object({
   customer: jobCustomerSchema.partial().optional(),
+  manualFault: optionalText(500),
   brandId: z.uuid().optional(),
   deviceModelId: z.uuid().optional(),
   color: optionalText(30),
@@ -622,6 +627,7 @@ export type JobDto = {
   model: { id: string; name: string } | null;
   manualBrand: string | null;
   manualModel: string | null;
+  manualFault: string | null;
   imei: string | null;
   imei2: string | null;
   serialNumber: string | null;

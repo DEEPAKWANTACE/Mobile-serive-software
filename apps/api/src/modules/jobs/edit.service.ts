@@ -28,6 +28,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       brandId: true,
       deviceModelId: true,
       color: true,
+      manualFault: true,
       customerComplaint: true,
       accessories: true,
       accessoriesOther: true,
@@ -52,6 +53,10 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   };
 
   // ── Device & faults (only before diagnosis) ──
+  if (data.manualFault !== undefined) {
+    jobData.manualFault = data.manualFault?.trim() || null;
+    track('manualFault', cur.manualFault, jobData.manualFault);
+  }
   const brandId = data.brandId ?? cur.brandId;
   const deviceModelId = data.deviceModelId ?? cur.deviceModelId;
   const deviceChanged = brandId !== cur.brandId || deviceModelId !== cur.deviceModelId;

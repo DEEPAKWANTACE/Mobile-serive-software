@@ -406,6 +406,7 @@ model Job {
   deviceModelId           String?            @map("device_model_id") @db.Uuid
   manualBrand             String?            @map("manual_brand")
   manualModel             String?            @map("manual_model")
+  manualFault             String?            @map("manual_fault")
   imei                    String?
   imei2                   String?
   serialNumber            String?            @map("serial_number")

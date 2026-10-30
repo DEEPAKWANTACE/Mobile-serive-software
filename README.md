@@ -100,6 +100,16 @@ npm run dev                               # API :4000, web :5173 (proxies /api)
 
 Other scripts: `npm run build`, `npm run typecheck`, `npm run db:studio`.
 
+### Repeatable test-branch fixtures
+
+After creating the `B1` test accounts, populate or refresh a comprehensive workflow dataset with:
+
+```bash
+npm run db:seed-test-fixtures
+```
+
+The script creates four `TSTFIX-` jobs for every job status and five `[FIXTURE]` reminders for each test role. It is safe to rerun: reserved fixture jobs are updated and only `[FIXTURE]` reminders are replaced. Override the volume with `TEST_JOBS_PER_STATUS=1..10` or the branch with `TEST_BRANCH_CODE` (non-`B1` branches must contain "test" in their name).
+
 ### API (so far)
 
 | Method | Path | Auth |

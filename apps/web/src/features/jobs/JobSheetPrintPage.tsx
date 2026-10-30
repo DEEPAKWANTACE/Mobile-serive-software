@@ -125,7 +125,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>
     </div>
     <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
-      <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{job.faults.map((f) => f.name).join(', ')}</p><p>{job.customerComplaint}</p></div>
+      <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{[...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])].join(', ')}</p><p>{job.customerComplaint}</p></div>
       <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
     </div>
     <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">

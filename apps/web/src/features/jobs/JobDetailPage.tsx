@@ -311,6 +311,12 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
                   </span>
                 </li>
               ))}
+              {job.manualFault && (
+                <li key="manual" className="flex justify-between gap-3 px-3 py-1.5">
+                  <span>{job.manualFault}</span>
+                  <span className="text-slate-400">Manual / To be decided</span>
+                </li>
+              )}
             </ul>
           </Row>
           <Row label="Customer complaint">{job.customerComplaint}</Row>

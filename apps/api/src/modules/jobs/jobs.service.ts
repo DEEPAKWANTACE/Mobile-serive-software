@@ -397,6 +397,7 @@ const listSelect = {
   accessoryName: true,
   manualBrand: true,
   manualModel: true,
+  manualFault: true,
   customer: { select: { name: true, phone: true, city: true } },
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
@@ -473,6 +474,7 @@ export async function list(query: JobListQuery, actor: Actor) {
         { deviceModel: { name: contains(term) } },
         { manualBrand: contains(term) },
         { manualModel: contains(term) },
+        { manualFault: contains(term) },
         { faults: { some: { fault: { name: contains(term) } } } },
       ],
     });
@@ -504,7 +506,7 @@ export async function list(query: JobListQuery, actor: Actor) {
           ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim()
           : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
     imei: j.imei,
-    faults: j.faults.map((f) => f.fault.name),
+    faults: [...j.faults.map((f) => f.fault.name), ...(j.manualFault ? [j.manualFault] : [])],
     branch: j.branch,
     assignedEngineer: j.assignedEngineer,
     assignedAt: j.assignedAt?.toISOString() ?? null,
@@ -545,6 +547,7 @@ const detailSelect = {
   accessoryName: true,
   manualBrand: true,
   manualModel: true,
+  manualFault: true,
   serialNumber: true,
   color: true,
   customerComplaint: true,

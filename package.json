@@ -17,6 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=@msm/api",
     "db:seed": "npm run db:seed --workspace=@msm/api",
+    "db:seed-test-fixtures": "npm run db:seed-test-fixtures --workspace=@msm/api",
     "db:studio": "npm run db:studio --workspace=@msm/api"
   },
   "allowScripts": {
