@@ -50,6 +50,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const canApprove = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
   const [diagnosing, setDiagnosing] = useState(false);
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [directApproveOptionId, setDirectApproveOptionId] = useState<string | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
   const [action, setAction] = useState<'transfer' | 'spare' | 'spareReceived' | 'rwr' | 'deliver' | null>(null);
   const [loggingCall, setLoggingCall] = useState(false);
@@ -319,7 +320,21 @@ export function WorkPanel({ job }: { job: JobDto }) {
                         </div>
                         {opt.description && <div className="mt-0.5 text-slate-600">{opt.description}</div>}
                       </div>
-                      <div className="font-bold text-slate-900">{formatCurrency(opt.amount)}</div>
+                      <div className="flex items-center gap-3">
+                        <div className="font-bold text-slate-900">{formatCurrency(opt.amount)}</div>
+                        {canApprove && job.status === 'AWAITING_APPROVAL' && !opt.isApproved && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setDirectApproveOptionId(opt.id);
+                              setApproving('APPROVED');
+                            }}
+                          >
+                            ✓ Approve this
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -371,9 +386,9 @@ export function WorkPanel({ job }: { job: JobDto }) {
         open={!!approving}
         onClose={() => setApproving(null)}
         title={approving === 'APPROVED' ? 'Customer approved the estimate' : 'Customer rejected the estimate'}
-        size="sm"
+        size="md"
       >
-        {approving && <ApprovalForm job={job} decision={approving} onDone={() => setApproving(null)} />}
+        {approving && <ApprovalForm job={job} decision={approving} initialOptionId={directApproveOptionId} onDone={() => { setApproving(null); setDirectApproveOptionId(null); }} />}
       </Modal>
       <Modal open={action === 'deliver'} onClose={() => setAction(null)} title={`Deliver ${job.jobNumber}`} size="lg">
         {action === 'deliver' && <DeliveryForm job={job} onDone={() => setAction(null)} />}
@@ -665,9 +680,10 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
 
 // ─── Approval (CCO) ─────────────────────────────────────────────────────────
 
-function ApprovalForm({ job, decision, onDone }: { job: JobDto; decision: 'APPROVED' | 'REJECTED'; onDone: () => void }) {
+function ApprovalForm({ job, decision, initialOptionId, onDone }: { job: JobDto; decision: 'APPROVED' | 'REJECTED'; initialOptionId?: string | null; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(() => {
+    if (initialOptionId) return initialOptionId;
     if (job.estimateOptions && job.estimateOptions.length > 0) {
       const approved = job.estimateOptions.find((o) => o.isApproved);
       return approved ? approved.id : job.estimateOptions[0]!.id;
