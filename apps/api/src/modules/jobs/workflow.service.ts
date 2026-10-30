@@ -312,7 +312,8 @@ export async function spareReceived(id: string, note: string | null | undefined,
 // ─── RWR: return without repair (reason + motherboard photos compulsory) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
-  const isCounterOrManager = actor.role === ROLES.CCO;
+  const isCounterOrManager =
+    actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
   const access = isCounterOrManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
@@ -345,9 +346,12 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
 
 /** Only the owning branch manager can accept an RWR request and release it for delivery. */
 export async function finalizeRwr(id: string, actor: Actor) {
-  if (actor.role !== ROLES.BRANCH_MANAGER || !actor.branchId) throw HttpError.forbidden();
+  const isManager = actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.SUPER_ADMIN;
+  if (!isManager) throw HttpError.forbidden();
   const access = await loadForAccess(id, actor);
-  if (access.branchId !== actor.branchId) throw HttpError.forbidden('Only this job\'s Branch Manager can finalize RWR');
+  if (actor.role === ROLES.BRANCH_MANAGER && (!actor.branchId || access.branchId !== actor.branchId)) {
+    throw HttpError.forbidden('Only this job\'s Branch Manager can finalize RWR');
+  }
   if (access.status !== 'RWR_PENDING') throw notAllowed(access.status);
   await prisma.$transaction(async (tx) => {
     await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date(), dueAt: null }, { actor, remark: 'RWR finalized by Branch Manager' });

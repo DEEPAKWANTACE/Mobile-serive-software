@@ -59,16 +59,11 @@ export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
 function engineerJobScope(actor: Actor): Prisma.JobWhereInput {
   const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000);
   return {
+    assignedEngineerId: actor.sub,
     OR: [
-      {
-        assignedEngineerId: actor.sub,
-        OR: [
-          { status: { in: [...ENGINEER_OPEN_STATUSES] } },
-          { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
-          { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
-        ],
-      },
-      ...(actor.branchId ? [{ branchId: actor.branchId, dueAt: { not: null }, status: { notIn: ['DELIVERED' as const, 'CANCELLED' as const] } }] : []),
+      { status: { in: [...ENGINEER_OPEN_STATUSES] } },
+      { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
+      { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
     ],
   };
 }
@@ -688,8 +683,7 @@ export async function loadForAccess(id: string, actor: Actor) {
   });
   if (!job) throw HttpError.notFound('Job not found');
   if (!canSeeBranch(actor, job)) throw HttpError.forbidden();
-  const branchWideTask = actor.branchId === job.branchId && (!!job.dueAt || job.status === 'AWAITING_APPROVAL');
-  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub && !branchWideTask) {
+  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub) {
     // The receiving engineer may look at a job offered to them before accepting.
     const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
     if (!offered) throw HttpError.forbidden('This job is not assigned to you');

@@ -189,14 +189,14 @@ jobRoutes.post(
 // Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, at least one)
 jobRoutes.post(
   '/:id/rwr',
-  authorize(ROLES.ENGINEER, ROLES.CCO),
+  authorize(ROLES.ENGINEER, ROLES.CCO, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),
   validate({ params: idParamSchema }),
   upload.array('photos', PHOTO_MAX_PER_UPLOAD),
   multipartJson('data'),
   validate({ body: rwrSchema }),
   controller.rwr,
 );
-jobRoutes.post('/:id/rwr/finalize', authorize(ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), controller.finalizeRwr);
+jobRoutes.post('/:id/rwr/finalize', authorize(ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema }), controller.finalizeRwr);
 jobRoutes.post(
   '/:id/parts',
   authorize(ROLES.ENGINEER),
