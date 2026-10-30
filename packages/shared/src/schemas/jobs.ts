@@ -195,6 +195,8 @@ export const jobCustomerSchema = z.object({
 
 /** Fields from the old job form (inward details). */
 const intakeExtras = {
+  /** Optional promised completion time; timed jobs are prioritised for the whole branch. */
+  dueAt: z.iso.datetime().nullable().optional(),
   /** Quoted total typed by the counter (used when no price option is chosen). */
   totalAmount: z.preprocess(
     (v) => (v === '' || v === undefined ? undefined : v),
@@ -258,6 +260,9 @@ export const jobCreateSchema = z
   })
   .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] })
   .superRefine((v, ctx) => {
+    if (v.dueAt && new Date(v.dueAt).getTime() <= Date.now()) {
+      ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
+    }
     if (v.jobType === 'MOBILE') {
       const manual = !!v.manualBrand || !!v.manualModel;
       if (manual) {
@@ -296,6 +301,10 @@ export const jobEditSchema = z.object({
   conditionNotes: optionalText(1000),
   physicalConditionRemark: optionalText(1000),
   ...intakeExtras,
+}).superRefine((v, ctx) => {
+  if (v.dueAt && new Date(v.dueAt).getTime() <= Date.now()) {
+    ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
+  }
 });
 export type JobEditInput = z.input<typeof jobEditSchema>;
 export type JobEditData = z.output<typeof jobEditSchema>;
@@ -559,6 +568,7 @@ export type JobListItemDto = {
   status: JobStatus;
   pendingWith: string;
   createdAt: string;
+  dueAt: string | null;
   customer: { name: string; phone: string };
   device: string; // "Samsung Galaxy S24"
   imei: string | null;
@@ -597,6 +607,7 @@ export type JobDto = {
   jobNumber: string;
   status: JobStatus;
   createdAt: string;
+  dueAt: string | null;
   branch: { id: string; code: string; name: string; address: string | null; phone: string | null };
   customer: CustomerDto;
   jobType: 'MOBILE' | 'ACCESSORY';

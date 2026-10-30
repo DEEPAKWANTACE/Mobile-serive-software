@@ -169,6 +169,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
       where: { id: jobId, status: job.status },
       data: {
         status: 'DELIVERED',
+        dueAt: null,
         deliveredAt: now,
         deliveredById: actor.sub,
         deliveredTo: data.deliveredTo,

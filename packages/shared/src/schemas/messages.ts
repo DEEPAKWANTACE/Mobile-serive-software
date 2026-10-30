@@ -22,6 +22,9 @@ export type MessageContext = {
   balance?: number | null;
 };
 
+export const INSTAGRAM_URL = 'https://www.instagram.com/dattagurumobile01';
+const instagramFooter = `\nInstagram: ${INSTAGRAM_URL}`;
+
 const rupees = (v: number) => `Rs. ${v.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
 export function buildMessage(kind: MessageKind, c: MessageContext): string {
@@ -31,17 +34,17 @@ export function buildMessage(kind: MessageKind, c: MessageContext): string {
     case 'RECEIVED':
       return `Dear ${c.customerName}, we have received your ${c.device} for repair. Job No: ${c.jobNumber}.${
         c.estimate ? ` Estimated cost: ${rupees(c.estimate)}.` : ' We will call you with the estimate shortly.'
-      } Please keep this job number for reference.${contact}${sign}`;
+      } Please keep this job number for reference.${contact}${sign}${instagramFooter}`;
     case 'APPROVAL':
-      return `Dear ${c.customerName}, your ${c.device} (Job ${c.jobNumber}) has been checked. Repair cost: ${rupees(c.estimate ?? 0)}. Please reply YES to approve the repair.${contact}${sign}`;
+      return `Dear ${c.customerName}, your ${c.device} (Job ${c.jobNumber}) has been checked. Repair cost: ${rupees(c.estimate ?? 0)}. Please reply YES to approve the repair.${contact}${sign}${instagramFooter}`;
     case 'READY':
       return `Dear ${c.customerName}, good news! Your ${c.device} (Job ${c.jobNumber}) is repaired and ready for pickup.${
         c.balance && c.balance > 0 ? ` Amount payable: ${rupees(c.balance)}.` : ''
-      } Please bring your job sheet.${contact}${sign}`;
+      } Please bring your job sheet.${contact}${sign}${instagramFooter}`;
     case 'RWR':
-      return `Dear ${c.customerName}, your ${c.device} (Job ${c.jobNumber}) could not be repaired. Please collect it at your convenience.${contact}${sign}`;
+      return `Dear ${c.customerName}, your ${c.device} (Job ${c.jobNumber}) could not be repaired. Please collect it at your convenience.${contact}${sign}${instagramFooter}`;
     case 'REMINDER':
-      return `Dear ${c.customerName}, a reminder that your ${c.device} (Job ${c.jobNumber}) is waiting for pickup at our service centre.${contact}${sign}`;
+      return `Dear ${c.customerName}, a reminder that your ${c.device} (Job ${c.jobNumber}) is waiting for pickup at our service centre.${contact}${sign}${instagramFooter}`;
   }
 }
 

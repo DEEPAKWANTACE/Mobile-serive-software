@@ -38,6 +38,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       inwardById: true,
       devicePasswordEnc: true,
       diagnosedAt: true,
+      dueAt: true,
       customer: { select: { id: true, phone: true, name: true, city: true, altPhone: true, email: true, address: true } },
       faults: { select: { faultId: true, priceLabel: true, price: true, fault: { select: { name: true } } } },
       photos: { where: { kind: 'ID_PROOF' }, select: { id: true } },
@@ -118,6 +119,10 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       // Values are already validated per field by jobEditSchema.
       (jobData as Record<string, unknown>)[field] = data[field];
     }
+  }
+  if (data.dueAt !== undefined) {
+    track('dueAt', cur.dueAt?.toISOString() ?? null, data.dueAt);
+    jobData.dueAt = data.dueAt ? new Date(data.dueAt) : null;
   }
   if (data.inwardById !== undefined && data.inwardById !== cur.inwardById) {
     if (data.inwardById) {

@@ -84,10 +84,13 @@ export function JobDetailPage() {
   }
 
   const isManager = user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER;
+  const canManage = isManager || user?.role === ROLES.CCO;
+  const readOnlyViewer = user?.role === ROLES.STOREKEEPER || user?.role === ROLES.ACCOUNTS
+    || (user?.role === ROLES.ENGINEER && job.assignedEngineer?.id !== user.id);
   const closed = CLOSED_STATUSES.includes(job.status);
   const sameBranch = !user?.branch || user.branch.id === job.currentBranch.id;
   const canAssign =
-    user?.role !== ROLES.ENGINEER &&
+    canManage &&
     (isManager ? ADMIN_REASSIGNABLE_STATUSES : ASSIGNABLE_STATUSES).includes(job.status) &&
     job.location === 'AT_BRANCH' &&
     sameBranch;
@@ -99,6 +102,11 @@ export function JobDetailPage() {
           <span className="font-medium">Cancelled</span>
           {job.cancelledAt && ` on ${formatDateTime(job.cancelledAt)}`}
           {job.cancelReason && ` — “${job.cancelReason}”`}
+        </div>
+      )}
+      {job.dueAt && (
+        <div className={`rounded-lg px-4 py-3 text-sm font-semibold ring-1 ${new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50 text-red-800 ring-red-200' : 'bg-amber-50 text-amber-900 ring-amber-200'}`}>
+          Completion timer: {formatDateTime(job.dueAt)}{new Date(job.dueAt).getTime() <= Date.now() ? ' · overdue' : ''}
         </div>
       )}
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -117,7 +125,7 @@ export function JobDetailPage() {
             <span className="font-medium text-slate-800">Engineer: {job.assignedEngineer?.name ?? 'Not assigned'}</span>
             {job.assignedAt && <> · since {formatDateTime(job.assignedAt)}</>}
           </p>
-          {user?.role !== ROLES.ENGINEER && (
+          {canManage && (
             <div className="mt-2 flex flex-wrap gap-2">
               <Link to={`/jobs/${job.id}/print`}>
                 <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
@@ -189,15 +197,15 @@ export function JobDetailPage() {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          <WorkPanel job={job} />
-          <RepairNotes job={job} />
-          <JobPartsCard job={job} />
-          <JobInfo job={job} />
+          {!readOnlyViewer && <WorkPanel job={job} />}
+          {!readOnlyViewer && <RepairNotes job={job} />}
+          {!readOnlyViewer && <JobPartsCard job={job} />}
+          <JobInfo job={job} readOnly={readOnlyViewer} />
           <Photos job={job} />
         </div>
         <div className="space-y-5">
-          <JobCallsCard job={job} />
-          <MovementsCard job={job} />
+          {!readOnlyViewer && <JobCallsCard job={job} />}
+          {!readOnlyViewer && <MovementsCard job={job} />}
           {user?.role !== ROLES.ENGINEER && (
             <>
               <StatusTimeline job={job} />
@@ -220,7 +228,7 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function JobInfo({ job }: { job: JobDto }) {
+function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean }) {
   const accessories = [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])];
   const [editingDevice, setEditingDevice] = useState(false);
   return (
@@ -228,7 +236,7 @@ function JobInfo({ job }: { job: JobDto }) {
       <Card
         title="Customer & device"
         actions={
-          !CLOSED_STATUSES.includes(job.status) && (
+          !readOnly && !CLOSED_STATUSES.includes(job.status) && (
             <Button variant="link" onClick={() => setEditingDevice(true)}>
               {job.jobType === 'MOBILE' ? (job.imei || job.imei2 ? 'Edit IMEIs' : 'Add IMEIs') : (job.serialNumber ? 'Edit serial' : 'Add serial')}
             </Button>
@@ -286,16 +294,16 @@ function JobInfo({ job }: { job: JobDto }) {
           <Row label="Inward by">{job.inwardBy?.name}</Row>
         </dl>
       </Card>
-      <Estimate job={job} />
+      <Estimate job={job} readOnly={readOnly} />
     </>
   );
 }
 
-function Estimate({ job }: { job: JobDto }) {
+function Estimate({ job, readOnly = false }: { job: JobDto; readOnly?: boolean }) {
   const { user } = useAuth();
   const [receiving, setReceiving] = useState(false);
   const canReceive =
-    user?.role !== ROLES.ENGINEER && !CLOSED_STATUSES.includes(job.status) && job.balance > 0 && (!user?.branch || user.branch.id === job.branch.id);
+    !readOnly && user?.role !== ROLES.ENGINEER && !CLOSED_STATUSES.includes(job.status) && job.balance > 0 && (!user?.branch || user.branch.id === job.branch.id);
   return (
     <Card
       title="Amount & payments"

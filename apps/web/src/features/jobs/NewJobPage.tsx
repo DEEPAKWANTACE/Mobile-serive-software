@@ -37,6 +37,7 @@ import { compressImage } from '@/lib/image';
 import { ImeiWarning } from './ImeiWarning';
 import { PhotoPicker } from './PhotoPicker';
 import { useAuth } from '@/features/auth/auth-context';
+import { DeadlinePicker } from './DeadlinePicker';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
 const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [], PHYSICAL_CONDITION: [] });
@@ -85,6 +86,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       warrantyTerms: '',
       skipDiagnosis: false,
       customerAlreadyApproved: false,
+      dueAt: null,
       engineerId: '',
       advance: null,
     },
@@ -96,6 +98,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const skipDiagnosis = watch('skipDiagnosis');
   const phone = watch('customer.phone');
   const selectedFaults = watch('faults') ?? [];
+  const dueAt = watch('dueAt');
   const formBranch = isSuperAdmin ? (watch('branchId') ?? '') : (user?.branch?.id ?? '');
   const branchQs = isSuperAdmin ? `?branchId=${formBranch}` : '';
 
@@ -213,6 +216,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   return (
     <form onSubmit={onSubmit} className="mx-auto max-w-4xl space-y-5">
       {!embedded && <PageHeader title="New Job Sheet" description="Register a device received for repair" />}
+      <DeadlinePicker value={dueAt} onChange={(value) => setValue('dueAt', value, { shouldValidate: true })} error={errors.dueAt?.message} />
       {isSuperAdmin && (
         <Card title="Branch">
           <Field label="Branch receiving the phone" required {...err(errors.branchId?.message)}>

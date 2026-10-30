@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Copy, Download, MessageSquare, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  INSTAGRAM_URL,
   JOB_STATUS_LABELS,
   JOB_STATUSES,
   ROLES,
@@ -76,7 +77,7 @@ export function EngineerReportPage() {
         : applied.to
           ? `(up to ${formatDate(applied.to)})`
           : '(Today / Open)';
-    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.`;
+    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.\n\nInstagram: ${INSTAGRAM_URL}`;
     navigator.clipboard.writeText(text);
     toast.success(`Copied pending details for ${e.engineer}`);
   };
@@ -89,7 +90,7 @@ export function EngineerReportPage() {
         : applied.to
           ? `(up to ${formatDate(applied.to)})`
           : '(Today / Open)';
-    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.`;
+    const text = `*End of Day Pending Report*\nEngineer: ${e.engineer}\nPending Jobs: ${e.pending}\nPeriod: ${periodLabel}\nPlease check and clear pending jobs.\n\nInstagram: ${INSTAGRAM_URL}`;
     const cleanPhone = (e.phone || '').replace(/\D/g, '');
     const phoneParam = cleanPhone ? (cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone) : '';
     const url = phoneParam

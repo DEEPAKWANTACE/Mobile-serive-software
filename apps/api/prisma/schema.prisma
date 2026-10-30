@@ -63,6 +63,7 @@ model Branch {
   movementsIn           JobMovement[]   @relation("MovementTo")
   expenses              Expense[]
   callLogs              CallLog[]
+  reminders             Reminder[]
   invoices              Invoice[]
   partStocks            PartStock[]
   stockMovements        StockMovement[]
@@ -110,6 +111,7 @@ model User {
   expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
   expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
   callLogs               CallLog[]
+  reminders              Reminder[]
   jobsDelivered          Job[]              @relation("JobDeliveredBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
@@ -440,6 +442,8 @@ model Job {
   createdById             String             @map("created_by_id") @db.Uuid
   createdAt               DateTime           @default(now()) @map("created_at")
   updatedAt               DateTime           @updatedAt @map("updated_at")
+  /// Promised completion time. Open timed jobs are prioritised in branch queues.
+  dueAt                   DateTime?          @map("due_at")
 
   branch           Branch            @relation(fields: [branchId], references: [id])
   customer         Customer          @relation(fields: [customerId], references: [id])
@@ -453,6 +457,7 @@ model Job {
   photos           JobPhoto[]
   payments         Payment[]
   transfers        JobTransfer[]
+  reminders        Reminder[]
 
   @@index([branchId, createdAt])
   @@index([branchId, status])
@@ -460,7 +465,28 @@ model Job {
   @@index([imei])
   @@index([assignedEngineerId, status])
   @@index([currentBranchId, status])
+  @@index([branchId, dueAt])
   @@map("jobs")
+}
+
+/// Personal follow-up reminder. Job deadlines and approval tasks are generated from Job rows.
+model Reminder {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  title       String
+  dueAt       DateTime  @map("due_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdById String    @map("created_by_id") @db.Uuid
+  branchId    String?   @map("branch_id") @db.Uuid
+  jobId       String?   @map("job_id") @db.Uuid
+
+  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  job       Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([createdById, completedAt, dueAt])
+  @@index([branchId, dueAt])
+  @@map("reminders")
 }
 
 /// Faults reported at intake.

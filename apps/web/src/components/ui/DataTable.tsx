@@ -17,9 +17,10 @@ type Props<T> = {
   /** Row selection (checkbox column) — pass both to enable. */
   selected?: Set<string>;
   onSelectedChange?: (next: Set<string>) => void;
+  rowClassName?: (row: T) => string;
 };
 
-export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, emptyMessage = 'No records found', selected, onSelectedChange }: Props<T>) {
+export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, emptyMessage = 'No records found', selected, onSelectedChange, rowClassName }: Props<T>) {
   const keys = rows?.map(rowKey) ?? [];
   const allChecked = keys.length > 0 && keys.every((k) => selected?.has(k));
   const toggle = (k: string) => {
@@ -76,7 +77,7 @@ export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, em
             </tr>
           ) : (
             rows.map((row) => (
-              <tr key={rowKey(row)} className="hover:bg-slate-50">
+              <tr key={rowKey(row)} className={`${rowClassName?.(row) ?? ''} hover:bg-slate-50`}>
                 {columns.map((c) => (
                   <td key={c.header} className={`px-4 py-2.5 ${c.className ?? ''}`}>
                     {c.cell(row)}

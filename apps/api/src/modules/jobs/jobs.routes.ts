@@ -63,7 +63,7 @@ export const jobRoutes = Router();
 
 // Storekeeper / accounts access is added with their workflow modules.
 // Engineers are further limited (in the service) to jobs assigned to them.
-const viewers = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER] as const;
+const viewers = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER, ROLES.STOREKEEPER, ROLES.ACCOUNTS] as const;
 const creators = [ROLES.CCO] as const;
 const assigners = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const;
 

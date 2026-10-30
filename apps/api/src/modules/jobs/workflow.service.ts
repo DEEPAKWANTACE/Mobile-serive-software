@@ -182,7 +182,7 @@ export async function changeStatus(id: string, { status: to, note }: StatusChang
     await moveFrom(tx, id, access.status, {
       status: to,
       ...(to === 'REPAIRED' && { repairedAt: new Date() }),
-      ...(to === 'READY_FOR_DELIVERY' && { readyAt: new Date() }),
+      ...(to === 'READY_FOR_DELIVERY' && { readyAt: new Date(), dueAt: null }),
       ...(to === 'TESTING' && { testingAt: new Date() }),
       ...(testingNote && { testingRemark: note }),
       ...(repairNote && { repairRemark: note }),
@@ -309,7 +309,7 @@ export async function finalizeRwr(id: string, actor: Actor) {
   if (access.branchId !== actor.branchId) throw HttpError.forbidden('Only this job\'s Branch Manager can finalize RWR');
   if (access.status !== 'RWR_PENDING') throw notAllowed(access.status);
   await prisma.$transaction(async (tx) => {
-    await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date() }, { actor, remark: 'RWR finalized by Branch Manager' });
+    await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date(), dueAt: null }, { actor, remark: 'RWR finalized by Branch Manager' });
     await recordAudit({ actorId: actor.sub, action: 'job.rwr_finalized', entityType: 'job', entityId: id, branchId: access.branchId, ip: actor.ip }, tx);
   });
   return { status: 'RWR' as const };

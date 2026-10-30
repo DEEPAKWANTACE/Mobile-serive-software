@@ -83,6 +83,9 @@ function Inner({
       warrantyPeriod: job.warrantyPeriod ?? '',
       warrantyTerms: job.warrantyTerms ?? '',
       totalAmount: (job.estimatedAmount ?? '') as unknown as number,
+      dueAt: job.dueAt
+        ? new Date(new Date(job.dueAt).getTime() - new Date(job.dueAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+        : null,
     },
   });
   const brandId = watch('brandId');
@@ -125,6 +128,13 @@ function Inner({
   return (
     <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-5">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Completion deadline" {...err(errors.dueAt?.message)} hint="Clear this to remove the timer">
+          <input
+            type="datetime-local"
+            {...register('dueAt', { setValueAs: (v: string) => v ? new Date(v).toISOString() : null })}
+            className={inputClass}
+          />
+        </Field>
         <Field label="Mobile number" required {...err(errors.customer?.phone?.message)} hint="Fixing a wrong number moves this job to that customer">
           <input {...register('customer.phone')} inputMode="numeric" maxLength={10} className={inputClass} />
         </Field>

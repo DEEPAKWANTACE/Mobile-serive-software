@@ -59,11 +59,16 @@ export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
 function engineerJobScope(actor: Actor): Prisma.JobWhereInput {
   const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000);
   return {
-    assignedEngineerId: actor.sub,
     OR: [
-      { status: { in: [...ENGINEER_OPEN_STATUSES] } },
-      { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
-      { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
+      {
+        assignedEngineerId: actor.sub,
+        OR: [
+          { status: { in: [...ENGINEER_OPEN_STATUSES] } },
+          { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
+          { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
+        ],
+      },
+      ...(actor.branchId ? [{ branchId: actor.branchId, dueAt: { not: null }, status: { notIn: ['DELIVERED' as const, 'CANCELLED' as const] } }] : []),
     ],
   };
 }
@@ -369,6 +374,7 @@ const listSelect = {
   jobNumber: true,
   status: true,
   createdAt: true,
+  dueAt: true,
   imei: true,
   jobType: true,
   accessoryName: true,
@@ -459,7 +465,10 @@ export async function list(query: JobListQuery, actor: Actor) {
     prisma.job.findMany({
       where,
       select: listSelect,
-      orderBy: { createdAt: query.sort === 'oldest' ? 'asc' : 'desc' },
+      orderBy: [
+        { dueAt: { sort: 'asc', nulls: 'last' } },
+        { createdAt: query.sort === 'oldest' ? 'asc' : 'desc' },
+      ],
       ...pageArgs(query),
     }),
     prisma.job.count({ where }),
@@ -470,6 +479,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     status: j.status,
     pendingWith: JOB_PENDING_WITH[j.status],
     createdAt: j.createdAt.toISOString(),
+    dueAt: j.dueAt?.toISOString() ?? null,
     customer: { name: j.customer.name, phone: j.customer.phone },
     device: j.jobType === 'ACCESSORY'
       ? (j.accessoryName ?? 'Accessory')
@@ -511,6 +521,7 @@ const detailSelect = {
   jobNumber: true,
   status: true,
   createdAt: true,
+  dueAt: true,
   imei: true,
   imei2: true,
   jobType: true,
@@ -642,11 +653,12 @@ const detailSelect = {
 export async function loadForAccess(id: string, actor: Actor) {
   const job = await prisma.job.findUnique({
     where: { id },
-    select: { id: true, branchId: true, currentBranchId: true, location: true, status: true, assignedEngineerId: true, readyAt: true, deliveredAt: true },
+    select: { id: true, branchId: true, currentBranchId: true, location: true, status: true, assignedEngineerId: true, readyAt: true, deliveredAt: true, dueAt: true },
   });
   if (!job) throw HttpError.notFound('Job not found');
   if (!canSeeBranch(actor, job)) throw HttpError.forbidden();
-  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub) {
+  const branchWideTask = actor.branchId === job.branchId && (!!job.dueAt || job.status === 'AWAITING_APPROVAL');
+  if (isEngineer(actor) && job.assignedEngineerId !== actor.sub && !branchWideTask) {
     // The receiving engineer may look at a job offered to them before accepting.
     const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
     if (!offered) throw HttpError.forbidden('This job is not assigned to you');
@@ -669,6 +681,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     photos,
     payments,
     createdAt,
+    dueAt,
     assignedAt,
     estimatedAmount,
     diagnosedAt,
@@ -693,15 +706,18 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     ...rest
   } = j;
   // Unlock code: counter staff of the job's branches, or the engineer working on it — never an offered-only engineer.
-  const mayReadPassword = !isEngineer(actor) || j.assignedEngineer?.id === actor.sub;
+  const mayReadPassword = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO].some((role) => role === actor.role)
+    || (isEngineer(actor) && j.assignedEngineer?.id === actor.sub);
   const money = jobMoney({ status: j.status, invoice, quotedAmount, estimatedAmount, payments });
   const pending = transfers[0];
   const iso = (d: Date | null) => d?.toISOString() ?? null;
-  const visiblePhotos = isEngineer(actor) ? photos.filter((p) => ENGINEER_VISIBLE_PHOTO_KINDS.includes(p.kind)) : photos;
+  const mayReadIdentityPhotos = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO].some((role) => role === actor.role);
+  const visiblePhotos = mayReadIdentityPhotos ? photos : photos.filter((p) => ENGINEER_VISIBLE_PHOTO_KINDS.includes(p.kind));
   return {
     ...rest,
     jobNumber: publicJobNumber(rest.jobNumber),
     createdAt: createdAt.toISOString(),
+    dueAt: iso(dueAt),
     assignedAt: iso(assignedAt),
     diagnosedAt: iso(diagnosedAt),
     approvedAt: iso(approvedAt),
@@ -912,7 +928,7 @@ export async function cancel(jobId: string, data: JobCancelData, actor: Actor) {
   await prisma.$transaction(async (tx) => {
     const { count } = await tx.job.updateMany({
       where: { id: jobId, status: job.status },
-      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason, statusBeforeHold: null },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason, statusBeforeHold: null, dueAt: null },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
     if (paid > 0) {

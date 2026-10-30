@@ -6,6 +6,7 @@ import { useAuth } from '@/features/auth/auth-context';
 import { useShopSettings } from '@/features/settings/useShopSettings';
 import { FindJobModal } from '@/features/jobs/FindJobModal';
 import { navForRole } from './navigation';
+import { ReminderCenter } from '@/features/reminders/ReminderCenter';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
@@ -86,6 +87,7 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            <ReminderCenter />
             {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const).some((r) => r === user.role) && (
               <button
                 type="button"

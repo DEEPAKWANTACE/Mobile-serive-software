@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
+import { Clock3, Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
   JOB_STATUS_LABELS,
@@ -166,6 +166,11 @@ export function ShowJobs() {
 
   const money = (v: number) => <span className="tabular-nums">{formatCurrency(v)}</span>;
   const nowrap = (v: React.ReactNode) => <span className="whitespace-nowrap">{v ?? '—'}</span>;
+  const deadline = (j: JobListItemDto) => j.dueAt ? (
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap font-semibold ${new Date(j.dueAt).getTime() <= Date.now() ? 'text-red-700' : 'text-amber-700'}`}>
+      <Clock3 className="size-3.5" /> {formatDateTime(j.dueAt)}
+    </span>
+  ) : <span className="text-slate-400">—</span>;
   const allColumns: Column<JobListItemDto>[] = [
     {
       header: 'Job No',
@@ -176,6 +181,7 @@ export function ShowJobs() {
       ),
     },
     { header: 'Date', cell: (j) => nowrap(formatDate(j.createdAt)) },
+    { header: 'Timer', cell: deadline },
     { header: 'Customer Name', cell: (j) => nowrap(j.customer.name) },
     { header: 'Contact No', cell: (j) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
     { header: 'City', cell: (j) => nowrap(j.city) },
@@ -215,6 +221,7 @@ export function ShowJobs() {
   const columns: Column<JobListItemDto>[] = isEngineer
     ? [
         allColumns[0]!,
+        { header: 'Timer', cell: deadline },
         { header: 'Status', cell: (j) => <InlineJobStatus job={j} /> },
         { header: 'Pending with', cell: (j) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
         { header: 'Problem', cell: (j) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ') || j.remark || '—'}</span> },
@@ -296,11 +303,11 @@ export function ShowJobs() {
       {isEngineer ? (
         <>
           <div className="hidden md:block">
-            <DataTable columns={columns} rows={data?.items} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="No jobs match these filters" />
+            <DataTable columns={columns} rows={data?.items} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="No jobs match these filters" rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''} />
           </div>
           <div className="space-y-3 md:hidden">
             {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
-              <article key={job.id} className="rounded-xl bg-white p-4 ring-1 ring-slate-200 shadow-sm">
+              <article key={job.id} className={`rounded-xl p-4 ring-1 shadow-sm ${job.dueAt ? 'bg-amber-50 ring-amber-300' : 'bg-white ring-slate-200'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <Link to={`/jobs/${job.id}`} className="font-mono font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
@@ -310,6 +317,7 @@ export function ShowJobs() {
                 </div>
                 <p className="mt-2 text-sm text-slate-600">{job.faults.join(', ') || job.remark || 'No problem noted'}</p>
                 <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-500'}`}>Pending with: {job.pendingWith}</p>
+                {job.dueAt && <p className="mt-2 text-xs">{deadline(job)}</p>}
                 <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
                   <a href={`tel:${job.customer.phone}`} className="font-medium text-slate-700">{job.customer.name} · {job.customer.phone}</a>
                   <span>{job.assignedAt ? formatDate(job.assignedAt) : ''}</span>
@@ -325,6 +333,7 @@ export function ShowJobs() {
           rowKey={(j) => j.id}
           isLoading={isLoading}
           emptyMessage="No jobs match these filters"
+          rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
           {...(canBulk && {
             selected: new Set(selected.keys()),
             onSelectedChange: (ids: Set<string>) =>

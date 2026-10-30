@@ -43,7 +43,7 @@ export const router = createBrowserRouter([
           { index: true, element: <DashboardPage /> },
           {
             path: 'jobs',
-            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER]} />,
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER, ROLES.STOREKEEPER, ROLES.ACCOUNTS]} />,
             children: [
               { index: true, element: <JobsPage /> },
               { path: ':id', element: <JobDetailPage /> },
