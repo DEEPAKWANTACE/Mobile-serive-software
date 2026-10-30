@@ -109,7 +109,6 @@ export const RWR_REASON_LABELS: Record<RwrReason, string> = {
   CUSTOMER_REJECTED: 'Customer rejected the estimate',
   OTHER: 'Other',
 };
-export const RWR_MIN_PHOTOS = 1;
 
 /** Engineer may (re)submit the diagnosis/quote in these statuses. */
 export const DIAGNOSABLE_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR'];

@@ -252,13 +252,13 @@ export function WorkPanel({ job }: { job: JobDto }) {
               <div className="text-base font-semibold text-red-950">Customer rejected the estimate</div>
               {job.customerResponse && <p className="mt-1 text-sm text-red-900">Customer feedback: “{job.customerResponse}”</p>}
               <p className="mt-1 text-xs text-red-800">
-                Please complete Return Without Repair (RWR) with internal/motherboard photos so the device can be returned to the counter.
+                Please complete Return Without Repair (RWR) so the device can be returned to the counter.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-200">
               {canRwr && (
                 <Button size="sm" variant="primary" onClick={() => setAction('rwr')}>
-                  📸 Finalize RWR (take photo & return)
+                  Finalize RWR (return to counter)
                 </Button>
               )}
               {canApprove && (

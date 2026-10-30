@@ -186,7 +186,7 @@ jobRoutes.post(
   validate({ params: idParamSchema, body: spareReceivedSchema }),
   controller.spareReceived,
 );
-// Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, at least one)
+// Multipart: "data" (JSON { reason, note }) + "photos" (motherboard images, optional)
 jobRoutes.post(
   '/:id/rwr',
   authorize(ROLES.ENGINEER, ROLES.CCO, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN),

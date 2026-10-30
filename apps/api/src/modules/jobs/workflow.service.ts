@@ -3,7 +3,6 @@ import {
   ENGINEER_TRANSITIONS,
   JOB_STATUS_LABELS,
   ROLES,
-  RWR_MIN_PHOTOS,
   RWR_STATUSES,
   SPARE_HOLD_STATUSES,
   type ApprovalData,
@@ -309,7 +308,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
   return { status: resume };
 }
 
-// ─── RWR: return without repair (reason + motherboard photos compulsory) ────
+// ─── RWR: return without repair (reason compulsory, motherboard photos optional) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
   const isCounterOrManager =
@@ -317,9 +316,6 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
   const access = isCounterOrManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
-  if (files.length < RWR_MIN_PHOTOS) {
-    throw HttpError.badRequest('Invalid request', { photos: ['Motherboard / internal photo is compulsory for RWR'] });
-  }
   const prepared = preparePhotos({ RWR: files });
 
   await withStoredPhotos(prepared, () =>

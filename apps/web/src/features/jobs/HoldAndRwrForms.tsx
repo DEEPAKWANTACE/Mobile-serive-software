@@ -65,7 +65,7 @@ export function SpareReceivedForm({ job, onDone }: { job: JobDto; onDone: () => 
   );
 }
 
-/** Return without repair: reason, explanation and motherboard photos are all compulsory. */
+/** Return without repair: reason and explanation are compulsory; motherboard photos are optional. */
 export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
   const defaultReason: RwrReason | '' =
@@ -101,10 +101,9 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
         const errs = {
           reason: reason ? undefined : 'Select a reason',
           note: note.trim().length >= 5 ? undefined : 'Explain why the phone is returned unrepaired',
-          photos: photos.length ? undefined : 'Motherboard / internal photo is compulsory',
         };
         setErrors(errs);
-        if (!errs.reason && !errs.note && !errs.photos) save.mutate();
+        if (!errs.reason && !errs.note) save.mutate();
       }}
       className="space-y-4"
     >
@@ -127,7 +126,7 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
           placeholder="e.g. Board already tampered at another shop, not safe to repair"
         />
       </Field>
-      <PhotoPicker label="Motherboard / internal photos" required multiple files={photos} onChange={setPhotos} error={errors.photos} />
+      <PhotoPicker label="Motherboard / internal photos (optional)" multiple files={photos} onChange={setPhotos} error={errors.photos} />
       <p className="text-xs text-slate-500">These photos are kept as proof of the condition in which the phone was returned.</p>
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Request RWR" />
     </form>
