@@ -111,7 +111,8 @@ model User {
   expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
   expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
   callLogs               CallLog[]
-  reminders              Reminder[]
+  remindersCreated       Reminder[]          @relation("ReminderCreatedBy")
+  remindersAssigned      Reminder[]          @relation("ReminderAssignedTo")
   jobsDelivered          Job[]              @relation("JobDeliveredBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
@@ -477,14 +478,17 @@ model Reminder {
   completedAt DateTime? @map("completed_at")
   createdAt   DateTime  @default(now()) @map("created_at")
   createdById String    @map("created_by_id") @db.Uuid
+  assignedToId String   @map("assigned_to_id") @db.Uuid
   branchId    String?   @map("branch_id") @db.Uuid
   jobId       String?   @map("job_id") @db.Uuid
 
-  createdBy User    @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy  User    @relation("ReminderCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  assignedTo User    @relation("ReminderAssignedTo", fields: [assignedToId], references: [id], onDelete: Cascade)
   branch    Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
   job       Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([createdById, completedAt, dueAt])
+  @@index([assignedToId, completedAt, dueAt])
   @@index([branchId, dueAt])
   @@map("reminders")
 }

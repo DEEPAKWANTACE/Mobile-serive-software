@@ -12,6 +12,7 @@ export type NavSection = { title?: string; items: NavItem[] };
 /** Sidebar entries. Each module adds its items here as it is built. */
 export const NAV_SECTIONS: NavSection[] = [
   { items: [{ label: 'Dashboard', to: '/' }] },
+  { items: [{ label: 'My Reminders', to: '/reminders' }] },
   {
     title: 'Masters',
     items: [

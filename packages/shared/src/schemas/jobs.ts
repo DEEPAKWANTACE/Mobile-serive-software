@@ -382,6 +382,12 @@ export type JobListQuery = z.output<typeof jobListQuerySchema>;
 export const jobAssignSchema = z.object({ engineerId: z.uuid('Select an engineer') });
 export type JobAssignInput = z.input<typeof jobAssignSchema>;
 
+export const jobDeadlineSchema = z.object({ dueAt: z.iso.datetime().nullable() }).superRefine((value, ctx) => {
+  if (value.dueAt && new Date(value.dueAt).getTime() <= Date.now()) {
+    ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
+  }
+});
+
 /** Branch is required for Super Admin; branch staff always get their own branch. */
 export const engineerListQuerySchema = z.object({ branchId: z.uuid().optional() });
 

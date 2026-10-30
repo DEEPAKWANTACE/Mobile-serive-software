@@ -31,6 +31,7 @@ import { CitiesPage } from '@/features/masters/CitiesPage';
 import { StatesPage } from '@/features/masters/StatesPage';
 import { StaffPage } from '@/features/staff/StaffPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { MyRemindersPage } from '@/features/reminders/MyRemindersPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -41,6 +42,7 @@ export const router = createBrowserRouter([
         element: <AppLayout />,
         children: [
           { index: true, element: <DashboardPage /> },
+          { path: 'reminders', element: <MyRemindersPage /> },
           {
             path: 'jobs',
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER, ROLES.STOREKEEPER, ROLES.ACCOUNTS]} />,

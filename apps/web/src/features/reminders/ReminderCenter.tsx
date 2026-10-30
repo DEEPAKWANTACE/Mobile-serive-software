@@ -71,7 +71,10 @@ export function ReminderCenter() {
       <Modal open={open} onClose={() => setOpen(false)} title="Notifications & reminders">
         <div className="space-y-4">
           {!adding ? (
-            <Button onClick={() => setAdding(true)}><Plus className="size-4" /> New reminder</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setAdding(true)}><Plus className="size-4" /> Quick reminder for me</Button>
+              <Link to="/reminders" onClick={() => setOpen(false)}><Button variant="secondary">Manage reminders</Button></Link>
+            </div>
           ) : (
             <div className="space-y-3 rounded-lg bg-slate-50 p-4 ring-1 ring-slate-200">
               <Field label="Remind me to" required>

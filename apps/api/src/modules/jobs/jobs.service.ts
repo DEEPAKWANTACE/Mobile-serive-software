@@ -367,6 +367,23 @@ export async function updateDevice(id: string, data: JobDeviceUpdateData, actor:
   });
 }
 
+/** Set, reschedule or clear a job completion timer without opening the full edit form. */
+export async function updateDeadline(id: string, dueAt: string | null, actor: Actor) {
+  const job = await loadForAccess(id, actor);
+  if (actor.branchId && actor.branchId !== job.branchId) throw HttpError.forbidden('Only the owning branch can change this timer');
+  if (CLOSED_STATUSES.includes(job.status)) throw HttpError.conflict('Closed jobs cannot have a completion timer');
+  const before = await prisma.job.findUniqueOrThrow({ where: { id }, select: { dueAt: true } });
+  const next = dueAt ? new Date(dueAt) : null;
+  await prisma.$transaction(async (tx) => {
+    await tx.job.update({ where: { id }, data: { dueAt: next } });
+    await recordAudit({
+      actorId: actor.sub, action: 'job.deadline_updated', entityType: 'job', entityId: id, branchId: job.branchId,
+      metadata: { from: before.dueAt?.toISOString() ?? null, to: next?.toISOString() ?? null }, ip: actor.ip,
+    }, tx);
+  });
+  return { dueAt: next?.toISOString() ?? null };
+}
+
 // ─── Read ───────────────────────────────────────────────────────────────────
 
 const listSelect = {

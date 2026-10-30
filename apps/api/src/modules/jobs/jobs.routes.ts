@@ -29,6 +29,7 @@ import {
   statusChangeSchema,
   idParamSchema,
   jobAssignSchema,
+  jobDeadlineSchema,
   jobDeviceUpdateSchema,
   jobStatsQuerySchema,
   jobCreateSchema,
@@ -124,6 +125,12 @@ jobRoutes.post(
   authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: idParamSchema, body: jobAssignSchema }),
   controller.assign,
+);
+jobRoutes.patch(
+  '/:id/deadline',
+  authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO),
+  validate({ params: idParamSchema, body: jobDeadlineSchema }),
+  async (req, res) => res.json(await service.updateDeadline(req.params.id as string, req.body.dueAt, actorOf(req))),
 );
 jobRoutes.patch(
   '/:id/device',

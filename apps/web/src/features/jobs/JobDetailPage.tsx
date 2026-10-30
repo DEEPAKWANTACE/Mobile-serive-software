@@ -52,6 +52,7 @@ import { EditJobForm } from './EditJobForm';
 import { ImeiWarning } from './ImeiWarning';
 import { MovementsCard } from '@/features/l4/L4Actions';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
+import { DeadlinePicker } from './DeadlinePicker';
 
 export function JobDetailPage() {
   const { id = '' } = useParams();
@@ -60,6 +61,8 @@ export function JobDetailPage() {
   const [assigning, setAssigning] = useState(false);
   const [editing, setEditing] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
+  const [timerEditing, setTimerEditing] = useState(false);
+  const [timerValue, setTimerValue] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const unassign = useMutation({
     mutationFn: () => api.post(`/jobs/${id}/unassign`, {}),
@@ -67,6 +70,16 @@ export function JobDetailPage() {
       toast.success('Job taken back from the engineer');
       setUnassigning(false);
       void queryClient.invalidateQueries();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const saveTimer = useMutation({
+    mutationFn: () => api.patch<{ dueAt: string | null }>(`/jobs/${id}/deadline`, { dueAt: timerValue }),
+    onSuccess: () => {
+      toast.success(timerValue ? 'Job timer updated' : 'Job timer removed');
+      setTimerEditing(false);
+      void queryClient.invalidateQueries({ queryKey: ['jobs'] });
+      void queryClient.invalidateQueries({ queryKey: ['reminders'] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -132,6 +145,9 @@ export function JobDetailPage() {
               </Link>
               {!closed && (!user?.branch || user.branch.id === job.branch.id) && (
                 <>
+                  <Button size="sm" variant="secondary" onClick={() => { setTimerValue(job.dueAt); setTimerEditing(true); }}>
+                    ⏱ {job.dueAt ? 'Edit timer' : 'Add timer'}
+                  </Button>
                   <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
                     ✏️ Edit job sheet
                   </Button>
@@ -176,6 +192,15 @@ export function JobDetailPage() {
       </div>
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit job sheet ${job.jobNumber}`} size="lg">
         {editing && <EditJobForm job={job} onDone={() => setEditing(false)} />}
+      </Modal>
+      <Modal open={timerEditing} onClose={() => setTimerEditing(false)} title={`Job timer · ${job.jobNumber}`}>
+        {timerEditing && <div className="space-y-4">
+          <DeadlinePicker value={timerValue} onChange={setTimerValue} />
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setTimerEditing(false)}>Cancel</Button>
+            <Button loading={saveTimer.isPending} onClick={() => saveTimer.mutate()}>Save timer</Button>
+          </div>
+        </div>}
       </Modal>
       <ConfirmDialog
         open={unassigning}
