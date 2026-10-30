@@ -302,6 +302,29 @@ export function WorkPanel({ job }: { job: JobDto }) {
                 <span>{formatCurrency(job.quotedAmount ?? 0)}</span>
               </li>
             </ul>
+            {job.estimateOptions && job.estimateOptions.length > 0 && (
+              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/50 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wider text-indigo-900">
+                  Engineer Proposed Options ({job.estimateOptions.length})
+                </div>
+                <div className="mt-2 space-y-2">
+                  {job.estimateOptions.map((opt, i) => (
+                    <div
+                      key={opt.id}
+                      className={`flex items-start justify-between gap-3 rounded-md border p-2.5 text-xs ${opt.isApproved ? 'border-emerald-500 bg-emerald-50/80' : 'border-indigo-100 bg-white'}`}
+                    >
+                      <div>
+                        <div className="font-semibold text-slate-800">
+                          {opt.title} {opt.isApproved && <span className="ml-1 rounded bg-emerald-600 px-1.5 py-0.5 text-[10px] font-bold text-white">APPROVED BY CUSTOMER</span>}
+                        </div>
+                        {opt.description && <div className="mt-0.5 text-slate-600">{opt.description}</div>}
+                      </div>
+                      <div className="font-bold text-slate-900">{formatCurrency(opt.amount)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {job.approvedAmount !== null && job.status !== 'AWAITING_APPROVAL' && job.status !== 'CUSTOMER_REJECTED' && (
               <p className="mt-2 text-xs text-emerald-700">
                 ✓ Customer agreed to {formatCurrency(job.approvedAmount)}
@@ -406,12 +429,18 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
     ? job.estimateLines.map((l) => ({ faultId: l.fault?.id ?? null, priceId: null, partId: l.part?.id ?? null, description: l.description ?? '', amount: l.amount }))
     : job.faults.map((f) => ({ faultId: f.id, priceId: null, description: f.priceLabel ?? '', amount: f.price ?? ('' as unknown as number) }));
 
+  const initialOptions: DiagnosisInput['options'] = (job.estimateOptions && job.estimateOptions.length > 0)
+    ? job.estimateOptions.map((o) => ({ id: o.id, title: o.title, description: o.description ?? '', amount: o.amount }))
+    : [];
+
   const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<DiagnosisInput, unknown, DiagnosisData>({
     resolver: zodResolver(diagnosisSchema),
-    defaultValues: { notes: job.diagnosisNotes ?? '', lines: initialLines },
+    defaultValues: { notes: job.diagnosisNotes ?? '', lines: initialLines, options: initialOptions },
   });
   const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
+  const { fields: optionFields, append: appendOption, remove: removeOption } = useFieldArray({ control, name: 'options' });
   const lines = watch('lines');
+  const options = watch('options');
   // Parts added by code in this session (name/price shown on the line).
   const [partInfo, setPartInfo] = useState<Record<string, { code: string; name: string; price: number }>>(() =>
     Object.fromEntries(job.estimateLines.flatMap((l) => (l.part ? [[l.part.id, { code: l.part.code, name: l.part.name, price: l.amount }]] : []))),
@@ -557,6 +586,68 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
         </div>
       </div>
 
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h4 className="text-sm font-semibold text-indigo-950">Propose Alternative Options (Optional)</h4>
+            <p className="text-xs text-indigo-700">Give the CCO 2–3 options to present to the customer (e.g. Option 1: Original Part ₹3,500, Option 2: Compatible Part ₹2,200).</p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => appendOption({ title: `Option ${(optionFields.length + 1)}`, description: '', amount: '' as unknown as number })}
+          >
+            + Add option
+          </Button>
+        </div>
+        {optionFields.length > 0 ? (
+          <div className="mt-3 space-y-3">
+            {optionFields.map((field, idx) => (
+              <div key={field.id} className="grid grid-cols-1 gap-2 rounded-md border border-indigo-200 bg-white p-3 sm:grid-cols-12 sm:items-center">
+                <div className="sm:col-span-4">
+                  <input
+                    {...register(`options.${idx}.title`)}
+                    placeholder="e.g. Compatible Screen"
+                    className={inputClass}
+                  />
+                  {errors.options?.[idx]?.title && <p className="mt-1 text-xs text-red-600">{errors.options[idx]?.title?.message}</p>}
+                </div>
+                <div className="sm:col-span-5">
+                  <input
+                    {...register(`options.${idx}.description`)}
+                    placeholder="Notes (e.g. 1 month warranty)"
+                    className={inputClass}
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <input
+                    {...register(`options.${idx}.amount`)}
+                    type="number"
+                    step="0.01"
+                    placeholder="Amount ₹"
+                    className={inputClass}
+                  />
+                  {errors.options?.[idx]?.amount && <p className="mt-1 text-xs text-red-600">{errors.options[idx]?.amount?.message}</p>}
+                </div>
+                <div className="flex justify-end sm:col-span-1">
+                  <button
+                    type="button"
+                    onClick={() => removeOption(idx)}
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                    title="Remove option"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500 italic">No alternative options added. The standard line total below will be sent as the default quote.</p>
+        )}
+      </div>
+
       <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3">
         <div className="text-sm text-slate-600">
           Total estimate
@@ -576,9 +667,17 @@ function DiagnosisFormInner({ job, faults, prices, onDone }: { job: JobDto; faul
 
 function ApprovalForm({ job, decision, onDone }: { job: JobDto; decision: 'APPROVED' | 'REJECTED'; onDone: () => void }) {
   const queryClient = useQueryClient();
-  const { register, handleSubmit, setError, formState: { errors } } = useForm<ApprovalInput, unknown, ApprovalData>({
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(() => {
+    if (job.estimateOptions && job.estimateOptions.length > 0) {
+      const approved = job.estimateOptions.find((o) => o.isApproved);
+      return approved ? approved.id : job.estimateOptions[0]!.id;
+    }
+    return null;
+  });
+
+  const { register, handleSubmit, setError, setValue, formState: { errors } } = useForm<ApprovalInput, unknown, ApprovalData>({
     resolver: zodResolver(approvalSchema),
-    defaultValues: { decision, note: '' },
+    defaultValues: { decision, note: '', selectedOptionId },
   });
   const save = useMutation({
     mutationFn: (data: ApprovalData) => api.post(`/jobs/${job.id}/approval`, data),
@@ -591,10 +690,65 @@ function ApprovalForm({ job, decision, onDone }: { job: JobDto; decision: 'APPRO
   });
 
   return (
-    <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
+    <form onSubmit={handleSubmit((d) => save.mutate({ ...d, selectedOptionId: decision === 'APPROVED' ? selectedOptionId : null }))} className="space-y-4">
       <p className="text-sm text-slate-600">
-        {job.customer.name} · estimate <span className="font-semibold">{formatCurrency(job.quotedAmount ?? 0)}</span>
+        Customer: <strong>{job.customer.name}</strong> ({job.customer.phone})
       </p>
+
+      {decision === 'APPROVED' && job.estimateOptions && job.estimateOptions.length > 0 && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 space-y-2">
+          <div className="text-xs font-semibold text-indigo-950 uppercase tracking-wide">
+            Select the option agreed with the customer:
+          </div>
+          <div className="space-y-2">
+            {job.estimateOptions.map((opt) => (
+              <label
+                key={opt.id}
+                className={`flex cursor-pointer items-start justify-between rounded-md border p-2.5 transition ${selectedOptionId === opt.id ? 'border-brand-600 bg-brand-50/80 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <input
+                    type="radio"
+                    name="estimateOptionChoice"
+                    checked={selectedOptionId === opt.id}
+                    onChange={() => setSelectedOptionId(opt.id)}
+                    className="mt-0.5 size-4 accent-brand-600"
+                  />
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{opt.title}</div>
+                    {opt.description && <div className="text-xs text-slate-600">{opt.description}</div>}
+                  </div>
+                </div>
+                <div className="text-sm font-bold text-slate-900">{formatCurrency(opt.amount)}</div>
+              </label>
+            ))}
+            <label
+              className={`flex cursor-pointer items-start justify-between rounded-md border p-2.5 transition ${selectedOptionId === null ? 'border-brand-600 bg-brand-50/80 ring-1 ring-brand-500' : 'border-slate-200 bg-white hover:bg-slate-50'}`}
+            >
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="radio"
+                  name="estimateOptionChoice"
+                  checked={selectedOptionId === null}
+                  onChange={() => setSelectedOptionId(null)}
+                  className="mt-0.5 size-4 accent-brand-600"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Default Line Item Total</div>
+                  <div className="text-xs text-slate-600">Standard sum of fault/part estimates</div>
+                </div>
+              </div>
+              <div className="text-sm font-bold text-slate-900">{formatCurrency(job.quotedAmount ?? 0)}</div>
+            </label>
+          </div>
+        </div>
+      )}
+
+      {(!job.estimateOptions || job.estimateOptions.length === 0) && (
+        <p className="text-sm text-slate-600">
+          Estimate: <span className="font-semibold">{formatCurrency(job.quotedAmount ?? 0)}</span>
+        </p>
+      )}
       <Field
         label={decision === 'APPROVED' ? 'Note (optional)' : "Customer's reason"}
         required={decision === 'REJECTED'}

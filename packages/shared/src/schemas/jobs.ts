@@ -421,7 +421,26 @@ export const estimateLineSchema = z
   .refine((l) => l.faultId || l.partId || l.description, { message: 'Select a fault or describe the work', path: ['description'] })
   .refine((l) => l.priceId || l.partId || (l.amount !== null && l.amount !== undefined), { message: 'Enter amount', path: ['amount'] });
 
+export const estimateOptionSchema = z.object({
+  id: z.uuid().optional(),
+  title: z.string().trim().min(1, 'Title is required').max(100),
+  description: optionalText(500),
+  amount: z.coerce.number('Enter valid amount').min(0, 'Enter valid amount').max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
+});
+export type EstimateOptionInput = z.input<typeof estimateOptionSchema>;
+export type EstimateOptionData = z.output<typeof estimateOptionSchema>;
+
+export type JobEstimateOptionDto = {
+  id: string;
+  title: string;
+  description: string | null;
+  amount: number;
+  isApproved: boolean;
+  createdAt: string;
+};
+
 export const diagnosisSchema = z.object({
+  options: z.array(estimateOptionSchema).max(10).optional().default([]),
   notes: z.string().trim().min(3, 'Describe what you found').max(2000),
   lines: z.array(estimateLineSchema).min(1, 'Add at least one item').max(30),
 });
@@ -431,6 +450,7 @@ export type DiagnosisData = z.output<typeof diagnosisSchema>;
 export const approvalSchema = z
   .object({
     decision: z.enum(['APPROVED', 'REJECTED']),
+    selectedOptionId: z.uuid().nullish(),
     note: optionalText(500),
   })
   .refine((v) => v.decision === 'APPROVED' || v.note, { message: 'Enter the customer\'s reason', path: ['note'] });
@@ -693,6 +713,7 @@ export type JobDto = {
     priceLabel: string | null;
     amount: number;
   }[];
+  estimateOptions: JobEstimateOptionDto[];
   photos: JobPhotoDto[];
 };
 

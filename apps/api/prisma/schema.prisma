@@ -455,6 +455,7 @@ model Job {
   assignedEngineer User?             @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
   approvedBy       User?             @relation("JobApprovedBy", fields: [approvedById], references: [id])
   estimateLines    JobEstimateLine[]
+  estimateOptions  JobEstimateOption[]
   faults           JobFault[]
   photos           JobPhoto[]
   payments         Payment[]
@@ -626,6 +627,22 @@ model JobEstimateLine {
 
   @@index([jobId])
   @@map("job_estimate_lines")
+}
+
+/// Engineer proposed estimate options (e.g. Option A: Screen only, Option B: Screen + Battery).
+model JobEstimateOption {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  jobId       String   @map("job_id") @db.Uuid
+  title       String   // e.g. "Option 1: Compatible Screen" or "Option 2: Original Screen"
+  description String?  // details/notes for this option
+  amount      Decimal  @db.Decimal(10, 2)
+  isApproved  Boolean  @default(false) @map("is_approved")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@map("job_estimate_options")
 }
 
 /// Engineer-to-engineer hand-over. The job moves only when the receiving engineer accepts.

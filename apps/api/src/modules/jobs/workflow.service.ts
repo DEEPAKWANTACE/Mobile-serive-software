@@ -114,6 +114,17 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
     }, { actor, remark: `Diagnosed: ${data.notes}` });
     await tx.jobEstimateLine.deleteMany({ where: { jobId: id } });
     await tx.jobEstimateLine.createMany({ data: lines.map((l) => ({ ...l, jobId: id })) });
+    if (data.options && data.options.length > 0) {
+      await tx.jobEstimateOption.deleteMany({ where: { jobId: id } });
+      await tx.jobEstimateOption.createMany({
+        data: data.options.map((opt) => ({
+          jobId: id,
+          title: opt.title,
+          description: opt.description ?? null,
+          amount: opt.amount,
+        })),
+      });
+    }
     await recordAudit(
       {
         actorId: actor.sub,
@@ -132,21 +143,51 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
 
 // ─── Customer approval (CCO) ────────────────────────────────────────────────
 
-export async function decideApproval(id: string, { decision, note }: ApprovalData, actor: Actor) {
+export async function decideApproval(id: string, { decision, selectedOptionId, note }: ApprovalData, actor: Actor) {
   const access = await loadForAccess(id, actor);
   if (access.status !== 'AWAITING_APPROVAL') throw notAllowed(access.status);
-  const { quotedAmount } = await prisma.job.findUniqueOrThrow({ where: { id }, select: { quotedAmount: true } });
+  const job = await prisma.job.findUniqueOrThrow({
+    where: { id },
+    select: { quotedAmount: true, estimateOptions: true },
+  });
 
   const approved = decision === 'APPROVED';
   const status: JobStatus = approved ? 'IN_REPAIR' : 'CUSTOMER_REJECTED';
+
+  let finalApprovedAmount = job.quotedAmount;
+  let selectedOptionTitle: string | null = null;
+
+  if (approved && selectedOptionId) {
+    const opt = job.estimateOptions.find((o) => o.id === selectedOptionId);
+    if (opt) {
+      finalApprovedAmount = opt.amount;
+      selectedOptionTitle = opt.title;
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
+    if (approved && selectedOptionId) {
+      await tx.jobEstimateOption.updateMany({
+        where: { jobId: id },
+        data: { isApproved: false },
+      });
+      await tx.jobEstimateOption.update({
+        where: { id: selectedOptionId },
+        data: { isApproved: true },
+      });
+    }
+
+    const approvalNote = selectedOptionTitle
+      ? `Selected: ${selectedOptionTitle}${note ? ` (${note})` : ''}`
+      : note ?? null;
+
     await moveFrom(tx, id, 'AWAITING_APPROVAL', {
       status,
-      customerResponse: note ?? null,
+      customerResponse: approvalNote,
       approvedAt: new Date(),
       approvedById: actor.sub,
-      ...(approved && { approvedAmount: quotedAmount }),
-    }, { actor, remark: approved ? `Customer approved${note ? `: ${note}` : ''}` : `Customer rejected: ${note ?? ''}` });
+      ...(approved && { approvedAmount: finalApprovedAmount, quotedAmount: finalApprovedAmount }),
+    }, { actor, remark: approved ? `Customer approved${approvalNote ? `: ${approvalNote}` : ''}` : `Customer rejected: ${note ?? ''}` });
     await recordAudit(
       {
         actorId: actor.sub,
@@ -154,7 +195,7 @@ export async function decideApproval(id: string, { decision, note }: ApprovalDat
         entityType: 'job',
         entityId: id,
         branchId: access.branchId,
-        metadata: { amount: quotedAmount?.toNumber() ?? null, note: note ?? null },
+        metadata: { amount: finalApprovedAmount?.toNumber() ?? null, note: note ?? null },
         ip: actor.ip,
       },
       tx,

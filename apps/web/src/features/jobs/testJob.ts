@@ -26,6 +26,6 @@ export function makeTestJob(): JobDto {
     location: 'BRANCH' as JobDto['location'], movements: [],
     deliveredAt: null, deliveredTo: null, deliveryNote: null, deliveredBy: null, invoice: null,
     sparePart: null, spareRequestedAt: null, rwrReason: null, rwrNote: null, rwrAt: null,
-    warrantyPeriod: null, warrantyTerms: null, pendingTransfer: null, parts: [], estimateLines: [], photos: [],
+    warrantyPeriod: null, warrantyTerms: null, pendingTransfer: null, parts: [], estimateLines: [], estimateOptions: [], photos: [],
   };
 }
