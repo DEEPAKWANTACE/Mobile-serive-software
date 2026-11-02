@@ -51,7 +51,7 @@ export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, em
       : baseColumns;
 
   return (
-    <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
+    <div className="theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
           <tr>

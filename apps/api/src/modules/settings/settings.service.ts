@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AccessoryOptionDto, BranchWarrantyData, ShopSettingsData, ShopSettingsDto } from '@msm/shared';
+import type { AccessoryOptionDto, BranchWarrantyData, DiagnosisFindingDto, ShopSettingsData, ShopSettingsDto } from '@msm/shared';
 import { HttpError } from '../../lib/http-error.ts';
 import { detectImageType } from '../../lib/image-type.ts';
 import { prisma } from '../../lib/prisma.ts';
@@ -99,4 +99,31 @@ export async function updateAccessoryOption(id: string, data: { name?: string; s
   const current = await prisma.accessoryOption.findUniqueOrThrow({ where: { id }, select: { branchId: true } });
   assertCatalogRow(actor, current.branchId);
   return accessoryDto(await prisma.accessoryOption.update({ where: { id }, data, select: accessorySelect }));
+}
+
+const diagnosisFindingSelect = { id: true, label: true, sortOrder: true, isActive: true } as const;
+
+export async function diagnosisFindings(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingDto[]> {
+  const all = includeInactive && actor.role === 'SUPER_ADMIN';
+  return prisma.diagnosisFinding.findMany({
+    where: all ? {} : { isActive: true },
+    select: diagnosisFindingSelect,
+    orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+  });
+}
+
+export async function createDiagnosisFinding(data: { label: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.diagnosisFinding.create({ data, select: diagnosisFindingSelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.created', entityType: 'diagnosis_finding', entityId: row.id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
+}
+
+export async function updateDiagnosisFinding(id: string, data: { label?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.diagnosisFinding.update({ where: { id }, data, select: diagnosisFindingSelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.updated', entityType: 'diagnosis_finding', entityId: id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
 }

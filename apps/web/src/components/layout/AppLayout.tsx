@@ -7,6 +7,7 @@ import { useShopSettings } from '@/features/settings/useShopSettings';
 import { FindJobModal } from '@/features/jobs/FindJobModal';
 import { navForRole } from './navigation';
 import { ReminderCenter } from '@/features/reminders/ReminderCenter';
+import { ThemePicker } from '@/features/theme/ThemePicker';
 
 export function AppLayout() {
   const { user, logout } = useAuth();
@@ -31,7 +32,7 @@ export function AppLayout() {
 
   const sidebar = (
     <>
-      <div className="flex items-center gap-2.5 border-b border-slate-200 px-4 py-4">
+      <div className="app-chrome flex items-center gap-2.5 border-b border-slate-200 px-4 py-4">
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-600 text-white">
           <Smartphone className="size-5" />
         </span>
@@ -65,18 +66,18 @@ export function AppLayout() {
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
       {/* Desktop sidebar */}
-      <aside className="hidden min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:hidden">{sidebar}</aside>
+      <aside className="app-sidebar hidden min-h-0 w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:hidden">{sidebar}</aside>
 
       {/* Mobile / tablet drawer */}
       {menuOpen && (
         <div className="fixed inset-0 z-40 lg:hidden print:hidden">
           <div className="absolute inset-0 bg-slate-900/40" onClick={() => setMenuOpen(false)} aria-hidden />
-          <aside className="relative flex h-full w-72 max-w-[85%] flex-col bg-white shadow-xl">{sidebar}</aside>
+          <aside className="app-sidebar relative flex h-full w-72 max-w-[85%] flex-col bg-white shadow-xl">{sidebar}</aside>
         </div>
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 print:hidden">
+        <header className="app-chrome flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 print:hidden">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setMenuOpen(true)} aria-label="Open menu" className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden">
               <Menu className="size-5" />
@@ -87,6 +88,7 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            <ThemePicker />
             <ReminderCenter />
             {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const).some((r) => r === user.role) && (
               <button
@@ -113,11 +115,11 @@ export function AppLayout() {
           </div>
         </header>
         <FindJobModal open={findJobOpen} onClose={() => setFindJobOpen(false)} />
-        <main ref={mainRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
+        <main ref={mainRef} className="app-canvas flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
           <div className="grow shrink-0 p-4 sm:p-6 print:p-0">
             <Outlet />
           </div>
-          <footer className="shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
+          <footer className="app-chrome shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
             © {new Date().getFullYear()} {appName} · Repair management system
           </footer>
         </main>

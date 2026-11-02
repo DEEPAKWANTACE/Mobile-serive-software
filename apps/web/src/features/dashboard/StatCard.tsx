@@ -14,19 +14,19 @@ type Props = {
 };
 
 // Status tones (good / warning / critical) are reserved for state; "brand"/"info" mark identity, "default" is neutral.
-const tones: Record<Tone, { badge: string; value: string }> = {
-  default: { badge: 'bg-slate-100 text-slate-600', value: 'text-slate-900' },
-  brand: { badge: 'bg-brand-50 text-brand-600', value: 'text-slate-900' },
-  info: { badge: 'bg-brand-50 text-brand-600', value: 'text-slate-900' },
-  good: { badge: 'bg-emerald-50 text-emerald-700', value: 'text-slate-900' },
-  warning: { badge: 'bg-amber-50 text-amber-700', value: 'text-slate-900' },
-  critical: { badge: 'bg-red-50 text-red-700', value: 'text-red-700' },
+const tones: Record<Tone, { badge: string; value: string; panel: string }> = {
+  default: { badge: 'bg-slate-100 text-slate-600', value: 'text-slate-900', panel: 'bg-white' },
+  brand: { badge: 'bg-brand-100/80 text-brand-700', value: 'text-slate-900', panel: 'bg-gradient-to-br from-brand-50/90 to-white' },
+  info: { badge: 'bg-sky-100 text-sky-700', value: 'text-slate-900', panel: 'bg-gradient-to-br from-sky-50 to-white' },
+  good: { badge: 'bg-emerald-100 text-emerald-700', value: 'text-slate-900', panel: 'bg-gradient-to-br from-emerald-50 to-white' },
+  warning: { badge: 'bg-amber-100 text-amber-700', value: 'text-slate-900', panel: 'bg-gradient-to-br from-amber-50 to-white' },
+  critical: { badge: 'bg-red-100 text-red-700', value: 'text-red-700', panel: 'bg-gradient-to-br from-red-50 to-white' },
 };
 
 export function StatCard({ label, value, to, tone = 'default', icon: Icon, hint }: Props) {
   const t = tones[tone];
   const body = (
-    <div className="group relative h-full rounded-xl bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80 transition hover:-translate-y-0.5 hover:shadow-md">
+    <div className={`group relative h-full rounded-xl ${t.panel} p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80 transition hover:-translate-y-0.5 hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px] leading-tight font-medium text-slate-500">{label}</div>

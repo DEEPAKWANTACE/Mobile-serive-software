@@ -1,5 +1,14 @@
 import { Router } from 'express';
-import { dashboardSummaryQuerySchema, engineerReportQuerySchema, REPORT_ROLES, reportQuerySchema, ROLES, type EngineerReportQuery, type ReportQuery } from '@msm/shared';
+import {
+  dashboardSummaryQuerySchema,
+  engineerReportQuerySchema,
+  REPORT_ROLES,
+  reportQuerySchema,
+  ROLES,
+  type DashboardSummaryQuery,
+  type EngineerReportQuery,
+  type ReportQuery,
+} from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -20,6 +29,6 @@ reportRoutes.get(
   authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS),
   validate({ query: dashboardSummaryQuerySchema }),
   async (req, res) => {
-    res.json(await service.dashboardSummary(res.locals.query as { from?: string; to?: string; branchId?: string }, actorOf(req)));
+    res.json(await service.dashboardSummary(res.locals.query as DashboardSummaryQuery, actorOf(req)));
   },
 );

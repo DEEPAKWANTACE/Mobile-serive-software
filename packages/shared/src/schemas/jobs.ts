@@ -156,6 +156,10 @@ export const PAYMENT_MODES = ['CASH', 'UPI', 'CARD'] as const;
 export type PaymentMode = (typeof PAYMENT_MODES)[number];
 export const PAYMENT_MODE_LABELS: Record<PaymentMode, string> = { CASH: 'Cash', UPI: 'UPI', CARD: 'Card' };
 
+export const JOB_CUSTOMER_TYPES = ['CUSTOMER', 'RETAILER'] as const;
+export type JobCustomerType = (typeof JOB_CUSTOMER_TYPES)[number];
+export const JOB_CUSTOMER_TYPE_LABELS: Record<JobCustomerType, string> = { CUSTOMER: 'Customer', RETAILER: 'Retailer' };
+
 export const PHOTO_MAX_BYTES = 8 * 1024 * 1024;
 export const PHOTO_MAX_PER_UPLOAD = 10;
 
@@ -202,6 +206,8 @@ const intakeExtras = {
     z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullable().optional(),
   ),
   retailer: optionalText(100),
+  /** Walk-in customer by default; select RETAILER when a shop/dealer brings the devices. */
+  customerType: z.enum(JOB_CUSTOMER_TYPES).optional(),
   inwardById: z.uuid().nullish(),
   phoneDamaged: z.boolean().optional(),
   warranty: z.enum(WARRANTY_STATUSES).nullish(),
@@ -215,6 +221,53 @@ const intakeExtras = {
 
 const imeiField = optionalText(15).refine((v) => !v || isValidImei(v), 'Invalid IMEI (must be 15 digits)');
 const serialField = optionalText(30).refine((v) => !v || /^[A-Za-z0-9-]{4,30}$/.test(v), 'Invalid serial number');
+
+const reportedFaultSchema = z.object({ faultId: z.uuid(), priceId: z.uuid().nullish() });
+
+/** One phone or accessory received under a job sheet. */
+export const jobDeviceSchema = z
+  .object({
+    jobType: z.enum(['MOBILE', 'ACCESSORY']).default('MOBILE'),
+    accessoryName: optionalText(100),
+    brandId: z.uuid('Select a brand').nullish(),
+    deviceModelId: z.uuid('Select a model').nullish(),
+    manualBrand: optionalText(100),
+    manualModel: optionalText(100),
+    manualFault: optionalText(500),
+    imei: imeiField,
+    imei2: imeiField,
+    serialNumber: serialField,
+    color: optionalText(30),
+    faults: z
+      .array(reportedFaultSchema)
+      .max(20)
+      .default([])
+      .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault'),
+    customerComplaint: optionalText(1000),
+    accessories: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
+    accessoriesOther: optionalText(200),
+    conditionNotes: optionalText(1000),
+    physicalConditionRemark: optionalText(1000),
+  })
+  .superRefine((v, ctx) => {
+    if (!v.manualFault?.trim() && v.faults.length === 0 && !v.customerComplaint?.trim()) {
+      ctx.addIssue({ code: 'custom', message: 'Select a fault or enter the problem', path: ['faults'] });
+    }
+    if (v.jobType === 'MOBILE') {
+      const manual = !!v.manualBrand || !!v.manualModel;
+      if (manual) {
+        if (!v.manualBrand) ctx.addIssue({ code: 'custom', message: 'Enter a brand', path: ['manualBrand'] });
+        if (!v.manualModel) ctx.addIssue({ code: 'custom', message: 'Enter a model', path: ['manualModel'] });
+      } else {
+        if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
+        if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
+      }
+    } else if (!v.accessoryName) {
+      ctx.addIssue({ code: 'custom', message: 'Accessory name is required', path: ['accessoryName'] });
+    }
+  });
+export type JobDeviceInput = z.input<typeof jobDeviceSchema>;
+export type JobDeviceData = z.output<typeof jobDeviceSchema>;
 
 /**
  * Job sheet. IMEI/serial are optional at intake (a dead phone may not show them) and are
@@ -236,20 +289,23 @@ export const jobCreateSchema = z
     color: optionalText(30),
     /** Each reported fault, optionally with the chosen price option (null = cost to be decided). */
     faults: z
-      .array(z.object({ faultId: z.uuid(), priceId: z.uuid().nullish() }))
-      .min(1, 'Select at least one fault')
+      .array(reportedFaultSchema)
       .max(20)
+      .default([])
       .refine((f) => new Set(f.map((x) => x.faultId)).size === f.length, 'Duplicate fault'),
     customerComplaint: optionalText(1000),
     accessories: z.array(z.string().trim().min(1).max(100)).max(30).default([]),
     accessoriesOther: optionalText(200),
     conditionNotes: optionalText(1000),
     physicalConditionRemark: optionalText(1000),
+    /** New multi-device shape. When omitted, the legacy top-level device fields are used. */
+    devices: z.array(jobDeviceSchema).min(1, 'Add at least one device').max(10, 'At most 10 devices per job sheet').optional(),
     /** Every new job enters the assigned engineer's diagnosis/repair queue. */
     engineerId: z.uuid('Assign an engineer'),
     /** Only Super Admin chooses the branch; branch staff always use their own. */
     branchId: z.uuid().nullish(),
     ...intakeExtras,
+    customerType: z.enum(JOB_CUSTOMER_TYPES).default('CUSTOMER'),
     advance: z
       .object({
         amount: z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
@@ -260,13 +316,16 @@ export const jobCreateSchema = z
   })
   .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] })
   .superRefine((v, ctx) => {
+    if (v.customerType === 'RETAILER' && !v.retailer?.trim()) {
+      ctx.addIssue({ code: 'custom', message: 'Enter the retailer / shop name', path: ['retailer'] });
+    }
     if (v.dueAt && new Date(v.dueAt).getTime() <= Date.now()) {
       ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
     }
-    if (!v.manualFault?.trim() && (!v.faults || v.faults.length === 0)) {
+    if (!v.devices?.length && !v.manualFault?.trim() && v.faults.length === 0 && !v.customerComplaint?.trim()) {
       ctx.addIssue({ code: 'custom', message: 'Select at least one fault or enter problem manually', path: ['faults'] });
     }
-    if (v.jobType === 'MOBILE') {
+    if (!v.devices?.length && v.jobType === 'MOBILE') {
       const manual = !!v.manualBrand || !!v.manualModel;
       if (manual) {
         if (!v.manualBrand) ctx.addIssue({ code: 'custom', message: 'Enter a brand', path: ['manualBrand'] });
@@ -275,7 +334,7 @@ export const jobCreateSchema = z
         if (!v.brandId) ctx.addIssue({ code: 'custom', message: 'Select a brand', path: ['brandId'] });
         if (!v.deviceModelId) ctx.addIssue({ code: 'custom', message: 'Select a model', path: ['deviceModelId'] });
       }
-    } else {
+    } else if (!v.devices?.length) {
       if (!v.accessoryName) ctx.addIssue({ code: 'custom', message: 'Accessory name is required', path: ['accessoryName'] });
     }
     if (v.skipDiagnosis) {
@@ -304,8 +363,13 @@ export const jobEditSchema = z.object({
   accessoriesOther: optionalText(200),
   conditionNotes: optionalText(1000),
   physicalConditionRemark: optionalText(1000),
+  /** Replaces the complete device list; allowed only before engineer diagnosis. */
+  devices: z.array(jobDeviceSchema).min(1, 'Add at least one device').max(10, 'At most 10 devices per job sheet').optional(),
   ...intakeExtras,
 }).superRefine((v, ctx) => {
+  if (v.customerType === 'RETAILER' && !v.retailer?.trim()) {
+    ctx.addIssue({ code: 'custom', message: 'Enter the retailer / shop name', path: ['retailer'] });
+  }
   if (v.dueAt && new Date(v.dueAt).getTime() <= Date.now()) {
     ctx.addIssue({ code: 'custom', message: 'Choose a future completion time', path: ['dueAt'] });
   }
@@ -438,11 +502,18 @@ export type JobEstimateOptionDto = {
   createdAt: string;
 };
 
-export const diagnosisSchema = z.object({
-  options: z.array(estimateOptionSchema).max(10).optional().default([]),
-  notes: z.string().trim().min(3, 'Describe what you found').max(2000),
-  lines: z.array(estimateLineSchema).min(1, 'Add at least one item').max(30),
-});
+export const diagnosisSchema = z
+  .object({
+    options: z.array(estimateOptionSchema).max(10).optional().default([]),
+    /** Super Admin-managed preset findings; free-text notes remain available. */
+    findingIds: z.array(z.uuid()).max(10).default([]),
+    notes: optionalText(2000),
+    lines: z.array(estimateLineSchema).min(1, 'Add at least one item').max(30),
+    deadRiskRequested: z.boolean().default(false),
+    deadRiskNote: optionalText(500),
+  })
+  .refine((v) => v.findingIds.length > 0 || !!v.notes, { message: 'Select a finding or describe what you found', path: ['notes'] })
+  .refine((v) => !v.deadRiskRequested || !!v.deadRiskNote, { message: 'Explain the dead-device risk', path: ['deadRiskNote'] });
 export type DiagnosisInput = z.input<typeof diagnosisSchema>;
 export type DiagnosisData = z.output<typeof diagnosisSchema>;
 
@@ -450,11 +521,27 @@ export const approvalSchema = z
   .object({
     decision: z.enum(['APPROVED', 'REJECTED']),
     selectedOptionId: z.uuid().nullish(),
+    /** Optional negotiated amount entered by the CCO while recording approval. */
+    amount: z.coerce.number().min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullish(),
     note: optionalText(500),
   })
   .refine((v) => v.decision === 'APPROVED' || v.note, { message: 'Enter the customer\'s reason', path: ['note'] });
 export type ApprovalInput = z.input<typeof approvalSchema>;
 export type ApprovalData = z.output<typeof approvalSchema>;
+
+/** CCO acknowledgement required separately when the engineer flags dead-device risk. */
+export const deadRiskApprovalSchema = z.object({
+  approved: z.literal(true, 'Dead-risk approval must be confirmed'),
+  note: optionalText(500),
+});
+export type DeadRiskApprovalData = z.output<typeof deadRiskApprovalSchema>;
+
+/** Change an already customer-approved estimate after negotiation. */
+export const negotiatedEstimateSchema = z.object({
+  amount: z.coerce.number('Enter valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
+  note: z.string().trim().min(3, 'Enter the negotiation reason').max(500),
+});
+export type NegotiatedEstimateData = z.output<typeof negotiatedEstimateSchema>;
 
 export const statusChangeSchema = z.object({
   status: z.enum(JOB_STATUSES),
@@ -623,6 +710,8 @@ export type JobListItemDto = {
   serialNumber: string | null;
   remark: string | null;
   retailer: string | null;
+  customerType: JobCustomerType;
+  deviceCount: number;
   inwardBy: string | null;
   repairedAt: string | null;
   readyAt: string | null;
@@ -632,6 +721,27 @@ export type JobListItemDto = {
 
 export type JobPhotoDto = { id: string; kind: PhotoKind; createdAt: string };
 
+export type JobDeviceDto = {
+  id: string;
+  jobType: 'MOBILE' | 'ACCESSORY';
+  accessoryName: string | null;
+  brand: { id: string; name: string } | null;
+  model: { id: string; name: string } | null;
+  manualBrand: string | null;
+  manualModel: string | null;
+  manualFault: string | null;
+  imei: string | null;
+  imei2: string | null;
+  serialNumber: string | null;
+  color: string | null;
+  customerComplaint: string | null;
+  accessories: string[];
+  accessoriesOther: string | null;
+  conditionNotes: string | null;
+  physicalConditionRemark: string | null;
+  faults: { id: string; name: string; priceLabel: string | null; price: number | null }[];
+};
+
 export type JobDto = {
   id: string;
   jobNumber: string;
@@ -640,6 +750,8 @@ export type JobDto = {
   dueAt: string | null;
   branch: { id: string; code: string; name: string; address: string | null; phone: string | null };
   customer: CustomerDto;
+  customerType: JobCustomerType;
+  devices: JobDeviceDto[];
   jobType: 'MOBILE' | 'ACCESSORY';
   accessoryName: string | null;
   brand: { id: string; name: string } | null;
@@ -663,12 +775,17 @@ export type JobDto = {
   assignedEngineer: { id: string; name: string } | null;
   assignedAt: string | null;
   diagnosisNotes: string | null;
+  diagnosisFindings: { id: string; label: string }[];
   diagnosedAt: string | null;
   quotedAmount: number | null;
   approvedAmount: number | null;
   approvedAt: string | null;
   approvedBy: { id: string; name: string } | null;
   customerResponse: string | null;
+  deadRiskRequested: boolean;
+  deadRiskNote: string | null;
+  deadRiskApprovedAt: string | null;
+  deadRiskApprovedBy: { id: string; name: string } | null;
   repairedAt: string | null;
   readyAt: string | null;
   currentBranch: { id: string; code: string; name: string; type: 'SERVICE_CENTER' | 'MAIN_OFFICE' };

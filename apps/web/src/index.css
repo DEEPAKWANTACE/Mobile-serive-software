@@ -8,6 +8,30 @@
   --color-brand-700: #1a50b1;
 }
 
+:root {
+  /* Steel Blue is the LSUV signature default; ThemeProvider replaces these. */
+  --app-bg: #0f1419;
+  --app-bg-2: #171f26;
+  --app-surface: #171f26;
+  --app-surface-2: #1b2632;
+  --app-text: #e2e6e9;
+  --app-signal: #70a6db;
+  --app-signal-ink: #0f1419;
+  --app-line: color-mix(in srgb, var(--app-text) 13%, var(--app-bg));
+  --app-line-2: color-mix(in srgb, var(--app-text) 22%, var(--app-bg));
+  --app-muted: color-mix(in srgb, var(--app-text) 66%, var(--app-bg));
+  --app-dim: color-mix(in srgb, var(--app-text) 46%, var(--app-bg));
+
+  /* Existing brand utilities automatically follow the chosen accent. */
+  --color-brand-50: color-mix(in srgb, var(--app-signal) 12%, var(--app-bg));
+  --color-brand-100: color-mix(in srgb, var(--app-signal) 24%, var(--app-bg));
+  --color-brand-200: color-mix(in srgb, var(--app-signal) 38%, var(--app-bg));
+  --color-brand-500: color-mix(in srgb, var(--app-signal) 88%, var(--app-text));
+  --color-brand-600: var(--app-signal);
+  --color-brand-700: color-mix(in srgb, var(--app-signal) 82%, var(--app-bg));
+  --color-brand-800: color-mix(in srgb, var(--app-signal) 68%, var(--app-bg));
+}
+
 html,
 body,
 #root {
@@ -16,10 +40,199 @@ body,
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply antialiased;
+  background: var(--app-bg);
+  color: var(--app-text);
+}
+
+/* Map the app's neutral Tailwind utilities onto the active palette. Status
+   colours remain untouched, so payment/job signals keep their meaning. */
+html[data-theme] .bg-white { background-color: var(--app-surface); }
+html[data-theme] [class~='bg-white/90'] { background-color: color-mix(in srgb, var(--app-surface) 90%, transparent); }
+html[data-theme] .bg-slate-50 { background-color: var(--app-bg-2); }
+html[data-theme] [class~='bg-slate-50/50'] { background-color: color-mix(in srgb, var(--app-bg-2) 50%, transparent); }
+html[data-theme] [class~='bg-slate-50/60'] { background-color: color-mix(in srgb, var(--app-bg-2) 60%, transparent); }
+html[data-theme] .bg-slate-100 { background-color: var(--app-surface-2); }
+html[data-theme] .bg-slate-200 { background-color: var(--app-line-2); }
+html[data-theme] .bg-slate-400 { background-color: var(--app-dim); }
+html[data-theme] [class~='hover:bg-slate-50']:hover { background-color: var(--app-bg-2); }
+html[data-theme] [class~='hover:bg-slate-100']:hover { background-color: var(--app-surface-2); }
+html[data-theme] [class~='disabled:bg-slate-100']:disabled { background-color: var(--app-surface-2); }
+
+html[data-theme] .text-slate-300 { color: color-mix(in srgb, var(--app-text) 38%, var(--app-bg)); }
+html[data-theme] .text-slate-400 { color: var(--app-dim); }
+html[data-theme] .text-slate-500 { color: var(--app-muted); }
+html[data-theme] .text-slate-600 { color: color-mix(in srgb, var(--app-text) 74%, var(--app-bg)); }
+html[data-theme] .text-slate-700 { color: color-mix(in srgb, var(--app-text) 84%, var(--app-bg)); }
+html[data-theme] .text-slate-800 { color: color-mix(in srgb, var(--app-text) 92%, var(--app-bg)); }
+html[data-theme] .text-slate-900 { color: var(--app-text); }
+html[data-theme] [class~='hover:text-slate-800']:hover,
+html[data-theme] [class~='hover:text-slate-900']:hover { color: var(--app-text); }
+
+html[data-theme] .border-slate-100 { border-color: color-mix(in srgb, var(--app-text) 8%, var(--app-bg)); }
+html[data-theme] .border-slate-200 { border-color: var(--app-line); }
+html[data-theme] .border-slate-300,
+html[data-theme] .border-slate-400 { border-color: var(--app-line-2); }
+html[data-theme] .divide-slate-100 > :not(:last-child) { border-color: color-mix(in srgb, var(--app-text) 8%, var(--app-bg)); }
+html[data-theme] .divide-slate-200 > :not(:last-child) { border-color: var(--app-line); }
+html[data-theme] .ring-slate-200 { --tw-ring-color: var(--app-line); }
+html[data-theme] [class~='ring-slate-200/80'] { --tw-ring-color: color-mix(in srgb, var(--app-line) 80%, transparent); }
+html[data-theme] .ring-slate-300 { --tw-ring-color: var(--app-line-2); }
+
+html[data-theme] .bg-brand-600.text-white,
+html[data-theme] .bg-brand-700.text-white { color: var(--app-signal-ink); }
+
+html[data-theme] :where(input:not([type='checkbox']):not([type='radio']):not([type='file']), select, textarea),
+html[data-theme] dialog:not(.theme-dialog) {
+  background-color: var(--app-surface);
+  color: var(--app-text);
+}
+html[data-theme] :where(input, textarea)::placeholder { color: var(--app-dim); }
+html[data-theme] option { background: var(--app-surface); color: var(--app-text); }
+
+/* Subtle accent tint keeps ordinary cards colourful without weakening table
+   contrast. Glass mode replaces this with the stronger frosted treatment. */
+html[data-theme] .theme-panel {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--app-signal) 5%, var(--app-surface)), var(--app-surface) 55%);
+}
+
+html[data-theme] .app-canvas { background: var(--app-bg); }
+html[data-theme] .app-chrome,
+html[data-theme] .app-sidebar { background: var(--app-bg-2); }
+
+/* Theme selector */
+.theme-trigger {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--app-line);
+  border-radius: 9px;
+  background: var(--app-surface);
+  color: var(--app-muted);
+  cursor: pointer;
+  transition: color 150ms, border-color 150ms, transform 150ms;
+}
+.theme-trigger:hover { color: var(--app-text); border-color: var(--app-line-2); transform: translateY(-1px); }
+.theme-trigger:focus-visible { outline: 2px solid var(--app-signal); outline-offset: 2px; }
+.theme-dialog {
+  width: min(920px, calc(100% - 32px));
+  max-height: min(86dvh, 900px);
+  margin: auto;
+  padding: 22px;
+  overflow-y: auto;
+  border: 1px solid var(--app-line);
+  border-radius: 20px;
+  background: var(--app-bg-2);
+  color: var(--app-text);
+  box-shadow: 0 40px 80px -30px #000;
+}
+.theme-dialog::backdrop { background: color-mix(in srgb, #000 55%, transparent); backdrop-filter: blur(4px); }
+.theme-dialog__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.theme-dialog__head h2 { margin: 0; font-size: 1.8rem; font-weight: 700; line-height: 1.15; }
+.theme-dialog__head p { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0; color: var(--app-dim); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.theme-dialog__head p span { padding: 5px 10px; border: 1px solid color-mix(in srgb, var(--app-signal) 45%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--app-signal) 14%, transparent); color: color-mix(in srgb, var(--app-signal) 80%, var(--app-text)); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.theme-signature { margin-left: auto; padding: 7px 11px; border: 1px solid var(--app-line); border-radius: 8px; background: var(--app-surface); color: var(--app-text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.theme-signature:hover { border-color: var(--app-signal); color: var(--app-signal); }
+.theme-close { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--app-muted); cursor: pointer; }
+.theme-close:hover { color: var(--app-text); background: var(--app-surface-2); }
+.glass-toggle { position: relative; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 20px; padding: 14px; border: 1px solid var(--app-line); border-radius: 12px; background: var(--app-surface); color: var(--app-text); text-align: left; cursor: pointer; }
+.glass-toggle b { display: block; font-size: 14px; }
+.glass-toggle small { display: block; margin-top: 2px; color: var(--app-muted); font-size: 12px; }
+.theme-switch { position: relative; width: 44px; height: 24px; flex: none; border: 1px solid var(--app-line-2); border-radius: 999px; background: var(--app-surface-2); transition: background 200ms, border-color 200ms; }
+.theme-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--app-muted); transition: transform 200ms, background 200ms; }
+.glass-toggle[aria-checked='true'] .theme-switch { border-color: var(--app-signal); background: var(--app-signal); }
+.glass-toggle[aria-checked='true'] .theme-switch::after { transform: translateX(20px); background: var(--app-signal-ink); }
+.glass-toggle:focus-visible { outline: 2px solid var(--app-signal); outline-offset: 2px; }
+.theme-group { margin: 0 0 10px; color: var(--app-dim); font-size: 11px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr)); gap: 12px; margin-bottom: 22px; }
+.theme-card { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 1px solid var(--app-line); border-radius: 12px; background: var(--app-surface); color: var(--app-text); font: inherit; text-align: left; cursor: pointer; transition: border-color 150ms, transform 150ms; }
+.theme-card:hover { border-color: var(--app-line-2); transform: translateY(-1px); }
+.theme-card[aria-pressed='true'] { border-color: var(--app-signal); box-shadow: 0 0 0 1px var(--app-signal); }
+.theme-card b { display: flex; align-items: center; gap: 7px; padding-right: 22px; font-size: 15px; }
+.theme-card b em { padding: 3px 6px; border-radius: 999px; background: color-mix(in srgb, var(--app-signal) 18%, transparent); color: var(--app-signal); font-size: 9px; font-style: normal; letter-spacing: 0.06em; text-transform: uppercase; }
+.theme-card small { color: var(--app-muted); font-size: 12px; line-height: 1.45; }
+.theme-card__swatches { display: flex; margin-bottom: 8px; overflow: hidden; border: 1px solid var(--app-line); border-radius: 6px; }
+.theme-card__swatches i { height: 16px; flex: 1; }
+.theme-card__check { position: absolute; top: 10px; right: 10px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; background: var(--app-signal); color: var(--app-signal-ink); }
+.theme-credit { margin: 0; padding-top: 14px; border-top: 1px solid var(--app-line); color: var(--app-dim); font-size: 12px; text-align: center; }
+
+/* LSUV glassmorphism: accent glows behind the app, with frosted panels and
+   navigation floating above them. */
+html[data-glass] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.9;
+  filter: blur(40px);
+  background:
+    radial-gradient(ellipse 60% 45% at 10% 15%, color-mix(in srgb, var(--app-signal) 30%, transparent), transparent 70%),
+    radial-gradient(ellipse 55% 50% at 88% 75%, color-mix(in srgb, var(--app-signal) 25%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 50% 35%, color-mix(in srgb, var(--app-text) 12%, transparent), transparent 70%),
+    radial-gradient(ellipse 40% 35% at 75% 10%, color-mix(in srgb, var(--app-signal) 20%, transparent), transparent 60%);
+}
+html[data-glass] #root { position: relative; z-index: 1; }
+html[data-glass] .app-canvas { background: transparent; }
+html[data-glass] :is(.theme-panel, .glass-toggle, .theme-card, dialog:not(.theme-dialog), [class~='bg-white']) {
+  border-color: color-mix(in srgb, var(--app-line) 20%, #ffffff38);
+  border-top-color: #ffffff59;
+  border-left-color: #ffffff40;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app-surface) 45%, #ffffff14), color-mix(in srgb, var(--app-surface) 35%, transparent));
+  box-shadow: inset 0 1px 1px #ffffff40, inset 0 -1px 1px #0003, 0 8px 32px #0000005e;
+  backdrop-filter: blur(20px) saturate(190%) contrast(105%);
+}
+html[data-glass] .app-chrome {
+  border-color: #ffffff2e;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--app-bg-2) 55%, #ffffff17), color-mix(in srgb, var(--app-bg-2) 40%, transparent));
+  box-shadow: inset 0 1px 1px #ffffff40, 0 10px 30px -5px #0000004d;
+  backdrop-filter: blur(24px) saturate(200%);
+}
+html[data-glass] .app-sidebar {
+  border-right-color: #ffffff2e;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--app-bg-2) 55%, #ffffff0f), color-mix(in srgb, var(--app-bg-2) 42%, transparent));
+  box-shadow: inset 1px 0 1px #ffffff26, 4px 0 24px #00000040;
+  backdrop-filter: blur(24px) saturate(200%);
+}
+html[data-glass] .theme-dialog {
+  border-color: #ffffff4d;
+  border-top-color: #ffffff73;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--app-surface) 60%, #ffffff1f), color-mix(in srgb, var(--app-surface) 45%, transparent));
+  box-shadow: inset 0 1px 2px #fff6, 0 20px 60px #00000080;
+  backdrop-filter: blur(30px) saturate(210%);
+}
+html[data-glass] :where(input:not([type='checkbox']):not([type='radio']):not([type='file']), select, textarea) {
+  border-color: #ffffff2e;
+  background: color-mix(in srgb, var(--app-surface-2) 35%, #ffffff0d);
+  box-shadow: inset 0 1px 2px #0003;
+  backdrop-filter: blur(12px);
+}
+
+@media (max-width: 560px) {
+  .theme-dialog { padding: 16px; }
+  .theme-dialog__head { flex-wrap: wrap; }
+  .theme-dialog__head > div:first-child { flex: 1 1 calc(100% - 50px); }
+  .theme-dialog__head h2 { font-size: 1.5rem; }
+  .theme-signature { order: 3; margin-left: 0; }
+  .theme-grid { grid-template-columns: 1fr; }
 }
 
 @media print {
+  :root {
+    color-scheme: light !important;
+    --app-bg: #ffffff !important;
+    --app-bg-2: #ffffff !important;
+    --app-surface: #ffffff !important;
+    --app-surface-2: #f8fafc !important;
+    --app-text: #0f172a !important;
+    --app-line: #cbd5e1 !important;
+    --app-line-2: #94a3b8 !important;
+    --app-muted: #475569 !important;
+    --app-dim: #64748b !important;
+  }
+
   html,
   body,
   #root {
@@ -29,6 +242,20 @@ body {
 
   body {
     background: white;
+    color: #0f172a;
+  }
+
+  html[data-glass] body::before { display: none; }
+  html[data-theme] :is(.theme-panel, .app-chrome, .app-sidebar, [class~='bg-white']),
+  html[data-glass] :is(.theme-panel, .app-chrome, .app-sidebar, [class~='bg-white']) {
+    background: white;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+  html[data-glass] :where(input, select, textarea, dialog) {
+    background: white;
+    box-shadow: none;
+    backdrop-filter: none;
   }
 
   main,

@@ -2,6 +2,7 @@ import {
   ENGINEER_OPEN_STATUSES,
   REPORT_ROLES,
   roundMoney,
+  type DashboardSummaryQuery,
   type DashboardSummaryDto,
   type EngineerReportQuery,
   type EngineerReportRowDto,
@@ -251,29 +252,47 @@ export async function engineerReport(query: EngineerReportQuery, actor: Actor) {
 
 // ─── Dashboard summary ──────────────────────────────────────────────────────
 
-export async function dashboardSummary(query: { from?: string; to?: string; branchId?: string }, actor: Actor): Promise<DashboardSummaryDto> {
+export async function dashboardSummary(query: DashboardSummaryQuery, actor: Actor): Promise<DashboardSummaryDto> {
+  if (query.from && query.to && query.from > query.to) {
+    throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
+  }
   const branchId = actor.branchId ?? query.branchId;
   const scope: Prisma.JobWhereInput = branchId ? { branchId } : {};
   const range = query.from || query.to ? businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) : null;
 
-  const [jobs, totalOut] = await Promise.all([
+  const [jobs, totalOut, moneyJobs, completedPayments] = await Promise.all([
     prisma.job.findMany({
       where: { ...scope, ...(range && { createdAt: range }) },
       select: {
         status: true,
         createdAt: true,
-        quotedAmount: true,
-        estimatedAmount: true,
-        invoice: { select: { total: true } },
-        payments: { select: { kind: true, amount: true } },
         assignedEngineer: { select: { id: true, name: true, phone: true } },
       },
     }),
     prisma.job.count({ where: { ...scope, status: 'DELIVERED', ...(range && { deliveredAt: range }) } }),
+    prisma.job.findMany({
+      where: { ...scope, status: { in: ['AWAITING_APPROVAL', 'IN_REPAIR', 'SPARE_PENDING', 'REPAIRED', 'TESTING', 'READY_FOR_DELIVERY'] } },
+      select: {
+        status: true,
+        diagnosedAt: true,
+        approvedAt: true,
+        readyAt: true,
+        quotedAmount: true,
+        approvedAmount: true,
+        estimatedAmount: true,
+        invoice: { select: { total: true } },
+        payments: { select: { kind: true, amount: true } },
+      },
+    }),
+    prisma.payment.findMany({
+      where: {
+        ...(range && { createdAt: range }),
+        job: { ...scope, status: { in: ['READY_FOR_DELIVERY', 'RWR', 'DELIVERED'] } },
+      },
+      select: { jobId: true, kind: true, mode: true, amount: true },
+    }),
   ]);
   const open = jobs.filter((j) => j.status !== 'DELIVERED' && j.status !== 'CANCELLED');
-  const money = jobs.filter((j) => j.status !== 'CANCELLED').map((j) => jobMoney(j));
-  const sum = (k: 'totalAmount' | 'paidAmount') => roundMoney(money.reduce((s, m) => s + m[k], 0));
   const perEngineer = new Map<string, { engineerId: string; engineer: string; phone: string | null; pending: number }>();
   for (const j of open) {
     if (!j.assignedEngineer) continue;
@@ -282,6 +301,37 @@ export async function dashboardSummary(query: { from?: string; to?: string; bran
     perEngineer.set(row.engineerId, row);
   }
 
+  const isInMetricRange = (date: Date | null) => !range || inRange(date, range);
+  const readyToCollect = moneyJobs.filter((j) => j.status === 'READY_FOR_DELIVERY' && isInMetricRange(j.readyAt));
+  const pendingApproval = moneyJobs.filter((j) => j.status === 'AWAITING_APPROVAL' && isInMetricRange(j.diagnosedAt));
+  const approvedUnderRepairStatuses = new Set(['IN_REPAIR', 'SPARE_PENDING', 'REPAIRED', 'TESTING']);
+  const approvedUnderRepair = moneyJobs.filter((j) => approvedUnderRepairStatuses.has(j.status) && isInMetricRange(j.approvedAt));
+
+  const readyToCollectAmount = roundMoney(
+    readyToCollect.reduce((sum, job) => sum + Math.max(0, jobMoney(job).balance), 0),
+  );
+  const pendingApprovalAmount = roundMoney(
+    pendingApproval.reduce((sum, job) => sum + ((job.quotedAmount ?? job.estimatedAmount)?.toNumber() ?? 0), 0),
+  );
+  const approvedUnderRepairAmount = roundMoney(
+    approvedUnderRepair.reduce((sum, job) => sum + ((job.approvedAmount ?? job.quotedAmount ?? job.estimatedAmount)?.toNumber() ?? 0), 0),
+  );
+
+  const completedReceivedByMode = { CASH: 0, UPI: 0, CARD: 0 };
+  for (const payment of completedPayments) {
+    const signed = (payment.kind === 'REFUND' ? -1 : 1) * payment.amount.toNumber();
+    completedReceivedByMode[payment.mode] += signed;
+  }
+  completedReceivedByMode.CASH = roundMoney(completedReceivedByMode.CASH);
+  completedReceivedByMode.UPI = roundMoney(completedReceivedByMode.UPI);
+  completedReceivedByMode.CARD = roundMoney(completedReceivedByMode.CARD);
+  const selectedPayments = query.paymentMode
+    ? completedPayments.filter((payment) => payment.mode === query.paymentMode)
+    : completedPayments;
+  const completedReceivedAmount = query.paymentMode
+    ? completedReceivedByMode[query.paymentMode]
+    : roundMoney(Object.values(completedReceivedByMode).reduce((sum, amount) => sum + amount, 0));
+
   return {
     totalJobs: jobs.length,
     totalIn: jobs.length,
@@ -289,9 +339,16 @@ export async function dashboardSummary(query: { from?: string; to?: string; bran
     pending: open.length,
     underRepair: open.filter((j) => (ENGINEER_OPEN_STATUSES as readonly string[]).includes(j.status)).length,
     over15Days: open.filter((j) => Date.now() - j.createdAt.getTime() >= 15 * DAY).length,
-    totalAmount: sum('totalAmount'),
-    totalPaid: sum('paidAmount'),
-    totalBalance: roundMoney(sum('totalAmount') - sum('paidAmount')),
+    readyToCollectAmount,
+    readyToCollectCount: readyToCollect.length,
+    pendingApprovalAmount,
+    pendingApprovalCount: pendingApproval.length,
+    approvedUnderRepairAmount,
+    approvedUnderRepairCount: approvedUnderRepair.length,
+    completedReceivedAmount,
+    completedReceivedCount: new Set(selectedPayments.map((payment) => payment.jobId)).size,
+    completedReceivedByMode,
+    paymentMode: query.paymentMode ?? null,
     engineerPending: [...perEngineer.values()].sort((a, b) => b.pending - a.pending),
   };
 }

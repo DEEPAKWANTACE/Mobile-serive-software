@@ -4,6 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mobile Service Management</title>
+    <script>
+      // Restore the saved palette before React paints to avoid a light/dark flash.
+      try {
+        const root = document.documentElement;
+        const saved = JSON.parse(localStorage.getItem('mss-theme-palette') || 'null');
+        const names = ['--app-bg', '--app-bg-2', '--app-surface', '--app-surface-2', '--app-text', '--app-signal', '--app-signal-ink'];
+        if (saved && Array.isArray(saved.colors) && saved.colors.length === names.length) {
+          saved.colors.forEach((color, index) => root.style.setProperty(names[index], color));
+          root.dataset.theme = saved.id;
+          root.dataset.themeMode = saved.mode;
+          root.style.colorScheme = saved.mode;
+        } else {
+          root.dataset.theme = 'steel-blue';
+          root.dataset.themeMode = 'dark';
+          root.style.colorScheme = 'dark';
+        }
+        if (localStorage.getItem('mss-glass') === '1') root.dataset.glass = '';
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

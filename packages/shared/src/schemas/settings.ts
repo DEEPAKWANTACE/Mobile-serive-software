@@ -48,3 +48,11 @@ export const accessoryOptionsQuerySchema = z.object({
   scope: z.enum(['effective', 'branch', 'global']).default('effective'),
 });
 export type AccessoryOptionDto = { id: string; name: string; sortOrder: number; isActive: boolean; branchId: string | null; isGlobal: boolean };
+
+/** Preset findings shown in the engineer's diagnosis popup. */
+export const diagnosisFindingSchema = z.object({
+  label: z.string().trim().min(2, 'Enter a finding').max(200),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+export const diagnosisFindingUpdateSchema = diagnosisFindingSchema.partial().extend({ isActive: z.boolean().optional() });
+export type DiagnosisFindingDto = { id: string; label: string; sortOrder: number; isActive: boolean };

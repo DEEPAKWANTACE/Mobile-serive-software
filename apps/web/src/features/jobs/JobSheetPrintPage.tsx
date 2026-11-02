@@ -85,7 +85,10 @@ function PrintCheckbox({ checked, children }: { checked: boolean; children: Reac
 }
 
 function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
-  const accessories = [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])];
+  const multipleDevices = job.devices.length > 1;
+  const accessories = multipleDevices
+    ? job.devices.flatMap((device) => [...device.accessories, ...(device.accessoriesOther ? [device.accessoriesOther] : [])])
+    : [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])];
   const normalizedAccessories = accessories.map((accessory) => accessory.trim().toLocaleLowerCase());
   const accessoryChecked = (...names: string[]) => names.some((name) => normalizedAccessories.includes(name.toLocaleLowerCase()));
   const standardAccessoryNames = new Set(['sim card', 'sim', 'memory card', 'memory', 'back cover', 'cover']);
@@ -96,6 +99,16 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}`.trim()
       : `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()
   );
+  const deviceName = (device: JobDto['devices'][number]) => device.accessoryName ?? (
+    device.manualBrand || device.manualModel
+      ? `${device.manualBrand ?? ''} ${device.manualModel ?? ''}`.trim()
+      : `${device.brand?.name ?? ''} ${device.model?.name ?? ''}`.trim()
+  );
+  const deviceProblem = (device: JobDto['devices'][number]) => [
+    ...device.faults.map((fault) => fault.name),
+    ...(device.manualFault ? [device.manualFault] : []),
+    ...(device.customerComplaint ? [device.customerComplaint] : []),
+  ].join(', ');
   return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[196mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
     <header className="relative border-b border-slate-700 px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
       <div className="font-bold">Inward Slip</div>
@@ -109,25 +122,43 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Mobile"><span className="whitespace-nowrap">{job.customer.phone}</span></Row>
       <Row label="Address">{job.customer.address ?? job.customer.city}</Row>
       <Row label="Alternate"><span className="whitespace-nowrap">{job.customer.altPhone}</span></Row>
+      <Row label="Received as">{job.customerType === 'RETAILER' ? `Retailer${job.retailer ? ` · ${job.retailer}` : ''}` : 'Customer'}</Row>
       <Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row>
       <Row label="Engineer">{job.assignedEngineer?.name}</Row>
     </div>
-    <div className="space-y-1 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:py-1">
-      <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row>
-      <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
-        <Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
-        <Row label="Colour">{job.color}</Row>
+    {multipleDevices ? (
+      <div className="border-b border-slate-700 py-2 print:shrink-0 print:py-1">
+        <div className="mb-1 font-semibold">Items ({job.devices.length})</div>
+        <div className="divide-y divide-slate-300 border border-slate-400">
+          {job.devices.map((device, index) => {
+            const received = [...device.accessories, ...(device.accessoriesOther ? [device.accessoriesOther] : [])];
+            return (
+              <div key={device.id} className="grid grid-cols-[1.2fr_1fr] gap-x-2 px-1.5 py-1 text-[0.9em]">
+                <div><strong>{index + 1}. {deviceName(device)}</strong>{device.color ? ` · ${device.color}` : ''}<br /><span className="font-mono">{device.imei ?? device.serialNumber ?? ''}</span></div>
+                <div><strong>Problem:</strong> {deviceProblem(device) || '—'}{received.length ? <><br /><strong>Received:</strong> {received.join(', ')}</> : null}</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
-        <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>
-        <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>
+    ) : <>
+      <div className="space-y-1 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:py-1">
+        <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row>
+        <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
+          <Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
+          <Row label="Colour">{job.color}</Row>
+        </div>
+        <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
+          <Row label="IMEI 1"><span className="font-mono">{job.imei}</span></Row>
+          <Row label="IMEI 2"><span className="font-mono">{job.imei2}</span></Row>
+        </div>
+        <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>
       </div>
-      <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>
-    </div>
-    <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
-      <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{[...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])].join(', ')}</p><p>{job.customerComplaint}</p></div>
-      <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
-    </div>
+      <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
+        <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{[...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])].join(', ')}</p><p>{job.customerComplaint}</p></div>
+        <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
+      </div>
+    </>}
     <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">
       <div className="col-span-2">
         <div className="grid grid-cols-2 gap-x-4">

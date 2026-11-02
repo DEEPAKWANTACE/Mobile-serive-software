@@ -25,6 +25,7 @@ import { StockLedgerPage } from '@/features/inventory/StockLedgerPage';
 import { StockPage } from '@/features/inventory/StockPage';
 import { StockTransfersPage } from '@/features/inventory/StockTransfersPage';
 import { ShopSettingsPage } from '@/features/settings/ShopSettingsPage';
+import { DiagnosisFindingsPage } from '@/features/settings/DiagnosisFindingsPage';
 import { RequireAuth } from '@/features/auth/RequireAuth';
 import { BranchesPage } from '@/features/masters/BranchesPage';
 import { CitiesPage } from '@/features/masters/CitiesPage';
@@ -108,7 +109,10 @@ export const router = createBrowserRouter([
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,
-            children: [{ path: 'settings/shop', element: <ShopSettingsPage /> }],
+            children: [
+              { path: 'settings/shop', element: <ShopSettingsPage /> },
+              { path: 'settings/diagnosis-findings', element: <DiagnosisFindingsPage /> },
+            ],
           },
           {
             element: <RequireAuth roles={[ROLES.BRANCH_MANAGER]} />,

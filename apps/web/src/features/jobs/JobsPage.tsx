@@ -129,8 +129,10 @@ export function ShowJobs() {
   const [from, setFrom] = useState(searchParams.get('from') ?? '');
   const [to, setTo] = useState(searchParams.get('to') ?? '');
   const [status, setStatus] = useState(searchParams.get('status') ?? '');
-  const [engineerId, setEngineerId] = useState(searchParams.get('engineer') ?? '');
-  const [branchId, setBranchId] = useState('');
+  // Keep URL drill-downs and the API on the same canonical filter name. The legacy
+  // `engineer` key is still accepted so old bookmarked dashboard links keep working.
+  const [engineerId, setEngineerId] = useState(searchParams.get('engineerId') ?? searchParams.get('engineer') ?? '');
+  const [branchId, setBranchId] = useState(searchParams.get('branchId') ?? '');
   const [view, setView] = useState(searchParams.get('view') ?? '');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());

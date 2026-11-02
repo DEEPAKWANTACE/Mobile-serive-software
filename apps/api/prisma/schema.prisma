@@ -142,6 +142,7 @@ model User {
   jobsCreated  Job[]         @relation("JobCreatedBy")
   jobsAssigned Job[]         @relation("JobAssignedEngineer")
   jobsApproved Job[]         @relation("JobApprovedBy")
+  deadRiskApprovals Job[]    @relation("JobDeadRiskApprovedBy")
   transfersOut JobTransfer[] @relation("TransferFrom")
   transfersIn  JobTransfer[] @relation("TransferTo")
   jobPhotos    JobPhoto[]
@@ -203,6 +204,7 @@ model Brand {
 
   models DeviceModel[]
   jobs   Job[]
+  jobDevices JobDevice[]
   branch Branch?       @relation(fields: [branchId], references: [id])
 
   @@unique([branchId, name])
@@ -222,6 +224,7 @@ model DeviceModel {
   brand  Brand          @relation(fields: [brandId], references: [id])
   prices ServicePrice[]
   jobs   Job[]
+  jobDevices JobDevice[]
 
   @@unique([brandId, name])
   @@map("device_models")
@@ -262,6 +265,7 @@ model Fault {
   prices        ServicePrice[]
   jobFaults     JobFault[]
   estimateLines JobEstimateLine[]
+  jobDeviceFaults JobDeviceFault[]
   branch        Branch?           @relation(fields: [branchId], references: [id])
 
   @@unique([branchId, name])
@@ -330,6 +334,11 @@ enum JobType {
   ACCESSORY
 }
 
+enum JobCustomerType {
+  CUSTOMER
+  RETAILER
+}
+
 enum WarrantyStatus {
   IN_WARRANTY
   OUT_OF_WARRANTY
@@ -367,6 +376,8 @@ enum TransferStatus {
 model Job {
   /// Dealer / shopkeeper who brought the phone (if not walk-in).
   retailer                String?
+  /// Whether this job was received directly from a customer or through a retailer.
+  customerType            JobCustomerType   @default(CUSTOMER) @map("customer_type")
   /// Staff member who physically took the phone in (defaults to the creator).
   inwardById              String?            @map("inward_by_id") @db.Uuid
   phoneDamaged            Boolean            @default(false) @map("phone_damaged")
@@ -430,6 +441,11 @@ model Job {
   approvedAt              DateTime?          @map("approved_at")
   approvedById            String?            @map("approved_by_id") @db.Uuid
   customerResponse        String?            @map("customer_response")
+  /// Engineer warning that opening/repairing a dead device may make its condition worse.
+  deadRiskRequested       Boolean            @default(false) @map("dead_risk_requested")
+  deadRiskNote            String?            @map("dead_risk_note")
+  deadRiskApprovedAt      DateTime?          @map("dead_risk_approved_at")
+  deadRiskApprovedById    String?            @map("dead_risk_approved_by_id") @db.Uuid
   repairedAt              DateTime?          @map("repaired_at")
   readyAt                 DateTime?          @map("ready_at")
   sparePart               String?            @map("spare_part")
@@ -454,8 +470,11 @@ model Job {
   createdBy        User              @relation("JobCreatedBy", fields: [createdById], references: [id])
   assignedEngineer User?             @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
   approvedBy       User?             @relation("JobApprovedBy", fields: [approvedById], references: [id])
+  deadRiskApprovedBy User?           @relation("JobDeadRiskApprovedBy", fields: [deadRiskApprovedById], references: [id])
   estimateLines    JobEstimateLine[]
   estimateOptions  JobEstimateOption[]
+  devices          JobDevice[]
+  diagnosisFindings JobDiagnosisFinding[]
   faults           JobFault[]
   photos           JobPhoto[]
   payments         Payment[]
@@ -470,6 +489,56 @@ model Job {
   @@index([currentBranchId, status])
   @@index([branchId, dueAt])
   @@map("jobs")
+}
+
+/// One physical device or accessory received under a job sheet. Legacy Job device columns
+/// remain as a first-device snapshot for backwards compatibility with reports and invoices.
+model JobDevice {
+  id                      String       @id @default(uuid(7)) @db.Uuid
+  jobId                   String       @map("job_id") @db.Uuid
+  sortOrder               Int          @default(0) @map("sort_order")
+  jobType                 JobType      @default(MOBILE) @map("job_type")
+  accessoryName           String?      @map("accessory_name")
+  brandId                 String?      @map("brand_id") @db.Uuid
+  deviceModelId           String?      @map("device_model_id") @db.Uuid
+  manualBrand             String?      @map("manual_brand")
+  manualModel             String?      @map("manual_model")
+  manualFault             String?      @map("manual_fault")
+  imei                    String?
+  imei2                   String?
+  serialNumber            String?      @map("serial_number")
+  color                   String?
+  customerComplaint       String?      @map("customer_complaint")
+  accessories             String[]
+  accessoriesOther        String?      @map("accessories_other")
+  conditionNotes          String?      @map("condition_notes")
+  physicalConditionRemark String?      @map("physical_condition_remark")
+  createdAt               DateTime     @default(now()) @map("created_at")
+  updatedAt               DateTime     @updatedAt @map("updated_at")
+
+  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  brand       Brand?       @relation(fields: [brandId], references: [id])
+  deviceModel DeviceModel? @relation(fields: [deviceModelId], references: [id])
+  faults      JobDeviceFault[]
+
+  @@index([jobId, sortOrder])
+  @@index([deviceModelId])
+  @@index([imei])
+  @@map("job_devices")
+}
+
+/// Reported faults for one device within a multi-device job sheet.
+model JobDeviceFault {
+  jobDeviceId String   @map("job_device_id") @db.Uuid
+  faultId     String   @map("fault_id") @db.Uuid
+  priceLabel  String?  @map("price_label")
+  price       Decimal? @db.Decimal(10, 2)
+
+  jobDevice JobDevice @relation(fields: [jobDeviceId], references: [id], onDelete: Cascade)
+  fault     Fault     @relation(fields: [faultId], references: [id])
+
+  @@id([jobDeviceId, faultId])
+  @@map("job_device_faults")
 }
 
 /// Personal follow-up reminder. Job deadlines and approval tasks are generated from Job rows.
@@ -553,6 +622,35 @@ model AccessoryOption {
   @@unique([branchId, name])
   @@index([branchId, isActive])
   @@map("accessory_options")
+}
+
+/// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
+model DiagnosisFinding {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  label     String   @unique
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs JobDiagnosisFinding[]
+
+  @@index([isActive, sortOrder])
+  @@map("diagnosis_findings")
+}
+
+/// Selected diagnosis presets on a job. labelSnapshot preserves the wording used at diagnosis time.
+model JobDiagnosisFinding {
+  jobId             String @map("job_id") @db.Uuid
+  diagnosisFindingId String @map("diagnosis_finding_id") @db.Uuid
+  labelSnapshot     String @map("label_snapshot")
+
+  job              Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  diagnosisFinding DiagnosisFinding @relation(fields: [diagnosisFindingId], references: [id])
+
+  @@id([jobId, diagnosisFindingId])
+  @@index([diagnosisFindingId])
+  @@map("job_diagnosis_findings")
 }
 
 /// Private image stored via the storage driver; served only through an authorised endpoint.

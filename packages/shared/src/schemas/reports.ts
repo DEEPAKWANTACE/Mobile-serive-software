@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ROLES, type Role } from '../roles.js';
 import { businessDate } from './accounts.js';
+import { PAYMENT_MODES, type PaymentMode } from './jobs.js';
 
 export const REPORT_ROLES: readonly Role[] = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS];
 
@@ -107,7 +108,10 @@ export const dashboardSummaryQuerySchema = z.object({
   from: businessDate.optional(),
   to: businessDate.optional(),
   branchId: z.uuid().optional(),
+  /** Applies only to money actually received; quote/balance cards do not have a payment mode. */
+  paymentMode: z.enum(PAYMENT_MODES).optional(),
 });
+export type DashboardSummaryQuery = z.output<typeof dashboardSummaryQuerySchema>;
 
 export type DashboardSummaryDto = {
   totalJobs: number;
@@ -116,8 +120,19 @@ export type DashboardSummaryDto = {
   pending: number; // open now
   underRepair: number; // with an engineer now
   over15Days: number;
-  totalAmount: number;
-  totalPaid: number;
-  totalBalance: number;
+  /** Positive balance still due on jobs that became ready for collection in the period. */
+  readyToCollectAmount: number;
+  readyToCollectCount: number;
+  /** Engineer quote total waiting for the customer's answer in the period. */
+  pendingApprovalAmount: number;
+  pendingApprovalCount: number;
+  /** Approved amount on jobs that entered repair in the period and are still in repair. */
+  approvedUnderRepairAmount: number;
+  approvedUnderRepairCount: number;
+  /** Net payments received in the period for jobs that are now completed or delivered. */
+  completedReceivedAmount: number;
+  completedReceivedCount: number;
+  completedReceivedByMode: Record<PaymentMode, number>;
+  paymentMode: PaymentMode | null;
   engineerPending: { engineerId: string; engineer: string; phone: string | null; pending: number }[];
 };

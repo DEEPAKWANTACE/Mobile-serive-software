@@ -58,6 +58,14 @@ export async function decideApproval(req: Request<{ id: string }>, res: Response
   res.json(await workflow.decideApproval(req.params.id, req.body, actorOf(req)));
 }
 
+export async function approveDeadRisk(req: Request<{ id: string }>, res: Response) {
+  res.json(await workflow.approveDeadRisk(req.params.id, req.body, actorOf(req)));
+}
+
+export async function updateNegotiatedEstimate(req: Request<{ id: string }>, res: Response) {
+  res.json(await workflow.updateNegotiatedEstimate(req.params.id, req.body, actorOf(req)));
+}
+
 export async function changeStatus(req: Request<{ id: string }>, res: Response) {
   res.json(await workflow.changeStatus(req.params.id, req.body, actorOf(req)));
 }

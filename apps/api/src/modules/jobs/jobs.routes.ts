@@ -18,6 +18,8 @@ import {
   deliverySchema,
   partRequestSchema,
   approvalSchema,
+  deadRiskApprovalSchema,
+  negotiatedEstimateSchema,
   rwrSchema,
   spareHoldSchema,
   spareReceivedSchema,
@@ -161,6 +163,18 @@ jobRoutes.post(
   authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
   validate({ params: idParamSchema, body: approvalSchema }),
   controller.decideApproval,
+);
+jobRoutes.post(
+  '/:id/dead-risk-approval',
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
+  validate({ params: idParamSchema, body: deadRiskApprovalSchema }),
+  controller.approveDeadRisk,
+);
+jobRoutes.patch(
+  '/:id/approved-estimate',
+  authorize(ROLES.BRANCH_MANAGER, ROLES.CCO),
+  validate({ params: idParamSchema, body: negotiatedEstimateSchema }),
+  controller.updateNegotiatedEstimate,
 );
 jobRoutes.post(
   '/:id/status',

@@ -21,6 +21,7 @@ import type {
   JobPaymentData,
   RepairNotesData,
   JobCreateData,
+  JobDeviceData,
   JobDeviceUpdateData,
   JobDto,
   JobHistoryEntryDto,
@@ -43,6 +44,7 @@ import { jobPartSelect, toJobPartDto } from '../inventory/job-part.ts';
 import { nextJobNumber, publicJobNumber } from './job-number.ts';
 import { encryptSecret, decryptSecret } from '../../lib/secret-box.ts';
 import { endAssignment, recordStatus, startAssignment } from './history.ts';
+import { resolveJobDevices } from './device-data.ts';
 
 const isEngineer = (actor: Actor) => actor.role === ROLES.ENGINEER;
 
@@ -182,63 +184,42 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
   // Branch staff create jobs for their own branch; Super Admin picks the branch.
   const branchId = actor.branchId ?? data.branchId;
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select the branch'] });
-  const faultIds = data.faults.map((f) => f.faultId);
-  const priceIds = data.faults.flatMap((f) => (f.priceId ? [f.priceId] : []));
-
-  const [branch, model, faultRows, priceRows] = await Promise.all([
-    prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true } }),
-    data.deviceModelId
-      ? prisma.deviceModel.findUnique({ where: { id: data.deviceModelId }, select: { brandId: true, isActive: true } })
-      : Promise.resolve(null),
-    prisma.fault.findMany({ where: { id: { in: faultIds }, isActive: true }, select: { id: true, name: true, requiresIdProof: true } }),
-    prisma.servicePrice.findMany({
-      where: { id: { in: priceIds } },
-      select: { id: true, faultId: true, deviceModelId: true, label: true, price: true },
-    }),
-  ]);
+  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true } });
   if (!branch || !branch.isActive) throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
-  if (data.jobType === 'MOBILE') {
-    if (data.manualBrand || data.manualModel) {
-      if (!data.manualBrand || !data.manualModel) {
-        throw HttpError.badRequest('Invalid request', {
-          ...(!data.manualBrand && { manualBrand: ['Enter a brand'] }),
-          ...(!data.manualModel && { manualModel: ['Enter a model'] }),
-        });
-      }
-    } else if (!model || !model.isActive || model.brandId !== data.brandId) {
-      throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
-    }
-  }
-  if (faultRows.length !== faultIds.length) {
-    throw HttpError.badRequest('Invalid request', { faults: ['One or more selected faults are invalid'] });
-  }
+
+  const legacyDevice: JobDeviceData = {
+    jobType: data.jobType,
+    accessoryName: data.accessoryName,
+    brandId: data.brandId,
+    deviceModelId: data.deviceModelId,
+    manualBrand: data.manualBrand,
+    manualModel: data.manualModel,
+    manualFault: data.manualFault,
+    imei: data.imei,
+    imei2: data.imei2,
+    serialNumber: data.serialNumber,
+    color: data.color,
+    faults: data.faults,
+    customerComplaint: data.customerComplaint,
+    accessories: data.accessories,
+    accessoriesOther: data.accessoriesOther,
+    conditionNotes: data.conditionNotes,
+    physicalConditionRemark: data.physicalConditionRemark,
+  };
+  const resolvedDevices = await resolveJobDevices(data.devices ?? [legacyDevice]);
+  const primary = resolvedDevices.devices[0]!;
 
   // Anti-theft rule: some faults (e.g. software unlock) require the customer's ID proof.
-  const needsId = faultRows.filter((f) => f.requiresIdProof);
-  if (needsId.length && !photos.ID_PROOF?.length) {
+  if (resolvedDevices.requiresIdProofNames.length && !photos.ID_PROOF?.length) {
     throw HttpError.badRequest('Invalid request', {
-      idProof: [`Aadhaar / ID proof photo is required for: ${needsId.map((f) => f.name).join(', ')}`],
+      idProof: [`Aadhaar / ID proof photo is required for: ${resolvedDevices.requiresIdProofNames.join(', ')}`],
     });
   }
-
-  // Price options are looked up server-side; the client only sends which option was chosen.
-  const priceById = new Map(priceRows.map((p) => [p.id, p]));
-  const lines = data.faults.map(({ faultId, priceId }) => {
-    if (!priceId) return { faultId, priceLabel: null, price: null };
-    const option = priceById.get(priceId);
-    if (!option || option.faultId !== faultId || option.deviceModelId !== data.deviceModelId) {
-      throw HttpError.badRequest('Invalid request', { faults: ['A selected price is not valid for this model'] });
-    }
-    return { faultId, priceLabel: option.label, price: option.price };
-  });
-  const priced = lines.filter((l) => l.price !== null);
   // A total typed by the counter wins; otherwise the sum of the chosen price options.
   const estimatedAmount =
     data.totalAmount !== undefined && data.totalAmount !== null
       ? data.totalAmount
-      : priced.length
-        ? priced.reduce((sum, l) => sum + l.price!.toNumber(), 0)
-        : null;
+      : resolvedDevices.estimatedAmount;
 
   const engineer = data.engineerId ? await findBranchEngineer(branch.id, data.engineerId) : null;
   const inwardById = data.inwardById ? (await findInwardStaff(branch.id, data.inwardById)).id : actor.sub;
@@ -254,6 +235,7 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     totalAmount: _t,
     skipDiagnosis,
     customerAlreadyApproved,
+    devices: _devices,
     ...jobFields
   } = data;
 
@@ -272,6 +254,23 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
       const job = await tx.job.create({
         data: {
           ...jobFields,
+          // Keep legacy fields as a snapshot of the first item for old reports/print layouts.
+          jobType: primary.jobType,
+          accessoryName: primary.accessoryName,
+          brandId: primary.brandId,
+          deviceModelId: primary.deviceModelId,
+          manualBrand: primary.manualBrand,
+          manualModel: primary.manualModel,
+          manualFault: primary.manualFault,
+          imei: primary.imei,
+          imei2: primary.imei2,
+          serialNumber: primary.serialNumber,
+          color: primary.color,
+          customerComplaint: primary.customerComplaint,
+          accessories: primary.accessories,
+          accessoriesOther: primary.accessoriesOther,
+          conditionNotes: primary.conditionNotes,
+          physicalConditionRemark: primary.physicalConditionRemark,
           jobNumber,
           estimatedAmount,
           branchId: branch.id,
@@ -296,7 +295,29 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
               approvedById: actor.sub,
             }),
           }),
-          faults: { create: lines },
+          faults: { create: primary.faults },
+          devices: {
+            create: resolvedDevices.devices.map((device, sortOrder) => ({
+              sortOrder,
+              jobType: device.jobType,
+              accessoryName: device.accessoryName,
+              brandId: device.brandId,
+              deviceModelId: device.deviceModelId,
+              manualBrand: device.manualBrand,
+              manualModel: device.manualModel,
+              manualFault: device.manualFault,
+              imei: device.imei,
+              imei2: device.imei2,
+              serialNumber: device.serialNumber,
+              color: device.color,
+              customerComplaint: device.customerComplaint,
+              accessories: device.accessories,
+              accessoriesOther: device.accessoriesOther,
+              conditionNotes: device.conditionNotes,
+              physicalConditionRemark: device.physicalConditionRemark,
+              faults: { create: device.faults },
+            })),
+          },
           ...(skipDiagnosis && estimatedAmount !== null && {
             estimateLines: { create: [{ description: 'Repair estimate', amount: estimatedAmount, sortOrder: 0 }] },
           }),
@@ -393,6 +414,7 @@ const listSelect = {
   manualBrand: true,
   manualModel: true,
   manualFault: true,
+  customerType: true,
   customer: { select: { name: true, phone: true, city: true } },
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
@@ -417,6 +439,19 @@ const listSelect = {
   transfers: { where: { status: 'PENDING' }, select: { id: true } },
   payments: { select: { kind: true, amount: true } },
   faults: { select: { fault: { select: { name: true } } } },
+  devices: {
+    select: {
+      jobType: true,
+      accessoryName: true,
+      manualBrand: true,
+      manualModel: true,
+      brand: { select: { name: true } },
+      deviceModel: { select: { name: true } },
+      faults: { select: { fault: { select: { name: true } } } },
+      manualFault: true,
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
 } satisfies Prisma.JobSelect;
 
 export async function list(query: JobListQuery, actor: Actor) {
@@ -445,6 +480,13 @@ export async function list(query: JobListQuery, actor: Actor) {
         { manualBrand: contains(query.product) },
         { manualModel: contains(query.product) },
         { accessoryName: contains(query.product) },
+        { devices: { some: { OR: [
+          { brand: { name: contains(query.product) } },
+          { deviceModel: { name: contains(query.product) } },
+          { manualBrand: contains(query.product) },
+          { manualModel: contains(query.product) },
+          { accessoryName: contains(query.product) },
+        ] } } },
       ],
     });
   }
@@ -471,6 +513,17 @@ export async function list(query: JobListQuery, actor: Actor) {
         { manualModel: contains(term) },
         { manualFault: contains(term) },
         { faults: { some: { fault: { name: contains(term) } } } },
+        { devices: { some: { OR: [
+          { imei: { startsWith: term } },
+          { imei2: { startsWith: term } },
+          { serialNumber: contains(term) },
+          { customerComplaint: contains(term) },
+          { manualBrand: contains(term) },
+          { manualModel: contains(term) },
+          { manualFault: contains(term) },
+          { accessoryName: contains(term) },
+          { faults: { some: { fault: { name: contains(term) } } } },
+        ] } } },
       ],
     });
   }
@@ -495,13 +548,18 @@ export async function list(query: JobListQuery, actor: Actor) {
     createdAt: j.createdAt.toISOString(),
     dueAt: j.dueAt?.toISOString() ?? null,
     customer: { name: j.customer.name, phone: j.customer.phone },
-    device: j.jobType === 'ACCESSORY'
-      ? (j.accessoryName ?? 'Accessory')
-      : (j.manualBrand || j.manualModel
-          ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim()
-          : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
+    device: (j.devices.length ? j.devices : [{
+      jobType: j.jobType, accessoryName: j.accessoryName, manualBrand: j.manualBrand, manualModel: j.manualModel,
+      brand: j.brand, deviceModel: j.deviceModel,
+    }]).map((device) => device.jobType === 'ACCESSORY'
+      ? (device.accessoryName ?? 'Accessory')
+      : (device.manualBrand || device.manualModel
+          ? `${device.manualBrand ?? ''} ${device.manualModel ?? ''}`.trim()
+          : `${device.brand?.name ?? ''} ${device.deviceModel?.name ?? ''}`.trim()) || 'Mobile').join(' + '),
     imei: j.imei,
-    faults: [...j.faults.map((f) => f.fault.name), ...(j.manualFault ? [j.manualFault] : [])],
+    faults: j.devices.length
+      ? j.devices.flatMap((device) => [...device.faults.map((f) => f.fault.name), ...(device.manualFault ? [device.manualFault] : [])])
+      : [...j.faults.map((f) => f.fault.name), ...(j.manualFault ? [j.manualFault] : [])],
     branch: j.branch,
     assignedEngineer: j.assignedEngineer,
     assignedAt: j.assignedAt?.toISOString() ?? null,
@@ -521,6 +579,8 @@ export async function list(query: JobListQuery, actor: Actor) {
     serialNumber: j.serialNumber,
     remark: j.customerComplaint,
     retailer: j.retailer,
+    customerType: j.customerType,
+    deviceCount: Math.max(1, j.devices.length),
     inwardBy: j.inwardBy?.name ?? null,
     repairedAt: j.repairedAt?.toISOString() ?? null,
     readyAt: j.readyAt?.toISOString() ?? null,
@@ -543,6 +603,7 @@ const detailSelect = {
   manualBrand: true,
   manualModel: true,
   manualFault: true,
+  customerType: true,
   serialNumber: true,
   color: true,
   customerComplaint: true,
@@ -558,12 +619,17 @@ const detailSelect = {
   assignedEngineer: { select: { id: true, name: true } },
   assignedAt: true,
   diagnosisNotes: true,
+  diagnosisFindings: { select: { diagnosisFindingId: true, labelSnapshot: true } },
   diagnosedAt: true,
   quotedAmount: true,
   approvedAmount: true,
   approvedAt: true,
   approvedBy: { select: { id: true, name: true } },
   customerResponse: true,
+  deadRiskRequested: true,
+  deadRiskNote: true,
+  deadRiskApprovedAt: true,
+  deadRiskApprovedBy: { select: { id: true, name: true } },
   repairedAt: true,
   readyAt: true,
   currentBranch: { select: { id: true, code: true, name: true, type: true } },
@@ -673,6 +739,32 @@ const detailSelect = {
     orderBy: { createdAt: 'asc' },
   },
   photos: { select: { id: true, kind: true, createdAt: true }, orderBy: { createdAt: 'asc' } },
+  devices: {
+    select: {
+      id: true,
+      jobType: true,
+      accessoryName: true,
+      brand: { select: { id: true, name: true } },
+      deviceModel: { select: { id: true, name: true } },
+      manualBrand: true,
+      manualModel: true,
+      manualFault: true,
+      imei: true,
+      imei2: true,
+      serialNumber: true,
+      color: true,
+      customerComplaint: true,
+      accessories: true,
+      accessoriesOther: true,
+      conditionNotes: true,
+      physicalConditionRemark: true,
+      faults: {
+        select: { priceLabel: true, price: true, fault: { select: { id: true, name: true } } },
+        orderBy: { fault: { name: 'asc' } },
+      },
+    },
+    orderBy: { sortOrder: 'asc' },
+  },
 } satisfies Prisma.JobSelect;
 
 /** Loads a job's branch and enforces branch isolation. */
@@ -709,10 +801,13 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     dueAt,
     assignedAt,
     estimatedAmount,
+    devices,
+    diagnosisFindings,
     diagnosedAt,
     quotedAmount,
     approvedAmount,
     approvedAt,
+    deadRiskApprovedAt,
     repairedAt,
     readyAt,
     estimateLines,
@@ -739,6 +834,32 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
   const iso = (d: Date | null) => d?.toISOString() ?? null;
   const mayReadIdentityPhotos = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO].some((role) => role === actor.role);
   const visiblePhotos = mayReadIdentityPhotos ? photos : photos.filter((p) => ENGINEER_VISIBLE_PHOTO_KINDS.includes(p.kind));
+  const mappedDevices = devices.map((device) => ({
+    ...device,
+    model: device.deviceModel,
+    deviceModel: undefined,
+    faults: device.faults.map((fault) => ({ ...fault.fault, priceLabel: fault.priceLabel, price: fault.price?.toNumber() ?? null })),
+  }));
+  const detailDevices = mappedDevices.length ? mappedDevices : [{
+    id: j.id,
+    jobType: j.jobType,
+    accessoryName: j.accessoryName,
+    brand: j.brand,
+    model: deviceModel,
+    manualBrand: j.manualBrand,
+    manualModel: j.manualModel,
+    manualFault: j.manualFault,
+    imei: j.imei,
+    imei2: j.imei2,
+    serialNumber: j.serialNumber,
+    color: j.color,
+    customerComplaint: j.customerComplaint,
+    accessories: j.accessories,
+    accessoriesOther: j.accessoriesOther,
+    conditionNotes: j.conditionNotes,
+    physicalConditionRemark: j.physicalConditionRemark,
+    faults: faults.map((fault) => ({ ...fault.fault, priceLabel: fault.priceLabel, price: fault.price?.toNumber() ?? null })),
+  }];
   return {
     ...rest,
     jobNumber: publicJobNumber(rest.jobNumber),
@@ -747,6 +868,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     assignedAt: iso(assignedAt),
     diagnosedAt: iso(diagnosedAt),
     approvedAt: iso(approvedAt),
+    deadRiskApprovedAt: iso(deadRiskApprovedAt),
     repairedAt: iso(repairedAt),
     readyAt: iso(readyAt),
     spareRequestedAt: iso(spareRequestedAt),
@@ -791,6 +913,8 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
       ? { id: pending.id, from: pending.fromEngineer, to: pending.toEngineer, reason: pending.reason, createdAt: pending.createdAt.toISOString() }
       : null,
     model: deviceModel,
+    devices: detailDevices,
+    diagnosisFindings: diagnosisFindings.map((finding) => ({ id: finding.diagnosisFindingId, label: finding.labelSnapshot })),
     estimatedAmount: estimatedAmount?.toNumber() ?? null,
     quotedAmount: quotedAmount?.toNumber() ?? null,
     approvedAmount: approvedAmount?.toNumber() ?? null,

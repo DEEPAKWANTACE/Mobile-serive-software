@@ -84,9 +84,6 @@ function SettingsForm({ settings }: { settings: ShopSettingsDto }) {
           <Field label="Legal / company name" error={errors.legalName?.message}>
             <input {...register('legalName')} className={inputClass} />
           </Field>
-          <Field label="GSTIN" error={errors.gstin?.message} hint="15 characters, e.g. 29ABCDE1234F1Z5">
-            <input {...register('gstin')} maxLength={15} className={`${inputClass} font-mono uppercase`} />
-          </Field>
           <Field label="Phone" error={errors.phone?.message}>
             <input {...register('phone')} className={inputClass} />
           </Field>

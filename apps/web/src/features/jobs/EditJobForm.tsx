@@ -77,6 +77,7 @@ function Inner({
       accessoriesOther: job.accessoriesOther ?? '',
       conditionNotes: job.conditionNotes ?? '',
       retailer: job.retailer ?? '',
+      customerType: job.customerType,
       inwardById: job.inwardBy?.id ?? null,
       phoneDamaged: job.phoneDamaged,
       warranty: job.warranty,
@@ -90,6 +91,7 @@ function Inner({
   });
   const brandId = watch('brandId');
   const modelId = watch('deviceModelId');
+  const customerType = watch('customerType');
   const { items: models } = useOptions<ModelDto>('models', { brandId: brandId ?? '' }, { enabled: deviceEditable && !!brandId });
   const inwardStaff = useQuery({
     queryKey: ['inward-staff', job.branch.id],
@@ -153,9 +155,23 @@ function Inner({
         <Field label="Address">
           <input {...register('customer.address')} className={inputClass} />
         </Field>
-        <Field label="Retailer" {...err(errors.retailer?.message)}>
-          <input {...register('retailer')} className={inputClass} />
-        </Field>
+        <label className="flex items-center gap-2 pt-6 text-sm">
+          <input
+            type="checkbox"
+            checked={customerType === 'RETAILER'}
+            onChange={(event) => {
+              setValue('customerType', event.target.checked ? 'RETAILER' : 'CUSTOMER', { shouldValidate: true });
+              if (!event.target.checked) setValue('retailer', '');
+            }}
+            className="size-4 accent-brand-600"
+          />
+          Received from a retailer
+        </label>
+        {customerType === 'RETAILER' && (
+          <Field label="Retailer / shop name" required {...err(errors.retailer?.message)}>
+            <input {...register('retailer')} className={inputClass} />
+          </Field>
+        )}
         <Field label="Inward by" {...err(errors.inwardById?.message)}>
           <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
             <option value="">—</option>

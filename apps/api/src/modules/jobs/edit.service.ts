@@ -8,6 +8,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { storage } from '../../lib/storage.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from './jobs.service.ts';
+import { resolveJobDevices, type ResolvedJobDevice } from './device-data.ts';
 
 /** Counter staff of the owning branch (or Super Admin) may correct a job sheet. */
 async function loadForCounterEdit(id: string, actor: Actor) {
@@ -34,6 +35,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       accessoriesOther: true,
       conditionNotes: true,
       retailer: true,
+      customerType: true,
       phoneDamaged: true,
       warranty: true,
       inwardById: true,
@@ -42,6 +44,10 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       dueAt: true,
       customer: { select: { id: true, phone: true, name: true, city: true, altPhone: true, email: true, address: true } },
       faults: { select: { faultId: true, priceLabel: true, price: true, fault: { select: { name: true } } } },
+      devices: {
+        select: { id: true, jobType: true, accessoryName: true, manualBrand: true, manualModel: true, deviceModelId: true },
+        orderBy: { sortOrder: 'asc' },
+      },
       photos: { where: { kind: 'ID_PROOF' }, select: { id: true } },
     },
   });
@@ -51,6 +57,47 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   const track = (field: string, from: unknown, to: unknown) => {
     if (to !== undefined && !same(from, to)) changes[field] = { from: from ?? null, to: to ?? null };
   };
+
+  let replacementDevices: ResolvedJobDevice[] | null = null;
+  let newFaults: { faultId: string; priceLabel: string | null; price: number | null }[] | null = null;
+  if (data.devices) {
+    if (!DEVICE_EDITABLE_STATUSES.includes(access.status) || cur.diagnosedAt) {
+      throw HttpError.conflict('Devices and faults can only be changed before the engineer diagnoses the job');
+    }
+    const resolved = await resolveJobDevices(data.devices);
+    if (resolved.requiresIdProofNames.length && !cur.photos.length) {
+      throw HttpError.badRequest('Invalid request', {
+        devices: [`Add the Aadhaar / ID proof photo first — required for: ${resolved.requiresIdProofNames.join(', ')}`],
+      });
+    }
+    replacementDevices = resolved.devices;
+    const primary = replacementDevices[0]!;
+    newFaults = primary.faults;
+    Object.assign(jobData, {
+      jobType: primary.jobType,
+      accessoryName: primary.accessoryName,
+      brandId: primary.brandId,
+      deviceModelId: primary.deviceModelId,
+      manualBrand: primary.manualBrand,
+      manualModel: primary.manualModel,
+      manualFault: primary.manualFault,
+      imei: primary.imei,
+      imei2: primary.imei2,
+      serialNumber: primary.serialNumber,
+      color: primary.color,
+      customerComplaint: primary.customerComplaint,
+      accessories: primary.accessories,
+      accessoriesOther: primary.accessoriesOther,
+      conditionNotes: primary.conditionNotes,
+      physicalConditionRemark: primary.physicalConditionRemark,
+      ...(data.totalAmount === undefined && { estimatedAmount: resolved.estimatedAmount }),
+    });
+    track(
+      'devices',
+      cur.devices.map((d) => ({ type: d.jobType, model: d.deviceModelId ?? `${d.manualBrand ?? ''} ${d.manualModel ?? ''}`.trim(), accessory: d.accessoryName })),
+      replacementDevices.map((d) => ({ type: d.jobType, model: d.deviceModelId ?? `${d.manualBrand ?? ''} ${d.manualModel ?? ''}`.trim(), accessory: d.accessoryName })),
+    );
+  }
 
   // ── Device & faults (only before diagnosis) ──
   if (data.manualFault !== undefined) {
@@ -63,7 +110,6 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   if ((deviceChanged || data.faults) && (!DEVICE_EDITABLE_STATUSES.includes(access.status) || cur.diagnosedAt)) {
     throw HttpError.conflict('Device and faults can only be changed before the engineer diagnoses the phone');
   }
-  let newFaults: { faultId: string; priceLabel: string | null; price: number | null }[] | null = null;
   if (deviceChanged) {
     if (!deviceModelId || !brandId) throw HttpError.badRequest('Invalid request', { deviceModelId: ['Select a valid model for this brand'] });
     const model = await prisma.deviceModel.findUnique({ where: { id: deviceModelId }, select: { brandId: true, isActive: true } });
@@ -118,7 +164,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   }
 
   // ── Simple fields ──
-  for (const field of ['color', 'customerComplaint', 'accessoriesOther', 'conditionNotes', 'retailer', 'phoneDamaged', 'warranty'] as const) {
+  for (const field of ['color', 'customerComplaint', 'accessoriesOther', 'conditionNotes', 'retailer', 'customerType', 'phoneDamaged', 'warranty'] as const) {
     if (data[field] !== undefined) {
       track(field, cur[field], data[field]);
       // Values are already validated per field by jobEditSchema.
@@ -189,6 +235,47 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
     if (newFaults) {
       await tx.jobFault.deleteMany({ where: { jobId: id } });
       await tx.jobFault.createMany({ data: newFaults.map((f) => ({ ...f, jobId: id })) });
+    }
+    if (!replacementDevices && cur.devices[0]) {
+      const firstDeviceChanges: Prisma.JobDeviceUncheckedUpdateInput = {};
+      for (const field of ['brandId', 'deviceModelId', 'color', 'manualFault', 'customerComplaint', 'accessories', 'accessoriesOther', 'conditionNotes'] as const) {
+        if (jobData[field] !== undefined) (firstDeviceChanges as Record<string, unknown>)[field] = jobData[field];
+      }
+      if (Object.keys(firstDeviceChanges).length) {
+        await tx.jobDevice.update({ where: { id: cur.devices[0].id }, data: firstDeviceChanges });
+      }
+      if (newFaults) {
+        await tx.jobDeviceFault.deleteMany({ where: { jobDeviceId: cur.devices[0].id } });
+        await tx.jobDeviceFault.createMany({ data: newFaults.map((fault) => ({ ...fault, jobDeviceId: cur.devices[0]!.id })) });
+      }
+    }
+    if (replacementDevices) {
+      await tx.jobDevice.deleteMany({ where: { jobId: id } });
+      for (const [sortOrder, device] of replacementDevices.entries()) {
+        await tx.jobDevice.create({
+          data: {
+            jobId: id,
+            sortOrder,
+            jobType: device.jobType,
+            accessoryName: device.accessoryName,
+            brandId: device.brandId,
+            deviceModelId: device.deviceModelId,
+            manualBrand: device.manualBrand,
+            manualModel: device.manualModel,
+            manualFault: device.manualFault,
+            imei: device.imei,
+            imei2: device.imei2,
+            serialNumber: device.serialNumber,
+            color: device.color,
+            customerComplaint: device.customerComplaint,
+            accessories: device.accessories,
+            accessoriesOther: device.accessoriesOther,
+            conditionNotes: device.conditionNotes,
+            physicalConditionRemark: device.physicalConditionRemark,
+            faults: { create: device.faults },
+          },
+        });
+      }
     }
     await recordAudit(
       { actorId: actor.sub, action: 'job.edited', entityType: 'job', entityId: id, branchId: access.branchId, metadata: { changes } as Prisma.InputJsonValue, ip: actor.ip },

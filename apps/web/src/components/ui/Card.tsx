@@ -11,7 +11,7 @@ type Props = {
 
 export function Card({ title, subtitle, icon: Icon, actions, children, className = '' }: Props) {
   return (
-    <section className={`rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80 ${className}`}>
+    <section className={`theme-panel rounded-xl bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80 ${className}`}>
       {title && (
         <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">

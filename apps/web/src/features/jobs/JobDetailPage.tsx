@@ -284,24 +284,50 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
           <Row label="Email">{job.customer.email}</Row>
           <Row label="City">{job.customer.city}</Row>
           <Row label="Address">{job.customer.address}</Row>
+          <Row label="Received as">{job.customerType === 'RETAILER' ? 'Retailer job' : 'Customer job'}</Row>
           <Row label="Retailer">{job.retailer}</Row>
-          <Row label="Device">
-            {job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()}
-          </Row>
-          <Row label="IMEI 1">{job.imei && <span className="font-mono">{job.imei}</span>}</Row>
-          <Row label="IMEI 2">{job.imei2 && <span className="font-mono">{job.imei2}</span>}</Row>
-          <Row label="Serial no.">{job.serialNumber && <span className="font-mono">{job.serialNumber}</span>}</Row>
-          <Row label="Colour">{job.color}</Row>
+          {job.devices.length <= 1 && <>
+            <Row label="Device">
+              {job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim()}
+            </Row>
+            <Row label="IMEI 1">{job.imei && <span className="font-mono">{job.imei}</span>}</Row>
+            <Row label="IMEI 2">{job.imei2 && <span className="font-mono">{job.imei2}</span>}</Row>
+            <Row label="Serial no.">{job.serialNumber && <span className="font-mono">{job.serialNumber}</span>}</Row>
+            <Row label="Colour">{job.color}</Row>
+          </>}
           <Row label="Warranty">{job.warranty && WARRANTY_LABELS[job.warranty]}</Row>
           <Row label="Phone damaged">{job.phoneDamaged ? <span className="font-medium text-amber-700">Yes</span> : 'No'}</Row>
         </dl>
+        {job.devices.length > 1 && (
+          <div className="mt-5">
+            <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">Items on this job sheet</div>
+            <div className="grid gap-3 lg:grid-cols-2">
+              {job.devices.map((device, index) => {
+                const name = device.accessoryName ?? (device.manualBrand || device.manualModel
+                  ? `${device.manualBrand ?? ''} ${device.manualModel ?? ''}`.trim()
+                  : `${device.brand?.name ?? ''} ${device.model?.name ?? ''}`.trim());
+                const received = [...device.accessories, ...(device.accessoriesOther ? [device.accessoriesOther] : [])];
+                const problems = [...device.faults.map((fault) => fault.name), ...(device.manualFault ? [device.manualFault] : [])];
+                return (
+                  <div key={device.id} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 text-sm">
+                    <div className="font-semibold text-slate-900">{index + 1}. {name || 'Unnamed item'}</div>
+                    <div className="mt-1 text-xs text-slate-600">{device.jobType === 'MOBILE' ? 'Mobile / tablet' : 'Accessory'}{device.color ? ` · ${device.color}` : ''}</div>
+                    {(device.imei || device.imei2 || device.serialNumber) && <div className="mt-1 font-mono text-xs text-slate-600">{[device.imei, device.imei2, device.serialNumber].filter(Boolean).join(' · ')}</div>}
+                    <div className="mt-2"><span className="font-medium">Problem:</span> {problems.join(', ') || device.customerComplaint || '—'}</div>
+                    <div className="mt-1"><span className="font-medium">Received:</span> {received.join(', ') || 'No accessories'}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <Modal open={editingDevice} onClose={() => setEditingDevice(false)} title="IMEI / serial number" size="sm">
           {editingDevice && <DeviceForm job={job} onDone={() => setEditingDevice(false)} />}
         </Modal>
       </Card>
       <Card title="Problem & intake">
         <dl className="space-y-4">
-          <Row label="Faults reported">
+          {job.devices.length <= 1 && <Row label="Faults reported">
             <ul className="divide-y divide-slate-100 rounded-md border border-slate-200">
               {job.faults.map((f) => (
                 <li key={f.id} className="flex justify-between gap-3 px-3 py-1.5">
@@ -318,10 +344,13 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
                 </li>
               )}
             </ul>
-          </Row>
-          <Row label="Customer complaint">{job.customerComplaint}</Row>
-          <Row label="Extra added (items received)">{accessories.length ? accessories.join(', ') : 'None'}</Row>
-          <Row label="Physical condition / remark">{job.conditionNotes}</Row>
+          </Row>}
+          {job.devices.length <= 1 && <>
+            <Row label="Customer complaint">{job.customerComplaint}</Row>
+            <Row label="Extra added (items received)">{accessories.length ? accessories.join(', ') : 'None'}</Row>
+            <Row label="Physical condition / remark">{job.conditionNotes}</Row>
+          </>}
+          {job.devices.length > 1 && <Row label="Combined intake">See each item above for its problem, identifiers, and received accessories.</Row>}
           <Row label="Inward by">{job.inwardBy?.name}</Row>
         </dl>
       </Card>

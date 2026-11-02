@@ -17,11 +17,13 @@ import {
   type FaultDto,
   type JobCreateData,
   type JobCreateInput,
+  type JobDeviceData,
   type ModelDto,
   type ModelPriceDto,
   type PhotoKind,
   type AccessoryOptionDto,
   type BranchWarrantyData,
+  jobDeviceSchema,
 } from '@msm/shared';
 import { StickyActions } from '@/components/ui/StickyActions';
 import { Button } from '@/components/ui/Button';
@@ -42,6 +44,44 @@ import { DeadlinePicker } from './DeadlinePicker';
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
 const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [], PHYSICAL_CONDITION: [] });
 
+type ExtraDeviceDraft = {
+  id: string;
+  jobType: 'MOBILE' | 'ACCESSORY';
+  accessoryName: string;
+  manualBrand: string;
+  manualModel: string;
+  manualFault: string;
+  imei: string;
+  imei2: string;
+  serialNumber: string;
+  color: string;
+  customerComplaint: string;
+  accessories: string[];
+  accessoriesOther: string;
+  conditionNotes: string;
+  physicalConditionRemark: string;
+  faults: [];
+};
+
+const extraDevice = (): ExtraDeviceDraft => ({
+  id: crypto.randomUUID(),
+  jobType: 'MOBILE',
+  accessoryName: '',
+  manualBrand: '',
+  manualModel: '',
+  manualFault: '',
+  imei: '',
+  imei2: '',
+  serialNumber: '',
+  color: '',
+  customerComplaint: '',
+  accessories: [],
+  accessoriesOther: '',
+  conditionNotes: '',
+  physicalConditionRemark: '',
+  faults: [],
+});
+
 export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -53,6 +93,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [takeAdvance, setTakeAdvance] = useState(false);
   const [manualDevice, setManualDevice] = useState(false);
   const [manualProblem, setManualProblem] = useState(false);
+  const [extraDevices, setExtraDevices] = useState<ExtraDeviceDraft[]>([]);
 
   const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<
     JobCreateInput,
@@ -62,6 +103,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     resolver: zodResolver(jobCreateSchema),
     defaultValues: {
       customer: { phone: '', name: '', city: '', altPhone: '', email: '', address: '' },
+      customerType: 'CUSTOMER',
       jobType: 'MOBILE',
       accessoryName: '',
       branchId: null,
@@ -98,6 +140,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const modelId = watch('deviceModelId');
   const jobType = watch('jobType');
   const skipDiagnosis = watch('skipDiagnosis');
+  const customerType = watch('customerType');
   const phone = watch('customer.phone');
   const selectedFaults = watch('faults') ?? [];
   const dueAt = watch('dueAt');
@@ -210,7 +253,40 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       document.getElementById('photos')?.scrollIntoView({ behavior: 'smooth' });
       return;
     }
-    submit.mutate({ ...data, advance: takeAdvance ? data.advance : null });
+    const parsedExtras: JobDeviceData[] = [];
+    for (let i = 0; i < extraDevices.length; i += 1) {
+      const parsed = jobDeviceSchema.safeParse(extraDevices[i]);
+      if (!parsed.success) {
+        toast.error(`Device ${i + 2}: ${parsed.error.issues[0]?.message ?? 'Check the entered details'}`);
+        document.getElementById(`extra-device-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+      parsedExtras.push(parsed.data);
+    }
+    const primaryDevice: JobDeviceData = {
+      jobType: data.jobType,
+      accessoryName: data.accessoryName,
+      brandId: data.brandId,
+      deviceModelId: data.deviceModelId,
+      manualBrand: data.manualBrand,
+      manualModel: data.manualModel,
+      manualFault: data.manualFault,
+      imei: data.imei,
+      imei2: data.imei2,
+      serialNumber: data.serialNumber,
+      color: data.color,
+      faults: data.faults,
+      customerComplaint: data.customerComplaint,
+      accessories: data.accessories,
+      accessoriesOther: data.accessoriesOther,
+      conditionNotes: data.conditionNotes,
+      physicalConditionRemark: data.physicalConditionRemark,
+    };
+    submit.mutate({
+      ...data,
+      devices: parsedExtras.length ? [primaryDevice, ...parsedExtras] : undefined,
+      advance: takeAdvance ? data.advance : null,
+    });
   });
 
   const err = (msg?: string) => (msg ? { error: msg } : {});
@@ -230,7 +306,22 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </Card>
       )}
 
-      <Card title="Customer">
+      <Card title={customerType === 'RETAILER' ? 'Retailer contact' : 'Customer'}>
+        <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-sm">
+          <input
+            type="checkbox"
+            checked={customerType === 'RETAILER'}
+            onChange={(e) => {
+              setValue('customerType', e.target.checked ? 'RETAILER' : 'CUSTOMER', { shouldValidate: true });
+              if (!e.target.checked) setValue('retailer', '');
+            }}
+            className="mt-0.5 size-4 accent-brand-600"
+          />
+          <span>
+            <span className="block font-medium text-slate-800">Received from a retailer</span>
+            <span className="text-xs text-slate-500">Leave unchecked for a normal walk-in customer.</span>
+          </span>
+        </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Mobile number" required {...err(errors.customer?.phone?.message)}
             hint={returning ? `Returning customer — ${returning.name}` : undefined}>
@@ -239,15 +330,17 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           <Field label="Alternate mobile" {...err(errors.customer?.altPhone?.message)}>
             <input {...register('customer.altPhone')} inputMode="numeric" maxLength={10} className={inputClass} />
           </Field>
-          <Field label="Customer name" required {...err(errors.customer?.name?.message)}>
+          <Field label={customerType === 'RETAILER' ? 'Contact person' : 'Customer name'} required {...err(errors.customer?.name?.message)}>
             <input {...register('customer.name')} className={inputClass} />
           </Field>
           <Field label="City" {...err(errors.customer?.city?.message)}>
             <input {...register('customer.city')} className={inputClass} />
           </Field>
-          <Field label="Retailer (if from a shop)" {...err(errors.retailer?.message)} hint="Dealer / shopkeeper who brought the phone">
-            <input {...register('retailer')} className={inputClass} />
-          </Field>
+          {customerType === 'RETAILER' && (
+            <Field label="Retailer / shop name" required {...err(errors.retailer?.message)} hint="Dealer or shop that brought the devices">
+              <input {...register('retailer')} className={inputClass} />
+            </Field>
+          )}
           <Field label="Email" {...err(errors.customer?.email?.message)}>
             <input {...register('customer.email')} type="email" className={inputClass} />
           </Field>
@@ -257,7 +350,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </Card>
 
-      <Card title="Device">
+      <Card title="Primary device">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Job sheet type" required className="sm:col-span-2">
             <div className="flex gap-5 pt-2 text-sm">
@@ -379,6 +472,33 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             Device is physically damaged
           </label>
         </div>
+      </Card>
+
+      <Card
+        title="Additional devices / accessories"
+        subtitle="Use one job sheet when the same customer or retailer brings multiple items"
+        actions={
+          <Button type="button" size="sm" variant="secondary" onClick={() => setExtraDevices((rows) => [...rows, extraDevice()])}>
+            + Add item
+          </Button>
+        }
+      >
+        {extraDevices.length ? (
+          <div className="space-y-4">
+            {extraDevices.map((device, index) => (
+              <ExtraDeviceEditor
+                key={device.id}
+                index={index}
+                device={device}
+                accessoryOptions={(accessoryOptions.data ?? []).filter((a) => a.isActive)}
+                onChange={(next) => setExtraDevices((rows) => rows.map((row) => row.id === next.id ? next : row))}
+                onRemove={() => setExtraDevices((rows) => rows.filter((row) => row.id !== device.id))}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">This job sheet currently has one item. Add another phone, tablet, watch, speaker, charger, or other accessory here.</p>
+        )}
       </Card>
 
       <Card title="Problem & estimate">
@@ -606,6 +726,115 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
 }
 
 // ─── Fault picker: category tabs → faults, each with an optional price option ───
+
+function ExtraDeviceEditor({
+  index,
+  device,
+  accessoryOptions,
+  onChange,
+  onRemove,
+}: {
+  index: number;
+  device: ExtraDeviceDraft;
+  accessoryOptions: AccessoryOptionDto[];
+  onChange: (device: ExtraDeviceDraft) => void;
+  onRemove: () => void;
+}) {
+  const set = <K extends keyof ExtraDeviceDraft>(key: K, value: ExtraDeviceDraft[K]) => onChange({ ...device, [key]: value });
+  const toggleAccessory = (name: string) => set(
+    'accessories',
+    device.accessories.includes(name) ? device.accessories.filter((item) => item !== name) : [...device.accessories, name],
+  );
+
+  return (
+    <section id={`extra-device-${index}`} className="rounded-xl border border-brand-200 bg-brand-50/30 p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h3 className="font-semibold text-slate-900">Item {index + 2}</h3>
+          <p className="text-xs text-slate-500">Model, problem and received accessories are stored separately.</p>
+        </div>
+        <Button type="button" size="sm" variant="danger" onClick={onRemove}>Remove</Button>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Item type" required className="sm:col-span-2">
+          <div className="flex gap-5 pt-2 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={device.jobType === 'MOBILE'} onChange={() => set('jobType', 'MOBILE')} className="accent-brand-600" />
+              Mobile / tablet
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={device.jobType === 'ACCESSORY'} onChange={() => set('jobType', 'ACCESSORY')} className="accent-brand-600" />
+              Accessory
+            </label>
+          </div>
+        </Field>
+
+        {device.jobType === 'MOBILE' ? (
+          <>
+            <Field label="Brand" required>
+              <input value={device.manualBrand} onChange={(e) => set('manualBrand', e.target.value)} className={inputClass} placeholder="e.g. Samsung" />
+            </Field>
+            <Field label="Model" required>
+              <input value={device.manualModel} onChange={(e) => set('manualModel', e.target.value)} className={inputClass} placeholder="e.g. Galaxy A52" />
+            </Field>
+            <Field label="IMEI 1" hint="15 digits">
+              <input value={device.imei} onChange={(e) => set('imei', e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" className={`${inputClass} font-mono`} />
+            </Field>
+            <Field label="IMEI 2">
+              <input value={device.imei2} onChange={(e) => set('imei2', e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" className={`${inputClass} font-mono`} />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="Accessory name" required>
+              <input value={device.accessoryName} onChange={(e) => set('accessoryName', e.target.value)} className={inputClass} placeholder="e.g. Smartwatch or charger" />
+            </Field>
+            <Field label="Serial number">
+              <input value={device.serialNumber} onChange={(e) => set('serialNumber', e.target.value)} className={`${inputClass} font-mono uppercase`} />
+            </Field>
+          </>
+        )}
+
+        <Field label="Colour">
+          <input value={device.color} onChange={(e) => set('color', e.target.value)} className={inputClass} />
+        </Field>
+        <Field label="Problem / fault" required>
+          <input value={device.manualFault} onChange={(e) => set('manualFault', e.target.value)} className={inputClass} placeholder="e.g. Dead, display flickering" />
+        </Field>
+        <Field label="Customer complaint" className="sm:col-span-2">
+          <textarea value={device.customerComplaint} onChange={(e) => set('customerComplaint', e.target.value)} rows={2} className={inputClass} />
+        </Field>
+        <Field label="Physical condition">
+          <input value={device.conditionNotes} onChange={(e) => set('conditionNotes', e.target.value)} className={inputClass} placeholder="Scratches, dents, cracks…" />
+        </Field>
+        <Field label="Condition remark">
+          <input value={device.physicalConditionRemark} onChange={(e) => set('physicalConditionRemark', e.target.value)} className={inputClass} />
+        </Field>
+      </div>
+
+      <div className="mt-4 border-t border-brand-200 pt-4">
+        <div className="mb-2 text-sm font-medium text-slate-700">Accessories received with this item</div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {accessoryOptions.map((option) => (
+            <label key={option.id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={device.accessories.includes(option.name)}
+                onChange={() => toggleAccessory(option.name)}
+                className="size-4 accent-brand-600"
+              />
+              {option.name}
+            </label>
+          ))}
+        </div>
+        <Field label="Other received items" className="mt-3">
+          <input value={device.accessoriesOther} onChange={(e) => set('accessoriesOther', e.target.value)} className={inputClass} />
+        </Field>
+      </div>
+    </section>
+  );
+}
 
 type Selected = { faultId: string; priceId?: string | null };
 
