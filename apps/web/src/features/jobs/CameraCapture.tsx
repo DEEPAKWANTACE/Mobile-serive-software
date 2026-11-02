@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 
@@ -9,10 +10,16 @@ type Props = { open: boolean; onClose: () => void; onCapture: (file: File) => vo
  * Needs a secure context: works on localhost and HTTPS, not plain-HTTP LAN addresses.
  */
 export function CameraCapture({ open, onClose, onCapture, title = 'Take photo' }: Props) {
-  return (
+  if (!open) return null;
+
+  // Keep the camera dialog out of the parent form dialog's DOM. Nested native
+  // dialogs behave inconsistently when camera permission or a device picker is
+  // opened, particularly on mobile browsers.
+  return createPortal(
     <Modal open={open} onClose={onClose} title={title} size="lg">
       {open && <CameraView onClose={onClose} onCapture={onCapture} />}
-    </Modal>
+    </Modal>,
+    document.body,
   );
 }
 

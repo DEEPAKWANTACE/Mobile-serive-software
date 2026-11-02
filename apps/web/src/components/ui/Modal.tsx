@@ -24,7 +24,13 @@ export function Modal({ open, onClose, title, children, size = 'md' }: Props) {
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      onClose={(event) => {
+        // React bubbles the dialog close event even though the native event does
+        // not. Without stopping it, closing a nested camera dialog also closes
+        // the form dialog that contains the photo picker.
+        event.stopPropagation();
+        onClose();
+      }}
       className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${widths[size]} overflow-hidden rounded-xl p-0 shadow-xl backdrop:bg-slate-900/40`}
     >
       {open && (

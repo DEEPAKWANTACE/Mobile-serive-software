@@ -26,8 +26,13 @@ export function FaultsPage() {
   const { user } = useAuth();
   const [scopeBranch, setScopeBranch] = useState('');
   const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  // A branch-specific fault may use either a global category or one defined by
+  // that branch. The fault list itself remains branch-only on this admin page.
+  const categoryScope = user?.role === ROLES.SUPER_ADMIN
+    ? (scopeBranch ? { branchId: scopeBranch, scope: 'effective' } : { scope: 'global' })
+    : { scope: 'effective' };
   const { data, isLoading } = useList<FaultDto>('faults', { ...list.params, ...scope });
-  const { items: categories } = useOptions<FaultCategoryDto>('fault-categories', scope);
+  const { items: categories } = useOptions<FaultCategoryDto>('fault-categories', categoryScope);
   const [editing, setEditing] = useState<FaultDto | 'new' | null>(null);
 
   const columns: Column<FaultDto>[] = [
