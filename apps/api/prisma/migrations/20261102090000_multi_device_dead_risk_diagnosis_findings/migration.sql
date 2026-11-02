@@ -77,7 +77,7 @@ INSERT INTO "job_devices" (
 SELECT
     "id", 0, "job_type", "accessory_name", "brand_id", "device_model_id",
     "manual_brand", "manual_model", "manual_fault", "imei", "imei2", "serial_number", "color",
-    "customer_complaint", "accessories", "accessories_other", "condition_notes", "physical_condition_remark",
+    "customer_complaint", COALESCE("accessories", ARRAY[]::TEXT[]), "accessories_other", "condition_notes", "physical_condition_remark",
     "created_at", "updated_at"
 FROM "jobs";
 
