@@ -43,7 +43,7 @@ export function ThemePicker() {
         <div className="theme-dialog__head">
           <div>
             <h2 id="theme-dialog-title">Choose theme</h2>
-            <p>Themes by <span>Preetham Hegade</span> and <span>PSD</span></p>
+            <p>Choose a palette for your workspace</p>
           </div>
           <button
             type="button"
@@ -100,8 +100,6 @@ export function ThemePicker() {
             </div>
           </section>
         ))}
-
-        <p className="theme-credit">Palettes copied from the LSUV theme collection and Midnight Tunershop.</p>
       </dialog>
     </>
   );

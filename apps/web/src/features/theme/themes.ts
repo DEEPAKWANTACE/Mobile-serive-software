@@ -10,13 +10,9 @@ export type ThemeDefinition = {
   signature?: boolean;
 };
 
-/**
- * The complete LSUV / Midnight Tunershop palette collection. Keeping the
- * values together makes the picker, persistence and CSS variables share one
- * source of truth.
- */
+/** Keep palette values together so the picker, persistence and CSS variables
+ * share one source of truth. */
 export const THEMES: readonly ThemeDefinition[] = [
-  { id: 'lsuv', name: 'LSUV', mode: 'dark', description: 'Asphalt black with signal orange, the house colours', colors: ['#0d0e10', '#141518', '#191a1e', '#212227', '#ecebe7', '#ff6b1a', '#1a0b02'] },
   { id: 'dark', name: 'Dark', mode: 'dark', description: 'Dark theme for comfortable viewing in low light', colors: ['#020817', '#030e26', '#04112f', '#1d2839', '#f8fafc', '#3c83f6', '#020817'] },
   { id: 'onyx', name: 'Onyx', mode: 'dark', description: 'Deep obsidian black with sleek metallic platinum accents', colors: ['#0a0a0a', '#121212', '#171717', '#1f1f1f', '#f5f5f5', '#adb6c2', '#0a0a0a'] },
   { id: 'light', name: 'Light', mode: 'light', description: 'Clean light theme for bright environments', colors: ['#ffffff', '#fafafa', '#f5f5f5', '#edf2f7', '#020817', '#3c83f6', '#ffffff'] },

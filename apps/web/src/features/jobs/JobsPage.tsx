@@ -126,7 +126,7 @@ function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
       const desktop = element.clientWidth >= 768;
       const next = desktop
         ? Math.max(4, Math.floor((element.clientHeight - 39) / 42))
-        : Math.max(2, Math.floor(element.clientHeight / 92));
+        : Math.max(1, Math.floor((element.clientHeight - 8) / 92));
       setPageSize((current) => current === next ? current : next);
     };
     fit();
@@ -336,7 +336,7 @@ export function ShowJobs() {
         <div className="shrink-0"><BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} /></div>
       )}
 
-      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-hidden">
+      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-hidden">
         <div className="hidden h-full md:block">
           <DataTable
             columns={columns}
@@ -352,7 +352,7 @@ export function ShowJobs() {
             {...(canBulk && { selected: new Set(selected.keys()), onSelectedChange: changeSelection })}
           />
         </div>
-        <div className="grid h-full content-start gap-2 md:hidden">
+        <div className="job-list-mobile grid min-h-full content-start gap-2 md:hidden">
           {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
             <article key={job.id} className={`h-[84px] overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
               <div className="flex items-start justify-between gap-2">
@@ -375,7 +375,7 @@ export function ShowJobs() {
         </div>
       </div>
 
-      <div className="theme-panel flex h-12 shrink-0 items-center justify-between rounded-lg bg-white px-2 ring-1 ring-slate-200 md:hidden">
+      <div className="job-mobile-footer theme-panel flex shrink-0 items-center justify-between rounded-lg bg-white px-2 ring-1 ring-slate-200 md:hidden">
         <button type="button" onClick={() => setFiltersOpen((open) => !open)} className="relative inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700" aria-expanded={filtersOpen}>
           {filtersOpen ? <X className="size-4" /> : <SlidersHorizontal className="size-4" />} Filters
           {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
