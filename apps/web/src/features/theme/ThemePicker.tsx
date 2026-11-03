@@ -11,6 +11,7 @@ const GROUPS: readonly { mode: ThemeMode; label: string }[] = [
 export function ThemePicker() {
   const { theme, setTheme, glass, setGlass } = useTheme();
   const [open, setOpen] = useState(false);
+  const [activeMode, setActiveMode] = useState<ThemeMode>(theme.mode);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -19,6 +20,10 @@ export function ThemePicker() {
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  useEffect(() => {
+    if (open) setActiveMode(theme.mode);
+  }, [open, theme.mode]);
 
   return (
     <>
@@ -60,6 +65,22 @@ export function ThemePicker() {
           </button>
         </div>
 
+        <div className="theme-tabs" role="tablist" aria-label="Theme type">
+          {GROUPS.map((group) => (
+            <button
+              key={group.mode}
+              type="button"
+              role="tab"
+              aria-selected={activeMode === group.mode}
+              className="theme-tab"
+              onClick={() => setActiveMode(group.mode)}
+            >
+              {group.label}
+              <span>{THEMES.filter((item) => item.mode === group.mode).length}</span>
+            </button>
+          ))}
+        </div>
+
         <button
           type="button"
           role="switch"
@@ -71,11 +92,9 @@ export function ThemePicker() {
           <i className="theme-switch" aria-hidden />
         </button>
 
-        {GROUPS.map((group) => (
-          <section key={group.mode} aria-labelledby={`theme-group-${group.mode}`}>
-            <h3 id={`theme-group-${group.mode}`} className="theme-group">{group.label}</h3>
-            <div className="theme-grid">
-              {THEMES.filter((item) => item.mode === group.mode).map((item) => {
+        <section role="tabpanel" aria-label={GROUPS.find((group) => group.mode === activeMode)?.label}>
+          <div className="theme-grid">
+              {THEMES.filter((item) => item.mode === activeMode).map((item) => {
                 const selected = theme.id === item.id;
                 return (
                   <button
@@ -97,9 +116,8 @@ export function ThemePicker() {
                   </button>
                 );
               })}
-            </div>
-          </section>
-        ))}
+          </div>
+        </section>
       </dialog>
     </>
   );

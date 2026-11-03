@@ -156,6 +156,13 @@ html[data-theme] .app-sidebar { background: var(--app-bg-2); }
 .theme-signature:hover { border-color: var(--app-signal); color: var(--app-signal); }
 .theme-close { display: grid; width: 34px; height: 34px; flex: none; place-items: center; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--app-muted); cursor: pointer; }
 .theme-close:hover { color: var(--app-text); background: var(--app-surface-2); }
+.theme-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 14px; padding: 5px; border: 1px solid var(--app-line); border-radius: 12px; background: var(--app-surface-2); }
+.theme-tab { display: inline-flex; min-height: 38px; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--app-muted); font-size: 13px; font-weight: 700; cursor: pointer; transition: background 150ms, color 150ms, border-color 150ms, box-shadow 150ms; }
+.theme-tab span { display: inline-grid; min-width: 21px; height: 21px; place-items: center; border-radius: 999px; background: color-mix(in srgb, var(--app-text) 8%, transparent); font-size: 10px; }
+.theme-tab:hover { color: var(--app-text); }
+.theme-tab[aria-selected='true'] { border-color: color-mix(in srgb, var(--app-signal) 65%, transparent); background: var(--app-signal); color: var(--app-signal-ink); box-shadow: 0 4px 14px color-mix(in srgb, var(--app-signal) 28%, transparent); }
+.theme-tab[aria-selected='true'] span { background: color-mix(in srgb, var(--app-signal-ink) 18%, transparent); }
+.theme-tab:focus-visible { outline: 2px solid var(--app-signal); outline-offset: 2px; }
 .glass-toggle { position: relative; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 20px; padding: 14px; border: 1px solid var(--app-line); border-radius: 12px; background: var(--app-surface); color: var(--app-text); text-align: left; cursor: pointer; }
 .glass-toggle b { display: block; font-size: 14px; }
 .glass-toggle small { display: block; margin-top: 2px; color: var(--app-muted); font-size: 12px; }
