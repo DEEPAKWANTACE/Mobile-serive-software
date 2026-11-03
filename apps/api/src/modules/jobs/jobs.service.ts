@@ -532,10 +532,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     prisma.job.findMany({
       where,
       select: listSelect,
-      orderBy: [
-        { dueAt: { sort: 'asc', nulls: 'last' } },
-        { createdAt: query.sort === 'oldest' ? 'asc' : 'desc' },
-      ],
+      orderBy: { createdAt: query.sort === 'oldest' ? 'asc' : 'desc' },
       ...pageArgs(query),
     }),
     prisma.job.count({ where }),

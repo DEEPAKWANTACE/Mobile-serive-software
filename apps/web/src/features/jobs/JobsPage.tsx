@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Clock3, Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
   JOB_STATUS_LABELS,
@@ -21,19 +21,17 @@ import { Card } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { Field, inputClass } from '@/components/ui/Field';
-import { FilterBar, FilterSelect, SearchInput } from '@/components/ui/Filters';
+import { FilterSelect, SearchInput } from '@/components/ui/Filters';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Pagination } from '@/components/ui/Pagination';
 import { useAuth } from '@/features/auth/auth-context';
 import { api, ApiError } from '@/lib/api-client';
 import { toQueryString, useList, useOptions } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
-import { formatCurrency, formatDate, formatDateTime, formatJobNumber } from '@/lib/format';
+import { formatCurrency, formatDate, formatJobNumber } from '@/lib/format';
 import { BulkJobActions, bulkActionsFor } from './BulkJobActions';
 import { EditJobForm } from './EditJobForm';
 import { JobLookup } from './JobLookup';
 import { JobStatusBadge } from './JobStatusBadge';
-import { InlineJobStatus } from './InlineJobStatus';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 
@@ -61,13 +59,13 @@ export function JobsPage() {
   ];
 
   return (
-    <div className="space-y-4">
+    <div className={tab === 'show' ? 'flex h-full min-h-0 flex-col gap-2' : 'space-y-4'}>
       <PageHeader
         title={isEngineer ? 'My Jobs' : 'Job Master'}
         description={isEngineer ? 'Jobs assigned to you' : canAdd ? 'Create and manage branch job sheets' : canEdit ? 'Find and manage branch job sheets' : 'View job sheets'}
       />
       {!isEngineer && tabs.length > 1 && (
-        <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+        <div className="flex shrink-0 flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map((t) => (
             <button
               key={t.key}
@@ -118,6 +116,45 @@ const viewParams = (v: string) =>
             : v === 'over15' ? { open: true, minAgeDays: 15 }
               : {};
 
+/** Keep exactly as many records as fit inside the visible Job Master area. */
+function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
+  const [pageSize, setPageSize] = useState(8);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+    const fit = () => {
+      const desktop = element.clientWidth >= 768;
+      const next = desktop
+        ? Math.max(4, Math.floor((element.clientHeight - 39) / 42))
+        : Math.max(2, Math.floor(element.clientHeight / 92));
+      setPageSize((current) => current === next ? current : next);
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [viewport]);
+  return pageSize;
+}
+
+function CompactPager({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (page: number) => void }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(page * pageSize, total);
+  return (
+    <div className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-600">
+      <span className="tabular-nums">{from}–{to} of {total}</span>
+      <button type="button" aria-label="Previous page" disabled={page <= 1} onClick={() => onChange(page - 1)} className="grid size-8 place-items-center rounded-md border border-slate-300 bg-white disabled:opacity-40">
+        <ChevronLeft className="size-4" />
+      </button>
+      <span className="min-w-12 text-center tabular-nums">{page}/{pages}</span>
+      <button type="button" aria-label="Next page" disabled={page >= pages} onClick={() => onChange(page + 1)} className="grid size-8 place-items-center rounded-md border border-slate-300 bg-white disabled:opacity-40">
+        <ChevronRight className="size-4" />
+      </button>
+    </div>
+  );
+}
+
 export function ShowJobs() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === ROLES.SUPER_ADMIN;
@@ -136,6 +173,8 @@ export function ShowJobs() {
   const [view, setView] = useState(searchParams.get('view') ?? '');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
+  const listViewportRef = useRef<HTMLDivElement>(null);
+  const pageSize = useFittedPageSize(listViewportRef);
   const canBulk = bulkActionsFor(user?.role).length > 0;
   const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
   // Clear the selection only when a filter really changes (SearchInput re-sends its value after every render).
@@ -143,7 +182,7 @@ export function ShowJobs() {
 
   const params = {
     page,
-    pageSize: 25,
+    pageSize,
     sort: 'newest',
     search,
     product,
@@ -166,73 +205,38 @@ export function ShowJobs() {
     enabled: !isEngineer && !!engineerBranch,
   });
 
-  const money = (v: number) => <span className="tabular-nums">{formatCurrency(v)}</span>;
-  const nowrap = (v: React.ReactNode) => <span className="whitespace-nowrap">{v ?? '—'}</span>;
-  const deadline = (j: JobListItemDto) => j.dueAt ? (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap font-semibold ${new Date(j.dueAt).getTime() <= Date.now() ? 'text-red-700' : 'text-amber-700'}`}>
-      <Clock3 className="size-3.5" /> {formatDateTime(j.dueAt)}
-    </span>
-  ) : <span className="text-slate-400">—</span>;
-  const allColumns: Column<JobListItemDto>[] = [
+  const payment = (j: JobListItemDto) => {
+    if (j.balance > 0) return (
+      <span className="block min-w-0">
+        <span className="block truncate font-semibold text-orange-700">Due {formatCurrency(j.balance)}</span>
+        <span className="block truncate text-[11px] text-slate-500">{formatCurrency(j.paid)} paid of {formatCurrency(j.totalAmount)}</span>
+      </span>
+    );
+    if (j.balance < 0) return (
+      <span className="block min-w-0">
+        <span className="block truncate font-semibold text-blue-700">Credit {formatCurrency(Math.abs(j.balance))}</span>
+        <span className="block truncate text-[11px] text-slate-500">{formatCurrency(j.paid)} received</span>
+      </span>
+    );
+    if (j.paid > 0) return <span className="font-semibold text-emerald-700">Paid {formatCurrency(j.paid)}</span>;
+    return <span className="text-slate-500">Not billed</span>;
+  };
+  const columns: Column<JobListItemDto>[] = [
     {
-      header: 'Job No',
+      header: 'Job Sheet ID',
+      className: 'w-[16%]',
       cell: (j) => (
-        <Link to={`/jobs/${j.id}`} className="font-mono text-sm font-semibold whitespace-nowrap text-brand-600 hover:underline">
+        <Link to={`/jobs/${j.id}`} className="block truncate font-mono text-sm font-semibold text-brand-600 hover:underline" title={formatJobNumber(j.jobNumber)}>
           {formatJobNumber(j.jobNumber)}
         </Link>
       ),
     },
-    { header: 'Date', cell: (j) => nowrap(formatDate(j.createdAt)) },
-    { header: 'Timer', cell: deadline },
-    { header: 'Customer Name', cell: (j) => nowrap(j.customer.name) },
-    { header: 'Contact No', cell: (j) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
-    { header: 'City', cell: (j) => nowrap(j.city) },
-    { header: 'Product', cell: (j) => nowrap(j.device) },
-    { header: 'Serial No', cell: (j) => <span className="font-mono text-xs whitespace-nowrap">{j.imei ?? j.serialNumber ?? '—'}</span> },
-    { header: 'Problem', cell: (j) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ')}</span> },
-    { header: 'Remark', cell: (j) => <span className="block max-w-48 truncate text-slate-600" title={j.remark ?? ''}>{j.remark ?? '—'}</span> },
-    ...(isEngineer
-      ? [
-          { header: 'Status', cell: (j: JobListItemDto) => <InlineJobStatus job={j} /> },
-          { header: 'Pending with', cell: (j: JobListItemDto) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
-          { header: 'Problem', cell: (j: JobListItemDto) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ') || j.remark || '—'}</span> },
-          { header: 'Model', cell: (j: JobListItemDto) => nowrap(j.device) },
-          { header: 'Customer', cell: (j: JobListItemDto) => nowrap(j.customer.name) },
-          { header: 'Mobile', cell: (j: JobListItemDto) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
-          { header: 'Assigned', cell: (j: JobListItemDto) => nowrap(j.assignedAt ? formatDateTime(j.assignedAt) : null) },
-        ]
-      : [
-          { header: 'Inward', cell: (j: JobListItemDto) => nowrap(j.inwardBy) },
-          { header: 'Engineer', cell: (j: JobListItemDto) => nowrap(j.assignedEngineer?.name ?? <span className="text-slate-400">Unassigned</span>) },
-          { header: 'Status', cell: (j: JobListItemDto) => <JobStatusBadge status={j.status} /> },
-          { header: 'Repaired', cell: (j: JobListItemDto) => nowrap(j.repairedAt || j.readyAt ? 'Yes' : 'No') },
-          { header: 'Repaired Date', cell: (j: JobListItemDto) => nowrap(j.readyAt ?? j.repairedAt ? formatDate((j.readyAt ?? j.repairedAt)!) : null) },
-          { header: 'Out', cell: (j: JobListItemDto) => nowrap(j.status === 'DELIVERED' ? 'Yes' : 'No') },
-          { header: 'Out Narration', cell: (j: JobListItemDto) => <span className="block max-w-48 truncate">{j.deliveryNote ?? '—'}</span> },
-          { header: 'Out Date', cell: (j: JobListItemDto) => nowrap(j.deliveredAt ? formatDate(j.deliveredAt) : null) },
-          { header: 'Total', className: 'text-right', cell: (j: JobListItemDto) => money(j.totalAmount) },
-          { header: 'Paid', className: 'text-right', cell: (j: JobListItemDto) => money(j.paid) },
-          {
-            header: 'Balance',
-            className: 'text-right',
-            cell: (j: JobListItemDto) => <span className={`font-semibold tabular-nums ${j.balance > 0 ? 'text-orange-700' : j.balance < 0 ? 'text-red-600' : ''}`}>{formatCurrency(j.balance)}</span>,
-          },
-          ...(isSuperAdmin ? [{ header: 'Branch', cell: (j: JobListItemDto) => j.branch.code }] : []),
-        ]),
+    { header: 'Status', className: 'w-[17%]', cell: (j) => <JobStatusBadge status={j.status} /> },
+    { header: 'Payment', className: 'w-[19%]', cell: payment },
+    { header: 'Date', className: 'w-[12%]', cell: (j) => <span className="whitespace-nowrap text-slate-600">{formatDate(j.createdAt)}</span> },
+    { header: 'Customer Mobile', className: 'w-[17%]', cell: (j) => <a href={`tel:${j.customer.phone}`} className="block truncate text-brand-600 hover:underline">{j.customer.phone}</a> },
+    { header: 'Model Number', className: 'w-[19%]', cell: (j) => <span className="block truncate font-medium" title={j.device}>{j.device || '—'}</span> },
   ];
-  const columns: Column<JobListItemDto>[] = isEngineer
-    ? [
-        allColumns[0]!,
-        { header: 'Timer', cell: deadline },
-        { header: 'Status', cell: (j) => <InlineJobStatus job={j} /> },
-        { header: 'Pending with', cell: (j) => <span className={j.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-600'}>{j.pendingWith}</span> },
-        { header: 'Problem', cell: (j) => <span className="block max-w-56 truncate" title={j.faults.join(', ')}>{j.faults.join(', ') || j.remark || '—'}</span> },
-        { header: 'Model', cell: (j) => nowrap(j.device) },
-        { header: 'Customer', cell: (j) => nowrap(j.customer.name) },
-        { header: 'Mobile', cell: (j) => <a href={`tel:${j.customer.phone}`} className="whitespace-nowrap text-brand-600 hover:underline">{j.customer.phone}</a> },
-        { header: 'Assigned', cell: (j) => nowrap(j.assignedAt ? formatDateTime(j.assignedAt) : null) },
-      ]
-    : allColumns;
 
   const exportCsv = async () => {
     const all = await api.get<{ items: JobListItemDto[] }>(`/jobs?${toQueryString({ ...params, page: 1, pageSize: 200 })}`);
@@ -247,39 +251,66 @@ export function ShowJobs() {
     );
   };
 
+  const activeFilterCount = [search, product, from, to, status, engineerId, branchId, view].filter(Boolean).length;
+  const changeSelection = (ids: Set<string>) => setSelected((previous) => {
+    const next = new Map(previous);
+    for (const job of data?.items ?? []) {
+      if (ids.has(job.id)) next.set(job.id, job);
+      else next.delete(job.id);
+    }
+    return next;
+  });
+
   return (
-    <div className="space-y-3">
-      {!isEngineer && (
-        <div className="flex flex-wrap gap-2">
-          {VIEWS.map(([v, label]) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => reset(setView)(v)}
-              className={`rounded-full px-3 py-1 text-sm ring-1 ${view === v ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-700 ring-slate-300 hover:bg-slate-50'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-      <FilterBar>
+    <div className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+      <div className="theme-panel hidden shrink-0 items-center gap-2 rounded-lg bg-white p-2 ring-1 ring-slate-200 md:flex">
         <SearchInput
           onSearch={reset(setSearch)}
           initialValue={search}
           placeholder="Search job no, customer, phone, model, IMEI, problem…"
-          className="w-full! sm:w-96!"
+          className="w-72! xl:w-96!"
         />
-        <div className={`${filtersOpen ? 'flex' : 'hidden'} w-full flex-wrap items-center gap-3 sm:flex sm:w-auto`}>
-        <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" />
-        <label className="flex items-center gap-1.5 text-sm text-slate-600">
-          From <input type="date" value={from} max={to || undefined} onChange={(e) => reset(setFrom)(e.target.value)} className={`${inputClass} w-38!`} />
-        </label>
-        <label className="flex items-center gap-1.5 text-sm text-slate-600">
-          To <input type="date" value={to} min={from || undefined} onChange={(e) => reset(setTo)(e.target.value)} className={`${inputClass} w-38!`} />
-        </label>
-        <QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t), setPage(1))} label={false} />
+        {!isEngineer && (
+          <select value={view} onChange={(event) => reset(setView)(event.target.value)} className={`${inputClass} w-44!`} aria-label="Job view">
+            {VIEWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        )}
         <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
+        <button type="button" onClick={() => setFiltersOpen((open) => !open)} className="relative inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50" aria-expanded={filtersOpen}>
+          <SlidersHorizontal className="size-4" /> Filters
+          {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
+        </button>
+        <div className="ml-auto">
+          {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+        </div>
+      </div>
+
+      {filtersOpen && (
+        <div className="theme-panel absolute inset-x-0 bottom-14 z-30 max-h-[70dvh] overflow-y-auto rounded-xl bg-white p-3 shadow-xl ring-1 ring-slate-200 md:static md:z-auto md:flex md:max-h-none md:shrink-0 md:flex-wrap md:items-center md:gap-2 md:overflow-visible md:rounded-lg md:shadow-none">
+          <div className="mb-3 flex items-center justify-between md:hidden">
+            <span className="font-semibold">Search & filters</span>
+            <button type="button" onClick={() => setFiltersOpen(false)} aria-label="Close filters" className="grid size-8 place-items-center rounded-md hover:bg-slate-100"><X className="size-4" /></button>
+          </div>
+          <div className="space-y-2 md:contents">
+            <div className="md:hidden">
+              <SearchInput onSearch={reset(setSearch)} initialValue={search} placeholder="Search jobs…" className="w-full!" />
+            </div>
+            {!isEngineer && (
+              <select value={view} onChange={(event) => reset(setView)(event.target.value)} className={`${inputClass} w-full! md:hidden`} aria-label="Job view">
+                {VIEWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+            )}
+            <div className="md:hidden">
+              <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
+            </div>
+            <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" className="w-full! md:w-56!" />
+        <label className="flex items-center gap-1.5 text-sm text-slate-600">
+              <span className="w-10 md:w-auto">From</span><input type="date" value={from} max={to || undefined} onChange={(e) => reset(setFrom)(e.target.value)} className={`${inputClass} min-w-0 flex-1 md:w-36! md:flex-none`} />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm text-slate-600">
+              <span className="w-10 md:w-auto">To</span><input type="date" value={to} min={from || undefined} onChange={(e) => reset(setTo)(e.target.value)} className={`${inputClass} min-w-0 flex-1 md:w-36! md:flex-none`} />
+        </label>
+            <div className="overflow-x-auto pb-1 md:overflow-visible md:pb-0"><QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t), setPage(1))} label={false} /></div>
         {!isEngineer && (
           <FilterSelect
             value={engineerId}
@@ -293,72 +324,64 @@ export function ShowJobs() {
           <FilterSelect value={branchId} onChange={(v) => (setBranchId(v), setEngineerId(''), setPage(1))} placeholder="All branches" options={branches.map((b) => ({ value: b.id, label: `${b.name} (${b.code})` }))} />
         )}
         {!isEngineer && (
-          <Button variant="secondary" onClick={() => void exportCsv()}>
+              <Button variant="secondary" className="w-full md:w-auto" onClick={() => void exportCsv()}>
             <Download className="size-4" /> Excel
           </Button>
         )}
+          </div>
         </div>
-      </FilterBar>
+      )}
+
       {canBulk && user && (
-        <BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} />
+        <div className="shrink-0"><BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} /></div>
       )}
-      {isEngineer ? (
-        <>
-          <div className="hidden md:block">
-            <DataTable columns={columns} rows={data?.items} rowKey={(j) => j.id} isLoading={isLoading} emptyMessage="No jobs match these filters" rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''} />
-          </div>
-          <div className="space-y-3 md:hidden">
-            {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
-              <article key={job.id} className={`rounded-xl p-4 ring-1 shadow-sm ${job.dueAt ? 'bg-amber-50 ring-amber-300' : 'bg-white ring-slate-200'}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link to={`/jobs/${job.id}`} className="font-mono font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
-                    <div className="mt-1 truncate font-semibold">{job.device}</div>
-                  </div>
-                  <InlineJobStatus job={job} />
+
+      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-hidden">
+        <div className="hidden h-full md:block">
+          <DataTable
+            columns={columns}
+            rows={data?.items}
+            rowKey={(j) => j.id}
+            isLoading={isLoading}
+            emptyMessage="No jobs match these filters"
+            containerClassName="h-full overflow-hidden"
+            tableClassName="table-fixed"
+            headerCellClassName="px-3! py-2!"
+            cellClassName="px-3! py-2!"
+            rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
+            {...(canBulk && { selected: new Set(selected.keys()), onSelectedChange: changeSelection })}
+          />
+        </div>
+        <div className="grid h-full content-start gap-2 md:hidden">
+          {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
+            <article key={job.id} className={`h-[84px] overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  {canBulk && <input type="checkbox" aria-label={`Select ${formatJobNumber(job.jobNumber)}`} checked={selected.has(job.id)} onChange={() => { const ids = new Set(selected.keys()); if (ids.has(job.id)) ids.delete(job.id); else ids.add(job.id); changeSelection(ids); }} className="size-4 shrink-0 accent-brand-600" />}
+                  <Link to={`/jobs/${job.id}`} className="truncate font-mono text-sm font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
                 </div>
-                <p className="mt-2 text-sm text-slate-600">{job.faults.join(', ') || job.remark || 'No problem noted'}</p>
-                <p className={`mt-2 text-xs ${job.status === 'AWAITING_APPROVAL' ? 'font-semibold text-orange-700' : 'text-slate-500'}`}>Pending with: {job.pendingWith}</p>
-                {job.dueAt && <p className="mt-2 text-xs">{deadline(job)}</p>}
-                <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-500">
-                  <a href={`tel:${job.customer.phone}`} className="font-medium text-slate-700">{job.customer.name} · {job.customer.phone}</a>
-                  <span>{job.assignedAt ? formatDate(job.assignedAt) : ''}</span>
-                </div>
-              </article>
-            ))}
-          </div>
-        </>
-      ) : (
-        <DataTable
-          columns={columns}
-          rows={data?.items}
-          rowKey={(j) => j.id}
-          isLoading={isLoading}
-          emptyMessage="No jobs match these filters"
-          rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
-          {...(canBulk && {
-            selected: new Set(selected.keys()),
-            onSelectedChange: (ids: Set<string>) =>
-              setSelected((prev) => {
-                const next = new Map(prev);
-                for (const j of data?.items ?? []) {
-                  if (ids.has(j.id)) next.set(j.id, j);
-                  else next.delete(j.id);
-                }
-                return next;
-              }),
-          })}
-        />
-      )}
-      {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
-      <button
-        type="button"
-        onClick={() => setFiltersOpen((open) => !open)}
-        className="fixed right-4 bottom-5 z-30 grid size-12 place-items-center rounded-full bg-brand-600 text-white shadow-lg ring-4 ring-white sm:hidden"
-        aria-label={filtersOpen ? 'Close filters' : 'Open filters'}
-      >
-        {filtersOpen ? <X className="size-5" /> : <SlidersHorizontal className="size-5" />}
-      </button>
+                <JobStatusBadge status={job.status} />
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+                <span className="min-w-0 flex-1 truncate font-medium" title={job.device}>{job.device || '—'}</span>
+                <span className="shrink-0">{payment(job)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
+                <span>{formatDate(job.createdAt)}</span>
+                <a href={`tel:${job.customer.phone}`} className="text-brand-600">{job.customer.phone}</a>
+              </div>
+            </article>
+          ))}
+        </div>
+      </div>
+
+      <div className="theme-panel flex h-12 shrink-0 items-center justify-between rounded-lg bg-white px-2 ring-1 ring-slate-200 md:hidden">
+        <button type="button" onClick={() => setFiltersOpen((open) => !open)} className="relative inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700" aria-expanded={filtersOpen}>
+          {filtersOpen ? <X className="size-4" /> : <SlidersHorizontal className="size-4" />} Filters
+          {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
+        </button>
+        {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+      </div>
     </div>
   );
 }

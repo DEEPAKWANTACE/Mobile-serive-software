@@ -17,6 +17,8 @@ export function AppLayout() {
   const [findJobOpen, setFindJobOpen] = useState(false);
   const mainRef = useRef<HTMLElement>(null);
   const appName = shop?.shopName ?? 'Mobile Service Management';
+  const jobTab = new URLSearchParams(location.search).get('tab');
+  const isJobMasterList = location.pathname === '/jobs' && (!jobTab || jobTab === 'show');
 
   // Close the mobile menu on navigation; keep the browser tab titled with the shop name.
   useEffect(() => setMenuOpen(false), [location.pathname, location.search]);
@@ -115,11 +117,11 @@ export function AppLayout() {
           </div>
         </header>
         <FindJobModal open={findJobOpen} onClose={() => setFindJobOpen(false)} />
-        <main ref={mainRef} className="app-canvas flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain print:overflow-visible">
-          <div className="grow shrink-0 p-4 sm:p-6 print:p-0">
+        <main ref={mainRef} className={`app-canvas flex min-h-0 flex-1 flex-col overscroll-contain print:overflow-visible ${isJobMasterList ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          <div className={`${isJobMasterList ? 'min-h-0 flex-1' : 'grow shrink-0'} p-3 sm:p-5 print:p-0`}>
             <Outlet />
           </div>
-          <footer className="app-chrome shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden">
+          <footer className={`app-chrome shrink-0 border-t border-slate-200 bg-white px-6 py-3 text-center text-xs text-slate-500 print:hidden ${isJobMasterList ? 'hidden' : ''}`}>
             © {new Date().getFullYear()} {appName} · Repair management system
           </footer>
         </main>

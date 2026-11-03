@@ -18,9 +18,26 @@ type Props<T> = {
   selected?: Set<string>;
   onSelectedChange?: (next: Set<string>) => void;
   rowClassName?: (row: T) => string;
+  containerClassName?: string;
+  tableClassName?: string;
+  headerCellClassName?: string;
+  cellClassName?: string;
 };
 
-export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, emptyMessage = 'No records found', selected, onSelectedChange, rowClassName }: Props<T>) {
+export function DataTable<T>({
+  columns: baseColumns,
+  rows,
+  rowKey,
+  isLoading,
+  emptyMessage = 'No records found',
+  selected,
+  onSelectedChange,
+  rowClassName,
+  containerClassName = '',
+  tableClassName = '',
+  headerCellClassName = '',
+  cellClassName = '',
+}: Props<T>) {
   const keys = rows?.map(rowKey) ?? [];
   const allChecked = keys.length > 0 && keys.every((k) => selected?.has(k));
   const toggle = (k: string) => {
@@ -51,12 +68,12 @@ export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, em
       : baseColumns;
 
   return (
-    <div className="theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
-      <table className="min-w-full divide-y divide-slate-200 text-sm">
+    <div className={`theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200 ${containerClassName}`}>
+      <table className={`min-w-full divide-y divide-slate-200 text-sm ${tableClassName}`}>
         <thead className="bg-slate-50">
           <tr>
             {columns.map((c) => (
-              <th key={c.header} className={`px-4 py-2.5 text-left font-medium whitespace-nowrap text-slate-600 ${c.className ?? ''}`}>
+              <th key={c.header} className={`px-4 py-2.5 text-left font-medium whitespace-nowrap text-slate-600 ${headerCellClassName} ${c.className ?? ''}`}>
                 {c.header === SELECT_HEADER ? <input type="checkbox" aria-label="Select all on this page" className={checkbox} checked={allChecked} onChange={toggleAll} /> : c.header}
               </th>
             ))}
@@ -79,7 +96,7 @@ export function DataTable<T>({ columns: baseColumns, rows, rowKey, isLoading, em
             rows.map((row) => (
               <tr key={rowKey(row)} className={`${rowClassName?.(row) ?? ''} hover:bg-slate-50`}>
                 {columns.map((c) => (
-                  <td key={c.header} className={`px-4 py-2.5 ${c.className ?? ''}`}>
+                  <td key={c.header} className={`px-4 py-2.5 ${cellClassName} ${c.className ?? ''}`}>
                     {c.cell(row)}
                   </td>
                 ))}
