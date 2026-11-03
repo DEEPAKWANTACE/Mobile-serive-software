@@ -60,10 +60,12 @@ export function JobsPage() {
 
   return (
     <div className={tab === 'show' ? 'flex h-full min-h-0 flex-col gap-2' : 'space-y-4'}>
-      <PageHeader
-        title={isEngineer ? 'My Jobs' : 'Job Master'}
-        description={isEngineer ? 'Jobs assigned to you' : canAdd ? 'Create and manage branch job sheets' : canEdit ? 'Find and manage branch job sheets' : 'View job sheets'}
-      />
+      {tab !== 'show' && (
+        <PageHeader
+          title={isEngineer ? 'My Jobs' : 'Job Master'}
+          description={isEngineer ? 'Jobs assigned to you' : canAdd ? 'Create and manage branch job sheets' : canEdit ? 'Find and manage branch job sheets' : 'View job sheets'}
+        />
+      )}
       {!isEngineer && tabs.length > 1 && (
         <div className="flex shrink-0 flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {tabs.map((t) => (
@@ -125,7 +127,9 @@ function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
     const fit = () => {
       const desktop = element.clientWidth >= 768;
       const next = desktop
-        ? Math.max(4, Math.floor((element.clientHeight - 39) / 42))
+        // Payment uses two lines, so a desktop row is ~53px including its divider.
+        // Keep a small safety margin so the final row is always fully visible.
+        ? Math.max(4, Math.floor((element.clientHeight - 44) / 54))
         : Math.max(1, Math.floor((element.clientHeight - 8) / 92));
       setPageSize((current) => current === next ? current : next);
     };
@@ -336,7 +340,7 @@ export function ShowJobs() {
         <div className="shrink-0"><BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} /></div>
       )}
 
-      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-hidden">
+      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="hidden h-full md:block">
           <DataTable
             columns={columns}
@@ -344,7 +348,7 @@ export function ShowJobs() {
             rowKey={(j) => j.id}
             isLoading={isLoading}
             emptyMessage="No jobs match these filters"
-            containerClassName="h-full overflow-hidden"
+            containerClassName="min-h-full overflow-hidden"
             tableClassName="table-fixed"
             headerCellClassName="px-3! py-2!"
             cellClassName="px-3! py-2!"
