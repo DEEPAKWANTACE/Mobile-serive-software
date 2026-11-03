@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowUpRight,
-  BadgeCheck,
   Banknote,
   Boxes,
   CalendarClock,
@@ -22,7 +21,6 @@ import {
   Receipt,
   Search,
   ShieldAlert,
-  Stethoscope,
   TestTube2,
   Truck,
   UserCheck,
@@ -32,7 +30,6 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ENGINEER_OPEN_STATUSES,
   JOB_STATUS_LABELS,
   ROLES,
   type JobStatus,
@@ -251,20 +248,11 @@ function StoreDashboard() {
 
 function EngineerDashboard() {
   const stats = useStats();
-  // Cards show today's activity; the hint carries the all-time pending count.
   const by = stats.data?.today.byStatus;
   const all = stats.data?.byStatus;
-  const openOf = (b?: Record<JobStatus, number>) => (b ? ENGINEER_OPEN_STATUSES.reduce((sum, st) => sum + b[st], 0) : undefined);
-  const open = openOf(by);
-  const openAll = openOf(all);
-  const totalHint = (n: number | undefined) => (n === undefined ? undefined : `${n} pending total`);
 
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
   const outgoing = useQuery({ queryKey: ['jobs', 'transfers', 'outgoing'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=outgoing') });
-  const overdue = useList<JobListItemDto>('jobs', { open: true, minAgeDays: 15, pageSize: 1 });
-  const transfers = incoming.data && outgoing.data ? incoming.data.length + outgoing.data.length : undefined;
-  const completed = by ? by.READY_FOR_DELIVERY + by.DELIVERED : undefined;
-  const completedAll = all ? all.READY_FOR_DELIVERY + all.DELIVERED : undefined;
 
   const card = (
     label: string,
@@ -274,11 +262,10 @@ function EngineerDashboard() {
   ) => (
     <StatCard
       label={label}
-      value={by?.[st]}
+      value={all?.[st]}
       icon={icon}
       tone={tone}
-      hint={totalHint(all?.[st])}
-      to={`/jobs?status=${st}&today=true`}
+      to={`/jobs?status=${st}`}
     />
   );
 
@@ -288,22 +275,18 @@ function EngineerDashboard() {
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
         <StatCard
           label="Pending today"
-          value={open}
+          value={by?.ASSIGNED}
           tone="brand"
           icon={ClipboardList}
-          hint={totalHint(openAll)}
-          to={`/jobs?statuses=${ENGINEER_OPEN_STATUSES.join(',')}&today=true`}
+          hint="Assigned today · diagnosis pending"
+          to="/jobs?status=ASSIGNED&today=true"
         />
-        {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
-        <StatCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} to="/jobs?completed=true&today=true" />
-        <StatCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} to="/jobs?today=true" />
-        {card('To diagnose', 'ASSIGNED', Stethoscope, 'brand')}
-        {card('Repaired', 'REPAIRED', BadgeCheck)}
+        {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
+        <StatCard label="Completed today OK" value={by?.READY_FOR_DELIVERY} tone="good" icon={PackageCheck} hint="Repair and testing done · awaiting delivery" to="/jobs?status=READY_FOR_DELIVERY&today=true" />
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
-        {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
-        <StatCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" to="/jobs?view=over15" />
-        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" to="/#engineer-transfers" />
+        {card('RWR', 'RWR_PENDING', ShieldAlert, 'warning')}
+        <StatCard label="Transfer job" value={stats.data?.transferJobs} icon={ArrowLeftRight} hint="Outgoing handoff or in transit to L4" to="/#engineer-transfers" />
       </div>
       <div id="engineer-transfers" className="scroll-mt-4" />
       {!!incoming.data?.length && (

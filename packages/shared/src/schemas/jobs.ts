@@ -847,6 +847,8 @@ export type EngineerWorkloadDto = { id: string; name: string; phone: string | nu
 export type JobStatsDto = {
   byStatus: Record<JobStatus, number>;
   total: number;
+  /** Engineer transfers currently in progress: outgoing handoffs or devices travelling to L4. */
+  transferJobs: number;
   /** This branch's jobs currently at / travelling to or from the main office. */
   atL4: number;
   /** Same counts limited to jobs worked on (updated) today. */

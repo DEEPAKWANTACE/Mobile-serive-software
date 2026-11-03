@@ -1204,20 +1204,27 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
       ? { currentBranchId: branch }
       : {};
   const today = businessToday();
-  const [groups, todayGroups, atL4, receivedToday] = await Promise.all([
+  const [groups, todayGroups, atL4, receivedToday, transferRows, l4TransferRows] = await Promise.all([
     prisma.job.groupBy({ by: ['status'], where, _count: { _all: true } }),
     prisma.job.groupBy({ by: ['status'], where: { AND: [where, { updatedAt: businessRange(today, today) }] }, _count: { _all: true } }),
     branch && !isEngineer(actor)
       ? prisma.job.count({ where: { branchId: branch, OR: [{ currentBranchId: { not: branch } }, { location: { not: 'AT_BRANCH' } }] } })
       : Promise.resolve(0),
     prisma.job.count({ where: { AND: [where, { createdAt: businessRange(today, today) }] } }),
+    isEngineer(actor)
+      ? prisma.jobTransfer.findMany({ where: { fromEngineerId: actor.sub, status: 'PENDING' }, select: { jobId: true } })
+      : Promise.resolve([]),
+    isEngineer(actor)
+      ? prisma.jobMovement.findMany({ where: { sentById: actor.sub, receivedAt: null }, select: { jobId: true } })
+      : Promise.resolve([]),
   ]);
   const count = (rows: typeof groups) => {
     const byStatus = Object.fromEntries(JOB_STATUSES.map((s) => [s, 0])) as Record<JobStatus, number>;
     for (const g of rows) byStatus[g.status] = g._count._all;
     return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0) };
   };
-  return { ...count(groups), atL4, today: count(todayGroups), receivedToday };
+  const transferJobs = new Set([...transferRows, ...l4TransferRows].map((row) => row.jobId)).size;
+  return { ...count(groups), transferJobs, atL4, today: count(todayGroups), receivedToday };
 }
 
 // ─── Dashboard trend ────────────────────────────────────────────────────────
