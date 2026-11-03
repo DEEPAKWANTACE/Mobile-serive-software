@@ -22,6 +22,8 @@ type Props<T> = {
   tableClassName?: string;
   headerCellClassName?: string;
   cellClassName?: string;
+  /** Let natural-height rows share any unused vertical space. */
+  fillHeight?: boolean;
 };
 
 export function DataTable<T>({
@@ -37,6 +39,7 @@ export function DataTable<T>({
   tableClassName = '',
   headerCellClassName = '',
   cellClassName = '',
+  fillHeight = false,
 }: Props<T>) {
   const keys = rows?.map(rowKey) ?? [];
   const allChecked = keys.length > 0 && keys.every((k) => selected?.has(k));
@@ -68,8 +71,8 @@ export function DataTable<T>({
       : baseColumns;
 
   return (
-    <div className={`theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200 ${containerClassName}`}>
-      <table className={`min-w-full divide-y divide-slate-200 text-sm ${tableClassName}`}>
+    <div style={fillHeight ? { height: '100%' } : undefined} className={`theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200 ${containerClassName}`}>
+      <table style={fillHeight ? { height: '100%' } : undefined} className={`min-w-full divide-y divide-slate-200 text-sm ${tableClassName}`}>
         <thead className="bg-slate-50">
           <tr>
             {columns.map((c) => (

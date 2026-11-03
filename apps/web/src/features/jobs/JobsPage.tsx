@@ -348,8 +348,9 @@ export function ShowJobs() {
             rowKey={(j) => j.id}
             isLoading={isLoading}
             emptyMessage="No jobs match these filters"
-            containerClassName="min-h-full overflow-hidden"
+            containerClassName="min-h-full"
             tableClassName="table-fixed"
+            fillHeight={!!data?.items.length && data.items.length === data.pageSize}
             headerCellClassName="px-3! py-2!"
             cellClassName="px-3! py-2!"
             rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
