@@ -193,6 +193,7 @@ export function ShowJobs() {
     from,
     to,
     status,
+    ...(searchParams.get('statuses') && { statuses: searchParams.get('statuses')! }),
     engineerId,
     branchId,
     ...(searchParams.get('open') === 'true' && { open: true }),

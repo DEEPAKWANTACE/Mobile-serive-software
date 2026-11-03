@@ -278,7 +278,7 @@ function EngineerDashboard() {
       icon={icon}
       tone={tone}
       hint={totalHint(all?.[st])}
-      to={`/jobs?status=${st}`}
+      to={`/jobs?status=${st}&today=true`}
     />
   );
 
@@ -286,7 +286,14 @@ function EngineerDashboard() {
     <>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
-        <StatCard label="Pending today" value={open} tone="brand" icon={ClipboardList} hint={totalHint(openAll)} to="/jobs?open=true" />
+        <StatCard
+          label="Pending today"
+          value={open}
+          tone="brand"
+          icon={ClipboardList}
+          hint={totalHint(openAll)}
+          to={`/jobs?statuses=${ENGINEER_OPEN_STATUSES.join(',')}&today=true`}
+        />
         {card('Awaiting approval', 'AWAITING_APPROVAL', Clock)}
         <StatCard label="Completed today" value={completed} tone="good" icon={PackageCheck} hint={completedAll === undefined ? undefined : `${completedAll} completed total`} to="/jobs?completed=true&today=true" />
         <StatCard label="Total assigned today" value={stats.data?.today.total} icon={Users} hint={stats.data ? `${stats.data.total} assigned total` : undefined} to="/jobs?today=true" />
@@ -296,8 +303,9 @@ function EngineerDashboard() {
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
         {card('RWR awaiting manager', 'RWR_PENDING', ShieldAlert, 'warning')}
         <StatCard label="More than 15 days" value={overdue.data?.total} tone={overdue.data?.total ? 'critical' : 'default'} icon={AlertTriangle} hint="Still open" to="/jobs?view=over15" />
-        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" to="/jobs?open=true" />
+        <StatCard label="Transfer jobs" value={transfers} icon={ArrowLeftRight} hint="Requests to / from you" to="/#engineer-transfers" />
       </div>
+      <div id="engineer-transfers" className="scroll-mt-4" />
       {!!incoming.data?.length && (
         <Card title={`Transfer requests for you (${incoming.data.length})`} icon={ArrowLeftRight} subtitle="Accept to take over the job">
           <ul className="divide-y divide-slate-100">
