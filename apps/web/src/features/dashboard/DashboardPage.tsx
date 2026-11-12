@@ -253,6 +253,8 @@ function EngineerDashboard() {
 
   const incoming = useQuery({ queryKey: ['jobs', 'transfers', 'incoming'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming') });
   const outgoing = useQuery({ queryKey: ['jobs', 'transfers', 'outgoing'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=outgoing') });
+  const accepted = useQuery({ queryKey: ['jobs', 'transfers', 'accepted'], queryFn: () => api.get<TransferDto[]>('/jobs/transfers?direction=incoming&status=ACCEPTED') });
+  const acceptedToday = (accepted.data ?? []).filter((t) => t.respondedAt && new Date(t.respondedAt).toDateString() === new Date().toDateString());
 
   const card = (
     label: string,
@@ -274,19 +276,20 @@ function EngineerDashboard() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
         <StatCard
-          label="Pending today"
-          value={by?.ASSIGNED}
+          label="Pending diagnosis"
+          value={all?.ASSIGNED}
           tone="brand"
           icon={ClipboardList}
-          hint="Assigned today · diagnosis pending"
-          to="/jobs?status=ASSIGNED&today=true"
+          hint="Assigned to you · diagnosis pending"
+          to="/jobs?status=ASSIGNED"
         />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
         <StatCard label="Completed today OK" value={by?.READY_FOR_DELIVERY} tone="good" icon={PackageCheck} hint="Repair and testing done · awaiting delivery" to="/jobs?status=READY_FOR_DELIVERY&today=true" />
+        {card('Repaired – return pending', 'REPAIRED', PackageCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
         {card('RWR', 'RWR_PENDING', ShieldAlert, 'warning')}
-        <StatCard label="Transfer job" value={stats.data?.transferJobs} icon={ArrowLeftRight} hint="Outgoing handoff or in transit to L4" to="/#engineer-transfers" />
+        <StatCard label="Transfer job" value={stats.data?.transferJobs} icon={ArrowLeftRight} hint="Requests in / out, accepted today, or to L4" to="/#engineer-transfers" />
       </div>
       <div id="engineer-transfers" className="scroll-mt-4" />
       {!!incoming.data?.length && (
@@ -304,6 +307,21 @@ function EngineerDashboard() {
                   </div>
                 </div>
                 <TransferResponseButtons transferId={t.id} />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+      {!!acceptedToday.length && (
+        <Card title={`Transferred to you today (${acceptedToday.length})`} icon={ArrowLeftRight} subtitle="Jobs you accepted — now in your queue">
+          <ul className="divide-y divide-slate-100">
+            {acceptedToday.map((t) => (
+              <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-sm">
+                <span>
+                  <Link to={`/jobs/${t.job.id}`} className="font-mono font-semibold text-brand-600 hover:underline">{t.job.jobNumber}</Link>
+                  {' '}· {t.job.device} · from <span className="font-medium">{t.from.name}</span>
+                </span>
+                <JobStatusBadge status={t.job.status} />
               </li>
             ))}
           </ul>

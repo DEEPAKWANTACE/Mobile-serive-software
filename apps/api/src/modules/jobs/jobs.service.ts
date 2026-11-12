@@ -1212,7 +1212,22 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
       : Promise.resolve(0),
     prisma.job.count({ where: { AND: [where, { createdAt: businessRange(today, today) }] } }),
     isEngineer(actor)
-      ? prisma.jobTransfer.findMany({ where: { fromEngineerId: actor.sub, status: 'PENDING' }, select: { jobId: true } })
+      ? prisma.jobTransfer.findMany({
+        where: {
+          OR: [
+            // Outgoing or incoming requests still waiting for an answer.
+            { status: 'PENDING', OR: [{ fromEngineerId: actor.sub }, { toEngineerId: actor.sub }] },
+            // Jobs this engineer accepted today and still holds — they count as transferred in.
+            {
+              status: 'ACCEPTED',
+              toEngineerId: actor.sub,
+              respondedAt: businessRange(today, today),
+              job: { assignedEngineerId: actor.sub, status: { notIn: [...CLOSED_STATUSES] } },
+            },
+          ],
+        },
+        select: { jobId: true },
+      })
       : Promise.resolve([]),
     isEngineer(actor)
       ? prisma.jobMovement.findMany({ where: { sentById: actor.sub, receivedAt: null }, select: { jobId: true } })

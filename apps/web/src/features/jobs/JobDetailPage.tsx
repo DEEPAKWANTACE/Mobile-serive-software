@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -15,6 +15,7 @@ import {
   CALL_OUTCOME_LABELS,
   RWR_REASON_LABELS,
   JOB_STATUS_LABELS,
+  JOB_PENDING_WITH,
   type JobStatus,
   ENGINEER_VISIBLE_PHOTO_KINDS,
   jobDeviceUpdateSchema,
@@ -50,13 +51,16 @@ import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
 import { EditJobForm } from './EditJobForm';
 import { ImeiWarning } from './ImeiWarning';
-import { MovementsCard } from '@/features/l4/L4Actions';
+import { L4Panel, MovementsCard } from '@/features/l4/L4Actions';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 import { DeadlinePicker } from './DeadlinePicker';
 
 export function JobDetailPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = (searchParams.get('tab') ?? 'overview') as DetailTab;
+  const setTab = (next: DetailTab) => setSearchParams(next === 'overview' ? {} : { tab: next }, { replace: true });
   const { data: job, isLoading, error } = useJob(id);
   const [assigning, setAssigning] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -108,8 +112,29 @@ export function JobDetailPage() {
     job.location === 'AT_BRANCH' &&
     sameBranch;
 
+  const isEngineer = user?.role === ROLES.ENGINEER;
+  const device = job.devices.length > 1
+    ? `${job.devices.length} items`
+    : job.accessoryName ?? (`${job.brand?.name ?? job.devices[0]?.manualBrand ?? ''} ${job.model?.name ?? job.devices[0]?.manualModel ?? ''}`.trim() || '—');
+  const problem = [
+    ...job.devices.flatMap((d) => [...d.faults.map((f) => f.name), ...(d.manualFault ? [d.manualFault] : [])]),
+    ...(job.devices.length ? [] : [...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])]),
+  ].join(', ') || job.customerComplaint || '—';
+  const amount = job.approvedAmount ?? job.quotedAmount ?? job.estimatedAmount;
+
+  const tabs: { key: DetailTab; label: string; show: boolean }[] = [
+    { key: 'overview', label: 'Overview', show: true },
+    { key: 'work', label: 'Repair work', show: !readOnlyViewer },
+    { key: 'payments', label: 'Amount & payments', show: true },
+    { key: 'photos', label: 'Photos', show: true },
+    { key: 'history', label: isEngineer ? 'Calls' : 'Calls & history', show: !readOnlyViewer || !isEngineer },
+    { key: 'l4', label: 'L4 / main office', show: !readOnlyViewer },
+  ];
+  const visibleTabs = tabs.filter((t) => t.show);
+  const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : 'overview';
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {job.status === 'CANCELLED' && (
         <div className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
           <span className="font-medium">Cancelled</span>
@@ -122,74 +147,78 @@ export function JobDetailPage() {
           Completion timer: {formatDateTime(job.dueAt)}{new Date(job.dueAt).getTime() <= Date.now() ? ' · overdue' : ''}
         </div>
       )}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <Link to="/jobs" className="text-sm text-slate-500 hover:underline">
-            ← {user?.role === ROLES.ENGINEER ? 'My jobs' : 'Job sheets'}
-          </Link>
-          <div className="mt-1 flex items-center gap-3">
-            <h1 className="font-mono text-2xl font-semibold">{formatJobNumber(job.jobNumber)}</h1>
-            <JobStatusBadge status={job.status} />
-          </div>
-          <p className="mt-1 text-sm text-slate-500">
-            Received {formatDateTime(job.createdAt)} at {job.branch.name} by {job.inwardBy?.name ?? job.createdBy.name}
-          </p>
-          <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs text-slate-600 ring-1 ring-slate-200 sm:hidden">
-            <span className="font-medium text-slate-800">Engineer: {job.assignedEngineer?.name ?? 'Not assigned'}</span>
-            {job.assignedAt && <> · since {formatDateTime(job.assignedAt)}</>}
-          </p>
-          {canManage && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Link to={`/jobs/${job.id}/print`}>
-                <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
-              </Link>
-              {!closed && (!user?.branch || user.branch.id === job.branch.id) && (
-                <>
-                  <Button size="sm" variant="secondary" onClick={() => { setTimerValue(job.dueAt); setTimerEditing(true); }}>
-                    ⏱ {job.dueAt ? 'Edit timer' : 'Add timer'}
-                  </Button>
-                  <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
-                    ✏️ Edit job sheet
-                  </Button>
-                  <Link to={`/jobs?tab=delete&job=${encodeURIComponent(job.jobNumber)}`}>
-                    <Button size="sm" variant="secondary">{isManager ? 'Cancel / delete' : 'Cancel job'}</Button>
-                  </Link>
-                </>
+
+      <section className="theme-panel rounded-xl bg-white p-4 ring-1 ring-slate-200 sm:p-5">
+        <Link to="/jobs" className="text-sm text-slate-500 hover:underline">
+          ← {isEngineer ? 'My jobs' : 'Job sheets'}
+        </Link>
+        <div className="mt-1 flex flex-wrap items-center gap-3">
+          <h1 className="font-mono text-2xl font-semibold">{formatJobNumber(job.jobNumber)}</h1>
+          <JobStatusBadge status={job.status} />
+          <span className="text-xs text-slate-500">Pending with: <span className="font-medium text-slate-700">{JOB_PENDING_WITH[job.status]}</span></span>
+        </div>
+        <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
+          <Row label="Customer"><span className="font-medium">{job.customer.name}</span></Row>
+          <Row label="Mobile"><a href={`tel:${job.customer.phone}`} className="font-medium text-brand-600 hover:underline">{job.customer.phone}</a></Row>
+          <Row label="Device"><span className="font-medium">{device}</span></Row>
+          <Row label="Problem"><span className="line-clamp-2" title={problem}>{problem}</span></Row>
+          <Row label="Engineer">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{job.assignedEngineer?.name ?? <span className="text-amber-700">Not assigned</span>}</span>
+              {canAssign && (
+                <Button size="sm" variant={job.assignedEngineer ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>
+                  {job.assignedEngineer ? 'Reassign' : 'Assign'}
+                </Button>
               )}
-              <WhatsAppButton
-                phone={job.customer.phone}
-                status={job.status}
-                context={{
-                  customerName: job.customer.name,
-                  jobNumber: job.jobNumber,
-                  device: job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim(),
-                  branchName: job.branch.name,
-                  branchPhone: job.branch.phone,
-                  estimate: job.quotedAmount ?? job.estimatedAmount,
-                  balance: (job.quotedAmount ?? 0) - job.payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -p.amount : p.amount), 0),
-                }}
-              />
-            </div>
-          )}
-        </div>
-        <div className="hidden rounded-lg bg-white px-4 py-3 text-sm ring-1 ring-slate-200 sm:block">
-          <div className="text-xs text-slate-500">Engineer</div>
-          <div className="mt-0.5 flex items-center gap-3">
-            <span className="font-medium">{job.assignedEngineer?.name ?? <span className="text-amber-700">Not assigned</span>}</span>
-            {canAssign && (
-              <Button size="sm" variant={job.assignedEngineer ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>
-                {job.assignedEngineer ? 'Reassign' : 'Assign engineer'}
-              </Button>
+              {canAssign && job.status === 'ASSIGNED' && job.assignedEngineer && (
+                <Button size="sm" variant="secondary" onClick={() => setUnassigning(true)}>Unassign</Button>
+              )}
+            </span>
+            {job.assignedAt && <span className="block text-xs text-slate-500">since {formatDateTime(job.assignedAt)}</span>}
+          </Row>
+          <Row label={job.approvedAmount !== null ? 'Approved amount' : 'Estimate'}>{amount !== null ? <span className="font-medium">{formatCurrency(amount)}</span> : 'To be decided'}</Row>
+          <Row label="Received">{formatDateTime(job.createdAt)}</Row>
+          <Row label="Branch">{job.branch.name}{job.currentBranch.id !== job.branch.id ? ` · now at ${job.currentBranch.name}` : ''}</Row>
+          <Row label="Inward by">{job.inwardBy?.name ?? job.createdBy.name}</Row>
+          {job.imei && <Row label="IMEI"><span className="font-mono">{job.imei}</span></Row>}
+          {job.warranty && <Row label="Warranty">{WARRANTY_LABELS[job.warranty]}</Row>}
+          {!isEngineer && <Row label="Balance">{job.balance ? <span className={job.balance > 0 ? 'font-medium text-amber-700' : ''}>{formatCurrency(Math.abs(job.balance))}{job.balance < 0 ? ' refund' : ''}</span> : '—'}</Row>}
+        </dl>
+        {canManage && (
+          <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+            <Link to={`/jobs/${job.id}/print`}>
+              <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
+            </Link>
+            {!closed && (!user?.branch || user.branch.id === job.branch.id) && (
+              <>
+                <Button size="sm" variant="secondary" onClick={() => { setTimerValue(job.dueAt); setTimerEditing(true); }}>
+                  ⏱ {job.dueAt ? 'Edit timer' : 'Add timer'}
+                </Button>
+                <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>
+                  ✏️ Edit job sheet
+                </Button>
+                <Link to={`/jobs?tab=delete&job=${encodeURIComponent(job.jobNumber)}`}>
+                  <Button size="sm" variant="secondary">{isManager ? 'Cancel / delete' : 'Cancel job'}</Button>
+                </Link>
+              </>
             )}
-            {canAssign && job.status === 'ASSIGNED' && job.assignedEngineer && (
-              <Button size="sm" variant="secondary" onClick={() => setUnassigning(true)}>
-                Unassign
-              </Button>
-            )}
+            <WhatsAppButton
+              phone={job.customer.phone}
+              status={job.status}
+              context={{
+                customerName: job.customer.name,
+                jobNumber: job.jobNumber,
+                device: job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`.trim(),
+                branchName: job.branch.name,
+                branchPhone: job.branch.phone,
+                estimate: job.quotedAmount ?? job.estimatedAmount,
+                balance: (job.quotedAmount ?? 0) - job.payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -p.amount : p.amount), 0),
+              }}
+            />
           </div>
-          {job.assignedAt && <div className="mt-0.5 text-xs text-slate-500">since {formatDateTime(job.assignedAt)}</div>}
-        </div>
-      </div>
+        )}
+      </section>
+
       <Modal open={editing} onClose={() => setEditing(false)} title={`Edit job sheet ${job.jobNumber}`} size="lg">
         {editing && <EditJobForm job={job} onDone={() => setEditing(false)} />}
       </Modal>
@@ -220,29 +249,74 @@ export function JobDetailPage() {
         onClose={() => setAssigning(false)}
       />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="space-y-5 lg:col-span-2">
-          {!readOnlyViewer && <WorkPanel job={job} />}
-          {!readOnlyViewer && <RepairNotes job={job} />}
-          {!readOnlyViewer && <JobPartsCard job={job} />}
-          <JobInfo job={job} readOnly={readOnlyViewer} />
-          <Photos job={job} />
+      <div className="sticky top-0 z-20 -mx-1 overflow-x-auto px-1">
+        <div className="flex min-w-max gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Job sheet sections">
+          {visibleTabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === t.key}
+              onClick={() => setTab(t.key)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap ${activeTab === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+            >
+              {t.label}
+              {t.key === 'work' && ACTION_STATUSES.includes(job.status) && <span className="ml-1.5 inline-block size-2 rounded-full bg-orange-500 align-middle" aria-label="Action needed" />}
+            </button>
+          ))}
         </div>
-        <div className="space-y-5">
-          {!readOnlyViewer && <JobCallsCard job={job} />}
-          {!readOnlyViewer && <MovementsCard job={job} />}
-          {user?.role !== ROLES.ENGINEER && (
-            <>
-              <StatusTimeline job={job} />
-              <Assignments job={job} />
-              <History jobId={job.id} />
-            </>
-          )}
-        </div>
+      </div>
+
+      <div className="space-y-5">
+        {activeTab === 'overview' && (
+          <>
+            {!readOnlyViewer && ACTION_STATUSES.includes(job.status) && (
+              <button type="button" onClick={() => setTab('work')} className="flex w-full items-center justify-between rounded-lg bg-orange-50 px-4 py-3 text-left text-sm ring-1 ring-orange-200 hover:bg-orange-100">
+                <span><span className="font-semibold text-orange-950">Action needed:</span> <span className="text-orange-900">{JOB_PENDING_WITH[job.status]}</span></span>
+                <span className="font-medium text-orange-800">Open repair work →</span>
+              </button>
+            )}
+            <JobInfo job={job} readOnly={readOnlyViewer} />
+          </>
+        )}
+        {activeTab === 'work' && (
+          <>
+            <WorkPanel job={job} />
+            <RepairNotes job={job} />
+            <JobPartsCard job={job} />
+          </>
+        )}
+        {activeTab === 'payments' && <Estimate job={job} readOnly={readOnlyViewer} />}
+        {activeTab === 'photos' && <Photos job={job} />}
+        {activeTab === 'history' && (
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+            {!readOnlyViewer && <div className="lg:col-span-2"><JobCallsCard job={job} /></div>}
+            {!isEngineer && (
+              <>
+                <div className="space-y-5">
+                  <StatusTimeline job={job} />
+                  <Assignments job={job} />
+                </div>
+                <History jobId={job.id} />
+              </>
+            )}
+          </div>
+        )}
+        {activeTab === 'l4' && (
+          <>
+            <L4Panel job={job} />
+            <MovementsCard job={job} />
+            {!job.movements.length && <p className="rounded-lg bg-white p-5 text-sm text-slate-500 ring-1 ring-slate-200">No L4 movements for this job.</p>}
+          </>
+        )}
       </div>
     </div>
   );
 }
+
+type DetailTab = 'overview' | 'work' | 'payments' | 'photos' | 'history' | 'l4';
+/** Statuses where someone must act in the Repair work tab. */
+const ACTION_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'CUSTOMER_REJECTED', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'READY_FOR_DELIVERY', 'RWR_PENDING', 'RWR'];
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -354,7 +428,6 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
           <Row label="Inward by">{job.inwardBy?.name}</Row>
         </dl>
       </Card>
-      <Estimate job={job} readOnly={readOnly} />
     </>
   );
 }

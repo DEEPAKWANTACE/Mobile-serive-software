@@ -11,8 +11,11 @@ import { api } from '@/lib/api-client';
 import { useOptions } from '@/lib/crud';
 import { formatDateTime } from '@/lib/format';
 
-/** Location banner + L4 actions (send / receive / send back) for a job. */
-export function L4Panel({ job }: { job: JobDto }) {
+/**
+ * Location banner + L4 actions (send / receive / send back) for a job.
+ * `show="banner"` renders only the location banner (receive / send back); `show="send"` only the send-to-L4 action.
+ */
+export function L4Panel({ job, show = 'all' }: { job: JobDto; show?: 'all' | 'banner' | 'send' }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [dialog, setDialog] = useState<'send' | 'receive' | 'back' | null>(null);
@@ -22,10 +25,11 @@ export function L4Panel({ job }: { job: JobDto }) {
   const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
   const atL4 = job.location === 'AT_BRANCH' && job.currentBranch.id !== job.branch.id;
 
-  const canSend = atHome && L4_SENDABLE_STATUSES.includes(job.status) && (isAssigned || (isCounter && (!myBranch || myBranch === job.branch.id)));
+  const canSendHere = atHome && L4_SENDABLE_STATUSES.includes(job.status) && (isAssigned || (isCounter && (!myBranch || myBranch === job.branch.id)));
   const canReceive = job.location !== 'AT_BRANCH' && isCounter && (!myBranch || myBranch === job.currentBranch.id);
   const canSendBack = atL4 && L4_RETURNABLE_STATUSES.includes(job.status) && (isAssigned || (isCounter && (!myBranch || myBranch === job.currentBranch.id)));
 
+  const canSend = canSendHere && show !== 'banner';
   const done = (msg: string) => {
     toast.success(msg);
     void queryClient.invalidateQueries();
@@ -41,11 +45,12 @@ export function L4Panel({ job }: { job: JobDto }) {
           ? { cls: 'bg-violet-50 ring-violet-200 text-violet-900', text: `🏢 At main office: ${job.currentBranch.name}` }
           : null;
 
-  if (!banner && !canSend) return null;
+  const showBanner = !!banner && show !== 'send';
+  if (!showBanner && !canSend) return null;
 
   return (
     <>
-      {banner && (
+      {showBanner && banner && (
         <div className={`flex flex-wrap items-center justify-between gap-3 rounded-md p-3 text-sm ring-1 ${banner.cls}`}>
           <span className="font-medium">{banner.text}</span>
           <span className="flex gap-2">
@@ -55,9 +60,13 @@ export function L4Panel({ job }: { job: JobDto }) {
         </div>
       )}
       {canSend && (
-        <Button variant="secondary" onClick={() => setDialog('send')}>
-          Send to L4 / main office
-        </Button>
+        <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+          <div className="font-medium text-violet-950">Send to L4 / main office</div>
+          <p className="mt-1 text-sm text-violet-900">Use this when the repair can't be done at this branch. The phone goes to the main office and its engineer takes over.</p>
+          <Button variant="secondary" className="mt-3" onClick={() => setDialog('send')}>
+            Send to L4 / main office
+          </Button>
+        </div>
       )}
       <Modal open={dialog === 'send'} onClose={() => setDialog(null)} title="Send to main office (L4)" size="sm">
         {dialog === 'send' && <SendForm job={job} onDone={() => done('Sent to L4 — the main office must receive it')} onCancel={() => setDialog(null)} />}

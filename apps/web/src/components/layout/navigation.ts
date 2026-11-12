@@ -61,6 +61,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: 'Shop Settings', to: '/settings/shop', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Diagnosis Findings', to: '/settings/diagnosis-findings', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Job List Columns', to: '/settings/job-list-columns', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Job Defaults', to: '/settings/job-defaults', roles: [ROLES.BRANCH_MANAGER] },
       { label: 'Branches', to: '/masters/branches', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Cities', to: '/masters/cities', roles: [ROLES.SUPER_ADMIN] },

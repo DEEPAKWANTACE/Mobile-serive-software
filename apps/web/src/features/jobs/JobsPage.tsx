@@ -12,6 +12,7 @@ import {
   ROLES,
   type BranchDto,
   type EngineerWorkloadDto,
+  type JobListColumn,
   type JobListItemDto,
   type PaymentMode,
 } from '@msm/shared';
@@ -19,7 +20,7 @@ import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { DataTable, type Column } from '@/components/ui/DataTable';
+import { DataTable } from '@/components/ui/DataTable';
 import { Field, inputClass } from '@/components/ui/Field';
 import { FilterSelect, SearchInput } from '@/components/ui/Filters';
 import { PageHeader } from '@/components/ui/PageHeader';
@@ -34,6 +35,8 @@ import { JobLookup } from './JobLookup';
 import { JobStatusBadge } from './JobStatusBadge';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
+import { ApprovalDecisionDialog } from './ApprovalDecisionDialog';
+import { buildJobColumns, jobProblem, useJobListColumns } from './jobListColumns';
 
 type Tab = 'show' | 'add' | 'edit' | 'delete';
 
@@ -127,9 +130,9 @@ function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
     const fit = () => {
       const desktop = element.clientWidth >= 768;
       const next = desktop
-        // Payment uses two lines, so a desktop row is ~53px including its divider.
+        // Single-line cells: a desktop row is ~45px including its divider (status badge sets the height).
         // Keep a small safety margin so the final row is always fully visible.
-        ? Math.max(4, Math.floor((element.clientHeight - 44) / 54))
+        ? Math.max(4, Math.floor((element.clientHeight - 44) / 46))
         : Math.max(1, Math.floor((element.clientHeight - 8) / 92));
       setPageSize((current) => current === next ? current : next);
     };
@@ -210,38 +213,11 @@ export function ShowJobs() {
     enabled: !isEngineer && !!engineerBranch,
   });
 
-  const payment = (j: JobListItemDto) => {
-    if (j.balance > 0) return (
-      <span className="block min-w-0">
-        <span className="block truncate font-semibold text-orange-700">Due {formatCurrency(j.balance)}</span>
-        <span className="block truncate text-[11px] text-slate-500">{formatCurrency(j.paid)} paid of {formatCurrency(j.totalAmount)}</span>
-      </span>
-    );
-    if (j.balance < 0) return (
-      <span className="block min-w-0">
-        <span className="block truncate font-semibold text-blue-700">Credit {formatCurrency(Math.abs(j.balance))}</span>
-        <span className="block truncate text-[11px] text-slate-500">{formatCurrency(j.paid)} received</span>
-      </span>
-    );
-    if (j.paid > 0) return <span className="font-semibold text-emerald-700">Paid {formatCurrency(j.paid)}</span>;
-    return <span className="text-slate-500">Not billed</span>;
-  };
-  const columns: Column<JobListItemDto>[] = [
-    {
-      header: 'Job Sheet ID',
-      className: 'w-[16%]',
-      cell: (j) => (
-        <Link to={`/jobs/${j.id}`} className="block truncate font-mono text-sm font-semibold text-brand-600 hover:underline" title={formatJobNumber(j.jobNumber)}>
-          {formatJobNumber(j.jobNumber)}
-        </Link>
-      ),
-    },
-    { header: 'Status', className: 'w-[17%]', cell: (j) => <JobStatusBadge status={j.status} /> },
-    { header: 'Payment', className: 'w-[19%]', cell: payment },
-    { header: 'Date', className: 'w-[12%]', cell: (j) => <span className="whitespace-nowrap text-slate-600">{formatDate(j.createdAt)}</span> },
-    { header: 'Customer Mobile', className: 'w-[17%]', cell: (j) => <a href={`tel:${j.customer.phone}`} className="block truncate text-brand-600 hover:underline">{j.customer.phone}</a> },
-    { header: 'Model Number', className: 'w-[19%]', cell: (j) => <span className="block truncate font-medium" title={j.device}>{j.device || '—'}</span> },
-  ];
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const columnKeys = useJobListColumns(user?.role);
+  const columns = buildJobColumns(columnKeys, { role: user?.role, onApprove: (j) => setApprovingId(j.id) });
+  const canApproveRow = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
+  const showCol = (key: JobListColumn) => columnKeys.includes(key);
 
   const exportCsv = async () => {
     const all = await api.get<{ items: JobListItemDto[] }>(`/jobs?${toQueryString({ ...params, page: 1, pageSize: 200 })}`);
@@ -351,6 +327,7 @@ export function ShowJobs() {
             emptyMessage="No jobs match these filters"
             containerClassName="min-h-full"
             tableClassName="table-fixed"
+            minTableWidth={columns.length > 9 ? `${columns.length * 115}px` : undefined}
             fillHeight={!!data?.items.length && data.items.length === data.pageSize}
             headerCellClassName="px-3! py-2!"
             cellClassName="px-3! py-2!"
@@ -365,16 +342,19 @@ export function ShowJobs() {
                 <div className="flex min-w-0 items-center gap-2">
                   {canBulk && <input type="checkbox" aria-label={`Select ${formatJobNumber(job.jobNumber)}`} checked={selected.has(job.id)} onChange={() => { const ids = new Set(selected.keys()); if (ids.has(job.id)) ids.delete(job.id); else ids.add(job.id); changeSelection(ids); }} className="size-4 shrink-0 accent-brand-600" />}
                   <Link to={`/jobs/${job.id}`} className="truncate font-mono text-sm font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
+                  {showCol('customerName') && <span className="truncate text-xs font-medium text-slate-700">{job.customer.name}</span>}
                 </div>
-                <JobStatusBadge status={job.status} />
+                {canApproveRow && showCol('approval') && job.status === 'AWAITING_APPROVAL'
+                  ? <button type="button" onClick={() => setApprovingId(job.id)} className="shrink-0 rounded-md bg-orange-600 px-2 py-0.5 text-xs font-semibold text-white">Approval</button>
+                  : <JobStatusBadge status={job.status} />}
               </div>
               <div className="mt-1 flex items-center justify-between gap-3 text-xs">
                 <span className="min-w-0 flex-1 truncate font-medium" title={job.device}>{job.device || '—'}</span>
-                <span className="shrink-0">{payment(job)}</span>
+                {showCol('engineer') && <span className="shrink-0 truncate text-slate-600">{job.assignedEngineer?.name ?? 'Unassigned'}</span>}
               </div>
-              <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500">
-                <span>{formatDate(job.createdAt)}</span>
-                <a href={`tel:${job.customer.phone}`} className="text-brand-600">{job.customer.phone}</a>
+              <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                <span className="min-w-0 flex-1 truncate">{showCol('problem') ? (jobProblem(job) || '—') : formatDate(job.createdAt)}</span>
+                {showCol('customerMobile') && <a href={`tel:${job.customer.phone}`} className="shrink-0 text-brand-600">{job.customer.phone}</a>}
               </div>
             </article>
           ))}
@@ -388,6 +368,7 @@ export function ShowJobs() {
         </button>
         {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
       </div>
+      <ApprovalDecisionDialog jobId={approvingId} onClose={() => setApprovingId(null)} />
     </div>
   );
 }

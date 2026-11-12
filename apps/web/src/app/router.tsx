@@ -26,6 +26,7 @@ import { StockPage } from '@/features/inventory/StockPage';
 import { StockTransfersPage } from '@/features/inventory/StockTransfersPage';
 import { ShopSettingsPage } from '@/features/settings/ShopSettingsPage';
 import { DiagnosisFindingsPage } from '@/features/settings/DiagnosisFindingsPage';
+import { JobListColumnsPage } from '@/features/settings/JobListColumnsPage';
 import { RequireAuth } from '@/features/auth/RequireAuth';
 import { BranchesPage } from '@/features/masters/BranchesPage';
 import { CitiesPage } from '@/features/masters/CitiesPage';
@@ -112,6 +113,7 @@ export const router = createBrowserRouter([
             children: [
               { path: 'settings/shop', element: <ShopSettingsPage /> },
               { path: 'settings/diagnosis-findings', element: <DiagnosisFindingsPage /> },
+              { path: 'settings/job-list-columns', element: <JobListColumnsPage /> },
             ],
           },
           {

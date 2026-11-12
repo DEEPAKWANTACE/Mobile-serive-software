@@ -1,5 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import type { AccessoryOptionDto, BranchWarrantyData, DiagnosisFindingDto, ShopSettingsData, ShopSettingsDto } from '@msm/shared';
+import {
+  DEFAULT_JOB_LIST_COLUMNS,
+  JOB_LIST_COLUMNS,
+  ROLE_VALUES,
+  type AccessoryOptionDto,
+  type BranchWarrantyData,
+  type DiagnosisFindingCategory,
+  type DiagnosisFindingDto,
+  type JobListColumn,
+  type JobListColumnsData,
+  type JobListColumnsDto,
+  type ShopSettingsData,
+  type ShopSettingsDto,
+} from '@msm/shared';
 import { HttpError } from '../../lib/http-error.ts';
 import { detectImageType } from '../../lib/image-type.ts';
 import { prisma } from '../../lib/prisma.ts';
@@ -101,18 +114,18 @@ export async function updateAccessoryOption(id: string, data: { name?: string; s
   return accessoryDto(await prisma.accessoryOption.update({ where: { id }, data, select: accessorySelect }));
 }
 
-const diagnosisFindingSelect = { id: true, label: true, sortOrder: true, isActive: true } as const;
+const diagnosisFindingSelect = { id: true, label: true, category: true, sortOrder: true, isActive: true } as const;
 
 export async function diagnosisFindings(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingDto[]> {
   const all = includeInactive && actor.role === 'SUPER_ADMIN';
   return prisma.diagnosisFinding.findMany({
     where: all ? {} : { isActive: true },
     select: diagnosisFindingSelect,
-    orderBy: [{ sortOrder: 'asc' }, { label: 'asc' }],
+    orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
   });
 }
 
-export async function createDiagnosisFinding(data: { label: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
+export async function createDiagnosisFinding(data: { label: string; category: DiagnosisFindingCategory; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
     const row = await tx.diagnosisFinding.create({ data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.created', entityType: 'diagnosis_finding', entityId: row.id, metadata: data, ip: actor.ip }, tx);
@@ -120,10 +133,39 @@ export async function createDiagnosisFinding(data: { label: string; sortOrder: n
   });
 }
 
-export async function updateDiagnosisFinding(id: string, data: { label?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
+export async function updateDiagnosisFinding(id: string, data: { label?: string; category?: DiagnosisFindingCategory; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
     const row = await tx.diagnosisFinding.update({ where: { id }, data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.updated', entityType: 'diagnosis_finding', entityId: id, metadata: data, ip: actor.ip }, tx);
     return row;
   });
+}
+
+// ─── Job sheet list columns (per role) ──────────────────────────────────────
+
+/** Saved matrix merged over the defaults; unknown keys from older versions are dropped. */
+export async function jobListColumns(): Promise<JobListColumnsDto> {
+  const row = await prisma.shopSettings.findUnique({ where: { id: ID }, select: { jobListColumns: true } });
+  const saved = (row?.jobListColumns ?? {}) as Partial<Record<string, unknown>>;
+  return Object.fromEntries(
+    ROLE_VALUES.map((role) => {
+      const value = saved[role];
+      const columns = Array.isArray(value)
+        ? value.filter((key): key is JobListColumn => JOB_LIST_COLUMNS.includes(key as JobListColumn))
+        : DEFAULT_JOB_LIST_COLUMNS[role];
+      return [role, columns];
+    }),
+  ) as JobListColumnsDto;
+}
+
+export async function updateJobListColumns(data: JobListColumnsData, actor: Actor): Promise<JobListColumnsDto> {
+  await prisma.$transaction(async (tx) => {
+    await tx.shopSettings.upsert({
+      where: { id: ID },
+      create: { id: ID, shopName: DEFAULT_NAME, email: DEFAULT_EMAIL, jobListColumns: data },
+      update: { jobListColumns: data },
+    });
+    await recordAudit({ actorId: actor.sub, action: 'settings.job_list_columns', entityType: 'settings', entityId: ID, metadata: { ...data }, ip: actor.ip }, tx);
+  });
+  return jobListColumns();
 }

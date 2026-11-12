@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Field, inputClass } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/format';
+import { showDeliveredPrintToast } from './DeliveredPrintToast';
 
 type PayRow = { mode: PaymentMode; amount: string; reference: string };
 
@@ -61,12 +62,12 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         ...(bill.imeiRequired && { imei: imeiChoice === 'NA' ? 'N/A' : imei.trim() }),
       }),
     onSuccess: (r) => {
-      toast.success(`Delivered — invoice ${r.invoiceNumber}`);
+      showDeliveredPrintToast(job.id, job.jobNumber, r.invoiceNumber);
       // The bill preview no longer applies to a delivered job; drop it instead of refetching it.
       queryClient.removeQueries({ queryKey: ['jobs', job.id, 'bill'] });
       void queryClient.invalidateQueries({ predicate: (q) => !(q.queryKey[0] === 'jobs' && q.queryKey[2] === 'bill') });
       onDone();
-      navigate(`/jobs/${job.id}/invoice`);
+      navigate('/');
     },
     onError: (err) => {
       const d = err instanceof ApiError ? (err.details as Record<string, string[]> | undefined) : undefined;

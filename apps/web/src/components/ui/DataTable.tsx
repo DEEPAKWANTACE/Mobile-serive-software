@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 export type Column<T> = {
   header: string;
   cell: (row: T) => ReactNode;
   className?: string;
+  /** Header-cell style, e.g. a width for fixed-layout tables. */
+  style?: CSSProperties;
 };
 
 const SELECT_HEADER = '__select__';
@@ -24,6 +26,8 @@ type Props<T> = {
   cellClassName?: string;
   /** Let natural-height rows share any unused vertical space. */
   fillHeight?: boolean;
+  /** Minimum table width (e.g. '1100px') — wider tables scroll horizontally. */
+  minTableWidth?: string;
 };
 
 export function DataTable<T>({
@@ -40,6 +44,7 @@ export function DataTable<T>({
   headerCellClassName = '',
   cellClassName = '',
   fillHeight = false,
+  minTableWidth,
 }: Props<T>) {
   const keys = rows?.map(rowKey) ?? [];
   const allChecked = keys.length > 0 && keys.every((k) => selected?.has(k));
@@ -72,11 +77,11 @@ export function DataTable<T>({
 
   return (
     <div style={fillHeight ? { height: '100%' } : undefined} className={`theme-panel overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200 ${containerClassName}`}>
-      <table style={fillHeight ? { height: '100%' } : undefined} className={`min-w-full divide-y divide-slate-200 text-sm ${tableClassName}`}>
+      <table style={{ ...(fillHeight && { height: '100%' }), ...(minTableWidth && { minWidth: minTableWidth }) }} className={`min-w-full divide-y divide-slate-200 text-sm ${tableClassName}`}>
         <thead className="bg-slate-50">
           <tr>
             {columns.map((c) => (
-              <th key={c.header} className={`px-4 py-2.5 text-left font-medium whitespace-nowrap text-slate-600 ${headerCellClassName} ${c.className ?? ''}`}>
+              <th key={c.header} style={c.style} className={`px-4 py-2.5 text-left font-medium whitespace-nowrap text-slate-600 ${headerCellClassName} ${c.className ?? ''}`}>
                 {c.header === SELECT_HEADER ? <input type="checkbox" aria-label="Select all on this page" className={checkbox} checked={allChecked} onChange={toggleAll} /> : c.header}
               </th>
             ))}

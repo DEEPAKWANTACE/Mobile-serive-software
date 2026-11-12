@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { optionalText } from './common.js';
+import type { Role } from '../roles.js';
 
 /** 15-character GSTIN: 2-digit state code, PAN, entity no., 'Z', checksum character. */
 export const GSTIN_PATTERN = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -49,10 +50,86 @@ export const accessoryOptionsQuerySchema = z.object({
 });
 export type AccessoryOptionDto = { id: string; name: string; sortOrder: number; isActive: boolean; branchId: string | null; isGlobal: boolean };
 
+export const DIAGNOSIS_FINDING_CATEGORIES = ['HARDWARE', 'SOFTWARE'] as const;
+export type DiagnosisFindingCategory = (typeof DIAGNOSIS_FINDING_CATEGORIES)[number];
+export const DIAGNOSIS_FINDING_CATEGORY_LABELS: Record<DiagnosisFindingCategory, string> = { HARDWARE: 'Hardware', SOFTWARE: 'Software' };
+
 /** Preset findings shown in the engineer's diagnosis popup. */
 export const diagnosisFindingSchema = z.object({
   label: z.string().trim().min(2, 'Enter a finding').max(200),
+  category: z.enum(DIAGNOSIS_FINDING_CATEGORIES).default('HARDWARE'),
   sortOrder: z.coerce.number().int().min(0).max(999).default(0),
 });
-export const diagnosisFindingUpdateSchema = diagnosisFindingSchema.partial().extend({ isActive: z.boolean().optional() });
-export type DiagnosisFindingDto = { id: string; label: string; sortOrder: number; isActive: boolean };
+export const diagnosisFindingUpdateSchema = z.object({
+  label: z.string().trim().min(2, 'Enter a finding').max(200).optional(),
+  category: z.enum(DIAGNOSIS_FINDING_CATEGORIES).optional(),
+  sortOrder: z.coerce.number().int().min(0).max(999).optional(),
+  isActive: z.boolean().optional(),
+});
+export type DiagnosisFindingDto = { id: string; label: string; category: DiagnosisFindingCategory; sortOrder: number; isActive: boolean };
+
+// ─── Job sheet list columns (Super Admin matrix) ────────────────────────────
+
+/** Every column the job sheet list can show. Job Sheet ID is always shown and is not listed here. */
+export const JOB_LIST_COLUMNS = [
+  'status',
+  'date',
+  'customerName',
+  'customerMobile',
+  'device',
+  'problem',
+  'engineer',
+  'pendingWith',
+  'estimate',
+  'payment',
+  'imei',
+  'city',
+  'branch',
+  'inwardBy',
+  'ageDays',
+  'approval',
+] as const;
+export type JobListColumn = (typeof JOB_LIST_COLUMNS)[number];
+export const JOB_LIST_COLUMN_LABELS: Record<JobListColumn, string> = {
+  status: 'Status',
+  date: 'Date received',
+  customerName: 'Customer name',
+  customerMobile: 'Customer mobile',
+  device: 'Model / device',
+  problem: 'Problem',
+  engineer: 'Engineer',
+  pendingWith: 'Pending with',
+  estimate: 'Estimate amount',
+  payment: 'Payment / balance',
+  imei: 'IMEI / serial',
+  city: 'City',
+  branch: 'Branch',
+  inwardBy: 'Inward by',
+  ageDays: 'Days open',
+  approval: 'Approval button',
+};
+export const JOB_LIST_COLUMN_HINTS: Partial<Record<JobListColumn, string>> = {
+  approval: 'Shows “Approve” on jobs waiting for customer approval (CCO / Branch Manager only)',
+  payment: 'Amount paid and balance due',
+};
+
+const COUNTER_COLUMNS: JobListColumn[] = ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'engineer', 'approval'];
+export const DEFAULT_JOB_LIST_COLUMNS: Record<Role, JobListColumn[]> = {
+  SUPER_ADMIN: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'engineer', 'branch'],
+  BRANCH_MANAGER: COUNTER_COLUMNS,
+  CCO: COUNTER_COLUMNS,
+  ENGINEER: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem'],
+  STOREKEEPER: ['status', 'date', 'customerName', 'device', 'problem', 'engineer'],
+  ACCOUNTS: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'payment'],
+};
+export type JobListColumnsDto = Record<Role, JobListColumn[]>;
+const columnList = z.array(z.enum(JOB_LIST_COLUMNS)).max(JOB_LIST_COLUMNS.length).transform((cols) => [...new Set(cols)]);
+export const jobListColumnsSchema = z.object({
+  SUPER_ADMIN: columnList,
+  BRANCH_MANAGER: columnList,
+  CCO: columnList,
+  ENGINEER: columnList,
+  STOREKEEPER: columnList,
+  ACCOUNTS: columnList,
+});
+export type JobListColumnsData = z.output<typeof jobListColumnsSchema>;

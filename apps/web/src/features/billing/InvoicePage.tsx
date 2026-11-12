@@ -1,4 +1,5 @@
-import { Link, useParams } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { PAYMENT_MODE_LABELS, RWR_REASON_LABELS, type InvoiceDto, type RwrReason } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
@@ -10,8 +11,26 @@ import { useShopSettings } from '@/features/settings/useShopSettings';
 /** Printable invoice (A5/A4). Sidebar and header are hidden when printing. */
 export function InvoicePage() {
   const { id = '' } = useParams();
+  const [params] = useSearchParams();
+  const requested = params.get('copy');
+  const [target, setTarget] = useState<PrintTarget>(requested === 'office' || requested === 'customer' ? requested : 'both');
   const { data: shop } = useShopSettings();
   const { data: inv, isLoading, error } = useQuery({ queryKey: ['jobs', id, 'invoice'], queryFn: () => api.get<InvoiceDto>(`/jobs/${id}/invoice`) });
+  const printCopies = (next: PrintTarget) => {
+    setTarget(next);
+    requestAnimationFrame(() => requestAnimationFrame(async () => {
+      await document.fonts.ready;
+      window.print();
+    }));
+  };
+  // Opened from the "Delivered" toast with ?print=1: print the requested copies once the invoice has loaded.
+  const autoPrinted = useRef(false);
+  useEffect(() => {
+    if (inv && params.get('print') === '1' && !autoPrinted.current) {
+      autoPrinted.current = true;
+      printCopies(target);
+    }
+  });
 
   if (isLoading) return <div className="p-10 text-center text-slate-500">Loading…</div>;
   if (error || !inv) return <div className="p-10 text-center text-slate-600">{error?.message ?? 'Invoice not found'}</div>;
@@ -25,13 +44,23 @@ export function InvoicePage() {
         <Link to={`/jobs/${inv.job.id}`} className="text-sm text-slate-500 hover:underline">
           ← Back to job
         </Link>
-        <Button onClick={() => window.print()}>🖨 Print invoice</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => printCopies('both')}>🖨 Print both</Button>
+          <Button variant="secondary" onClick={() => printCopies('customer')}>Customer copy</Button>
+          <Button variant="secondary" onClick={() => printCopies('office')}>Office copy</Button>
+        </div>
       </div>
 
+      {(['customer', 'office'] as const).map((copy) => (
+        <div
+          key={copy}
+          className={`${copy === 'office' ? 'mt-6 print:mt-0 print:break-before-page' : ''} ${target !== 'both' && target !== copy ? 'print:hidden' : ''} ${copy === 'office' ? 'hidden print:block' : ''}`}
+        >
       <article className="rounded-lg bg-white p-8 text-sm ring-1 ring-slate-200 print:rounded-none print:p-0 print:ring-0">
         <header className="flex items-start justify-between border-b border-slate-200 pb-4">
           <ShopHeader branch={inv.branch} />
           <div className="text-right">
+            <div className="text-[10px] font-semibold tracking-wide text-slate-500 uppercase">{copy === 'customer' ? 'Customer copy' : 'Office copy'}</div>
             <div className="text-base font-semibold">INVOICE</div>
             <div className="font-mono">{inv.invoiceNumber}</div>
             <div className="text-slate-600">{formatDateTime(inv.createdAt)}</div>
@@ -131,6 +160,10 @@ export function InvoicePage() {
           <span>Customer signature: ____________________</span>
         </footer>
       </article>
+        </div>
+      ))}
     </div>
   );
 }
+
+type PrintTarget = 'both' | 'customer' | 'office';

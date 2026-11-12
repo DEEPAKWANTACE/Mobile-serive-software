@@ -21,6 +21,10 @@ import {
   type ApprovalInput,
   type DeadRiskApprovalData,
   type DiagnosisData,
+  type DiagnosisFindingCategory,
+  type DiagnosisFindingDto,
+  DIAGNOSIS_FINDING_CATEGORIES,
+  DIAGNOSIS_FINDING_CATEGORY_LABELS,
   type DiagnosisInput,
   type FaultDto,
   type JobDto,
@@ -46,6 +50,7 @@ import { L4Panel } from '@/features/l4/L4Actions';
 import { Link } from 'react-router';
 import { LogCallForm } from '@/features/calling/LogCallForm';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
+import { ApprovalDecisionForm } from './ApprovalDecisionDialog';
 
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
 export function WorkPanel({ job }: { job: JobDto }) {
@@ -57,6 +62,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [approvingDeadRisk, setApprovingDeadRisk] = useState(false);
   const [negotiating, setNegotiating] = useState(false);
+  const [deciding, setDeciding] = useState(false);
   const [directApproveOptionId, setDirectApproveOptionId] = useState<string | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
   const [action, setAction] = useState<'transfer' | 'spare' | 'spareReceived' | 'rwr' | 'deliver' | null>(null);
@@ -97,7 +103,11 @@ export function WorkPanel({ job }: { job: JobDto }) {
   });
 
   if (job.status === 'RECEIVED' && job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id && !job.diagnosedAt) {
-    return <L4Panel job={job} />;
+    return (
+      <Card title="Repair work">
+        <p className="text-sm text-slate-500">Waiting for an engineer to be assigned.</p>
+      </Card>
+    );
   }
 
   return (
@@ -112,7 +122,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
       }
     >
       <div className="space-y-4">
-        <L4Panel job={job} />
+        <L4Panel job={job} show="banner" />
         {job.status === 'DELIVERED' && (
           <div className="rounded-md bg-slate-800 p-4 text-sm text-white">
             <div className="font-medium">
@@ -230,11 +240,8 @@ export function WorkPanel({ job }: { job: JobDto }) {
             </div>
             {canApprove && !job.approvedAt && (
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-orange-200">
-                <Button size="sm" onClick={() => setApproving('APPROVED')}>
-                  ✓ Customer approved
-                </Button>
-                <Button size="sm" variant="danger" onClick={() => setApproving('REJECTED')}>
-                  ✕ Customer rejected
+                <Button size="sm" onClick={() => setDeciding(true)}>
+                  Record customer approval
                 </Button>
                 <a href={`tel:${job.customer.phone}`}>
                   <Button size="sm" variant="secondary">
@@ -427,6 +434,9 @@ export function WorkPanel({ job }: { job: JobDto }) {
       >
         {approving && <ApprovalForm job={job} decision={approving} initialOptionId={directApproveOptionId} onDone={() => { setApproving(null); setDirectApproveOptionId(null); }} />}
       </Modal>
+      <Modal open={deciding} onClose={() => setDeciding(false)} title="Customer approval" size="md">
+        {deciding && <ApprovalDecisionForm job={job} onDone={() => setDeciding(false)} />}
+      </Modal>
       <Modal open={approvingDeadRisk} onClose={() => setApprovingDeadRisk(false)} title="Separate dead-risk approval" size="sm">
         {approvingDeadRisk && <DeadRiskApprovalForm job={job} onDone={() => setApprovingDeadRisk(false)} />}
       </Modal>
@@ -472,7 +482,7 @@ function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const faults = useOptions<FaultDto>('faults', { branchId: job.branch.id });
   const findings = useQuery({
     queryKey: ['settings', 'diagnosis-findings'],
-    queryFn: () => api.get<{ id: string; label: string; sortOrder: number; isActive: boolean }[]>('/settings/diagnosis-findings'),
+    queryFn: () => api.get<DiagnosisFindingDto[]>('/settings/diagnosis-findings'),
   });
   const prices = useQuery({
     queryKey: ['models', job.model?.id ?? 'accessory', 'prices'],
@@ -483,7 +493,7 @@ function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   return <DiagnosisFormInner job={job} faults={faults.items} prices={prices.data} findings={findings.data} onDone={onDone} />;
 }
 
-function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: JobDto; faults: FaultDto[]; prices: ModelPriceDto[]; findings: { id: string; label: string }[]; onDone: () => void }) {
+function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: JobDto; faults: FaultDto[]; prices: ModelPriceDto[]; findings: DiagnosisFindingDto[]; onDone: () => void }) {
   const queryClient = useQueryClient();
 
   // Start from the previous estimate, else from the faults reported at intake (with their chosen price).
@@ -532,6 +542,14 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
   const lines = watch('lines');
   const options = watch('options');
   const deadRiskRequested = watch('deadRiskRequested');
+  const selectedFindings = watch('findingIds') ?? [];
+  const toggleFinding = (id: string) =>
+    setValue('findingIds', selectedFindings.includes(id) ? selectedFindings.filter((f) => f !== id) : [...selectedFindings, id], { shouldDirty: true });
+  const countIn = (category: DiagnosisFindingCategory) => findings.filter((f) => f.category === category && selectedFindings.includes(f.id)).length;
+  const [findingType, setFindingType] = useState<DiagnosisFindingCategory>(() => {
+    const chosen = findings.filter((f) => job.diagnosisFindings.some((d) => d.id === f.id));
+    return chosen.length && chosen.every((f) => f.category === 'SOFTWARE') ? 'SOFTWARE' : 'HARDWARE';
+  });
   // Parts added by code in this session (name/price shown on the line).
   const [partInfo, setPartInfo] = useState<Record<string, { code: string; name: string; price: number }>>(() =>
     Object.fromEntries(job.estimateLines.flatMap((l) => (l.part ? [[l.part.id, { code: l.part.code, name: l.part.name, price: l.amount }]] : []))),
@@ -560,23 +578,47 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
 
   return (
     <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
-      <div>
-        <div className="mb-2 text-sm font-medium text-slate-700">What did you find?</div>
-        <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3 sm:grid-cols-2">
-          {findings.map((finding) => (
-            <label key={finding.id} className="flex items-start gap-2 text-sm text-slate-700">
-              <input type="checkbox" value={finding.id} {...register('findingIds')} className="mt-0.5 size-4 accent-brand-600" />
-              {finding.label}
-            </label>
-          ))}
+      <section className="rounded-lg border border-slate-200 p-3">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h4 className="text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">1</span>What did you find?</h4>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            Problem type
+            <select value={findingType} onChange={(e) => setFindingType(e.target.value as DiagnosisFindingCategory)} className={`${inputClass} w-36!`} aria-label="Problem type">
+              {DIAGNOSIS_FINDING_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{DIAGNOSIS_FINDING_CATEGORY_LABELS[c]}{countIn(c) ? ` (${countIn(c)})` : ''}</option>
+              ))}
+            </select>
+          </label>
         </div>
-      </div>
-      <Field label="Additional finding / notes" error={errors.notes?.message} hint="Select a preset above, enter notes, or use both">
-        <textarea {...register('notes')} rows={3} autoFocus className={inputClass} placeholder="e.g. Phone dead — PMIC IC faulty, display OK" />
-      </Field>
+        <div className="flex flex-wrap gap-2">
+          {findings.filter((f) => f.category === findingType).map((finding) => {
+            const on = selectedFindings.includes(finding.id);
+            return (
+              <button
+                key={finding.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleFinding(finding.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-brand-400'}`}
+              >
+                {on ? '✓ ' : ''}{finding.label}
+              </button>
+            );
+          })}
+          {!findings.some((f) => f.category === findingType) && <p className="text-sm text-slate-500">No {DIAGNOSIS_FINDING_CATEGORY_LABELS[findingType].toLowerCase()} presets yet — Super Admin can add them.</p>}
+        </div>
+        {selectedFindings.length > 0 && (
+          <p className="mt-3 text-xs text-slate-600">
+            Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => `${f.label} (${DIAGNOSIS_FINDING_CATEGORY_LABELS[f.category]})`).join(', ')}
+          </p>
+        )}
+        <Field label="Additional notes" className="mt-3" error={errors.notes?.message} hint="Select presets above, write notes, or both">
+          <textarea {...register('notes')} rows={2} className={inputClass} placeholder="e.g. Phone dead — PMIC IC faulty, display OK" />
+        </Field>
+      </section>
 
-      <div>
-        <div className="mb-2 text-sm font-medium text-slate-700">Work & charges</div>
+      <section className="rounded-lg border border-slate-200 p-3">
+        <h4 className="mb-3 text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">2</span>Work & charges</h4>
         <div className="space-y-2">
           {fields.map((field, i) => {
             const line = lines[i];
@@ -686,12 +728,12 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
             />
           </div>
         </div>
-      </div>
+      </section>
 
       <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 p-4">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h4 className="text-sm font-semibold text-indigo-950">Propose Alternative Options (Optional)</h4>
+            <h4 className="text-sm font-semibold text-indigo-950"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-indigo-600 text-xs text-white">3</span>Options for the customer (optional)</h4>
             <p className="text-xs text-indigo-700">Give the CCO 2–3 options to present to the customer (e.g. Option 1: Original Part ₹3,500, Option 2: Compatible Part ₹2,200).</p>
           </div>
           <Button
@@ -765,7 +807,7 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
         )}
       </div>
 
-      <div className="flex items-center justify-between rounded-md bg-slate-50 px-4 py-3">
+      <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-md bg-slate-100 px-4 py-3 ring-1 ring-slate-200">
         <div className="text-sm text-slate-600">
           Total estimate
           <span className="block text-xs text-orange-700">

@@ -625,9 +625,15 @@ model AccessoryOption {
 }
 
 /// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
+enum DiagnosisFindingCategory {
+  HARDWARE
+  SOFTWARE
+}
+
 model DiagnosisFinding {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  label     String   @unique
+  id        String                   @id @default(uuid(7)) @db.Uuid
+  label     String                   @unique
+  category  DiagnosisFindingCategory @default(HARDWARE)
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
@@ -1065,6 +1071,8 @@ model ShopSettings {
   email        String?
   logoKey      String?  @map("logo_key")
   invoiceTerms String?  @map("invoice_terms")
+  /// Super Admin column matrix for the job sheet list: { [role]: columnKey[] }. Null = built-in defaults.
+  jobListColumns Json?  @map("job_list_columns")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("shop_settings")
