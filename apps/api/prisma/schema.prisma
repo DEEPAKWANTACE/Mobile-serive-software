@@ -625,23 +625,35 @@ model AccessoryOption {
 }
 
 /// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
-enum DiagnosisFindingCategory {
-  HARDWARE
-  SOFTWARE
-}
-
-model DiagnosisFinding {
-  id        String                   @id @default(uuid(7)) @db.Uuid
-  label     String                   @unique
-  category  DiagnosisFindingCategory @default(HARDWARE)
+/// Super Admin-managed groups for diagnosis presets (e.g. Hardware, Software) — the "Problem type" dropdown.
+model DiagnosisFindingType {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  name      String   @unique
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  findings DiagnosisFinding[]
+
+  @@map("diagnosis_finding_types")
+}
+
+/// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
+model DiagnosisFinding {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  label     String   @unique
+  typeId    String   @map("type_id") @db.Uuid
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  type DiagnosisFindingType @relation(fields: [typeId], references: [id])
   jobs JobDiagnosisFinding[]
 
   @@index([isActive, sortOrder])
+  @@index([typeId])
   @@map("diagnosis_findings")
 }
 

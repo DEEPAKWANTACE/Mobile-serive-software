@@ -5,14 +5,15 @@ import {
   ROLE_VALUES,
   type AccessoryOptionDto,
   type BranchWarrantyData,
-  type DiagnosisFindingCategory,
   type DiagnosisFindingDto,
+  type DiagnosisFindingTypeDto,
   type JobListColumn,
   type JobListColumnsData,
   type JobListColumnsDto,
   type ShopSettingsData,
   type ShopSettingsDto,
 } from '@msm/shared';
+import type { Prisma } from '../../generated/prisma/client.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { detectImageType } from '../../lib/image-type.ts';
 import { prisma } from '../../lib/prisma.ts';
@@ -114,27 +115,61 @@ export async function updateAccessoryOption(id: string, data: { name?: string; s
   return accessoryDto(await prisma.accessoryOption.update({ where: { id }, data, select: accessorySelect }));
 }
 
-const diagnosisFindingSelect = { id: true, label: true, category: true, sortOrder: true, isActive: true } as const;
+const findingTypeSelect = { id: true, name: true, sortOrder: true, isActive: true } as const;
+
+export async function diagnosisFindingTypes(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingTypeDto[]> {
+  const all = includeInactive && actor.role === 'SUPER_ADMIN';
+  return prisma.diagnosisFindingType.findMany({
+    where: all ? {} : { isActive: true },
+    select: findingTypeSelect,
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+  });
+}
+
+export async function createDiagnosisFindingType(data: { name: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingTypeDto> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.diagnosisFindingType.create({ data, select: findingTypeSelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding_type.created', entityType: 'diagnosis_finding_type', entityId: row.id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
+}
+
+export async function updateDiagnosisFindingType(id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingTypeDto> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.diagnosisFindingType.update({ where: { id }, data, select: findingTypeSelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding_type.updated', entityType: 'diagnosis_finding_type', entityId: id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
+}
+
+const diagnosisFindingSelect = { id: true, label: true, sortOrder: true, isActive: true, type: { select: { id: true, name: true } } } as const;
 
 export async function diagnosisFindings(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingDto[]> {
   const all = includeInactive && actor.role === 'SUPER_ADMIN';
   return prisma.diagnosisFinding.findMany({
-    where: all ? {} : { isActive: true },
+    // Engineers only see active presets under active types.
+    where: all ? {} : { isActive: true, type: { isActive: true } },
     select: diagnosisFindingSelect,
-    orderBy: [{ category: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }],
+    orderBy: [{ type: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { label: 'asc' }],
   });
 }
 
-export async function createDiagnosisFinding(data: { label: string; category: DiagnosisFindingCategory; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
+async function assertType(tx: Prisma.TransactionClient, typeId: string | undefined) {
+  if (typeId && !(await tx.diagnosisFindingType.count({ where: { id: typeId } }))) throw HttpError.badRequest('Invalid request', { typeId: ['Select a valid type'] });
+}
+
+export async function createDiagnosisFinding(data: { label: string; typeId: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
+    await assertType(tx, data.typeId);
     const row = await tx.diagnosisFinding.create({ data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.created', entityType: 'diagnosis_finding', entityId: row.id, metadata: data, ip: actor.ip }, tx);
     return row;
   });
 }
 
-export async function updateDiagnosisFinding(id: string, data: { label?: string; category?: DiagnosisFindingCategory; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
+export async function updateDiagnosisFinding(id: string, data: { label?: string; typeId?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
+    await assertType(tx, data.typeId);
     const row = await tx.diagnosisFinding.update({ where: { id }, data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.updated', entityType: 'diagnosis_finding', entityId: id, metadata: data, ip: actor.ip }, tx);
     return row;

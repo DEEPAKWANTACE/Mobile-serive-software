@@ -21,10 +21,8 @@ import {
   type ApprovalInput,
   type DeadRiskApprovalData,
   type DiagnosisData,
-  type DiagnosisFindingCategory,
   type DiagnosisFindingDto,
-  DIAGNOSIS_FINDING_CATEGORIES,
-  DIAGNOSIS_FINDING_CATEGORY_LABELS,
+  type DiagnosisFindingTypeDto,
   type DiagnosisInput,
   type FaultDto,
   type JobDto,
@@ -484,16 +482,20 @@ function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
     queryKey: ['settings', 'diagnosis-findings'],
     queryFn: () => api.get<DiagnosisFindingDto[]>('/settings/diagnosis-findings'),
   });
+  const findingTypes = useQuery({
+    queryKey: ['settings', 'diagnosis-finding-types'],
+    queryFn: () => api.get<DiagnosisFindingTypeDto[]>('/settings/diagnosis-finding-types'),
+  });
   const prices = useQuery({
     queryKey: ['models', job.model?.id ?? 'accessory', 'prices'],
     queryFn: () => job.model ? api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`) : Promise.resolve([]),
   });
   // Native selects need their options present before the form mounts, or they show the wrong choice.
-  if (!faults.data || !prices.data || !findings.data) return <p className="text-sm text-slate-500">Loading…</p>;
-  return <DiagnosisFormInner job={job} faults={faults.items} prices={prices.data} findings={findings.data} onDone={onDone} />;
+  if (!faults.data || !prices.data || !findings.data || !findingTypes.data) return <p className="text-sm text-slate-500">Loading…</p>;
+  return <DiagnosisFormInner job={job} faults={faults.items} prices={prices.data} findings={findings.data} findingTypes={findingTypes.data} onDone={onDone} />;
 }
 
-function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: JobDto; faults: FaultDto[]; prices: ModelPriceDto[]; findings: DiagnosisFindingDto[]; onDone: () => void }) {
+function DiagnosisFormInner({ job, faults, prices, findings, findingTypes, onDone }: { job: JobDto; faults: FaultDto[]; prices: ModelPriceDto[]; findings: DiagnosisFindingDto[]; findingTypes: DiagnosisFindingTypeDto[]; onDone: () => void }) {
   const queryClient = useQueryClient();
 
   // Start from the previous estimate, else from the faults reported at intake (with their chosen price).
@@ -545,11 +547,11 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
   const selectedFindings = watch('findingIds') ?? [];
   const toggleFinding = (id: string) =>
     setValue('findingIds', selectedFindings.includes(id) ? selectedFindings.filter((f) => f !== id) : [...selectedFindings, id], { shouldDirty: true });
-  const countIn = (category: DiagnosisFindingCategory) => findings.filter((f) => f.category === category && selectedFindings.includes(f.id)).length;
-  const [findingType, setFindingType] = useState<DiagnosisFindingCategory>(() => {
-    const chosen = findings.filter((f) => job.diagnosisFindings.some((d) => d.id === f.id));
-    return chosen.length && chosen.every((f) => f.category === 'SOFTWARE') ? 'SOFTWARE' : 'HARDWARE';
-  });
+  const countIn = (typeId: string) => findings.filter((f) => f.type.id === typeId && selectedFindings.includes(f.id)).length;
+  // Open on the type of the first finding already chosen, else the first type.
+  const [findingType, setFindingType] = useState<string>(() =>
+    findings.find((f) => job.diagnosisFindings.some((d) => d.id === f.id))?.type.id ?? findingTypes[0]?.id ?? '');
+  const findingTypeName = findingTypes.find((t) => t.id === findingType)?.name ?? '';
   // Parts added by code in this session (name/price shown on the line).
   const [partInfo, setPartInfo] = useState<Record<string, { code: string; name: string; price: number }>>(() =>
     Object.fromEntries(job.estimateLines.flatMap((l) => (l.part ? [[l.part.id, { code: l.part.code, name: l.part.name, price: l.amount }]] : []))),
@@ -583,15 +585,15 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
           <h4 className="text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">1</span>What did you find?</h4>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             Problem type
-            <select value={findingType} onChange={(e) => setFindingType(e.target.value as DiagnosisFindingCategory)} className={`${inputClass} w-36!`} aria-label="Problem type">
-              {DIAGNOSIS_FINDING_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{DIAGNOSIS_FINDING_CATEGORY_LABELS[c]}{countIn(c) ? ` (${countIn(c)})` : ''}</option>
+            <select value={findingType} onChange={(e) => setFindingType(e.target.value)} className={`${inputClass} w-40!`} aria-label="Problem type">
+              {findingTypes.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}{countIn(t.id) ? ` (${countIn(t.id)})` : ''}</option>
               ))}
             </select>
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
-          {findings.filter((f) => f.category === findingType).map((finding) => {
+          {findings.filter((f) => f.type.id === findingType).map((finding) => {
             const on = selectedFindings.includes(finding.id);
             return (
               <button
@@ -605,11 +607,11 @@ function DiagnosisFormInner({ job, faults, prices, findings, onDone }: { job: Jo
               </button>
             );
           })}
-          {!findings.some((f) => f.category === findingType) && <p className="text-sm text-slate-500">No {DIAGNOSIS_FINDING_CATEGORY_LABELS[findingType].toLowerCase()} presets yet — Super Admin can add them.</p>}
+          {!findings.some((f) => f.type.id === findingType) && <p className="text-sm text-slate-500">No {findingTypeName ? `${findingTypeName.toLowerCase()} ` : ''}presets yet — Super Admin can add them.</p>}
         </div>
         {selectedFindings.length > 0 && (
           <p className="mt-3 text-xs text-slate-600">
-            Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => `${f.label} (${DIAGNOSIS_FINDING_CATEGORY_LABELS[f.category]})`).join(', ')}
+            Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => `${f.label} (${f.type.name})`).join(', ')}
           </p>
         )}
         <Field label="Additional notes" className="mt-3" error={errors.notes?.message} hint="Select presets above, write notes, or both">

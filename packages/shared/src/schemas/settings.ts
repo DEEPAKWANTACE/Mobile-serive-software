@@ -50,23 +50,31 @@ export const accessoryOptionsQuerySchema = z.object({
 });
 export type AccessoryOptionDto = { id: string; name: string; sortOrder: number; isActive: boolean; branchId: string | null; isGlobal: boolean };
 
-export const DIAGNOSIS_FINDING_CATEGORIES = ['HARDWARE', 'SOFTWARE'] as const;
-export type DiagnosisFindingCategory = (typeof DIAGNOSIS_FINDING_CATEGORIES)[number];
-export const DIAGNOSIS_FINDING_CATEGORY_LABELS: Record<DiagnosisFindingCategory, string> = { HARDWARE: 'Hardware', SOFTWARE: 'Software' };
+/** Problem types (e.g. Hardware, Software) grouping the diagnosis presets — Super Admin managed. */
+export const diagnosisFindingTypeSchema = z.object({
+  name: z.string().trim().min(2, 'Enter a type name').max(60),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+export const diagnosisFindingTypeUpdateSchema = z.object({
+  name: z.string().trim().min(2, 'Enter a type name').max(60).optional(),
+  sortOrder: z.coerce.number().int().min(0).max(999).optional(),
+  isActive: z.boolean().optional(),
+});
+export type DiagnosisFindingTypeDto = { id: string; name: string; sortOrder: number; isActive: boolean };
 
 /** Preset findings shown in the engineer's diagnosis popup. */
 export const diagnosisFindingSchema = z.object({
   label: z.string().trim().min(2, 'Enter a finding').max(200),
-  category: z.enum(DIAGNOSIS_FINDING_CATEGORIES).default('HARDWARE'),
+  typeId: z.uuid('Select a type'),
   sortOrder: z.coerce.number().int().min(0).max(999).default(0),
 });
 export const diagnosisFindingUpdateSchema = z.object({
   label: z.string().trim().min(2, 'Enter a finding').max(200).optional(),
-  category: z.enum(DIAGNOSIS_FINDING_CATEGORIES).optional(),
+  typeId: z.uuid('Select a type').optional(),
   sortOrder: z.coerce.number().int().min(0).max(999).optional(),
   isActive: z.boolean().optional(),
 });
-export type DiagnosisFindingDto = { id: string; label: string; category: DiagnosisFindingCategory; sortOrder: number; isActive: boolean };
+export type DiagnosisFindingDto = { id: string; label: string; type: { id: string; name: string }; sortOrder: number; isActive: boolean };
 
 // ─── Job sheet list columns (Super Admin matrix) ────────────────────────────
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -40,6 +40,16 @@ settingsRoutes.post('/accessories', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MA
 });
 settingsRoutes.patch('/accessories/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema, body: accessoryOptionUpdateSchema }), async (req, res) => {
   res.json(await service.updateAccessoryOption(req.params.id as string, req.body, actorOf(req)));
+});
+
+settingsRoutes.get('/diagnosis-finding-types', async (req, res) => {
+  res.json(await service.diagnosisFindingTypes(req.query.all === 'true', actorOf(req)));
+});
+settingsRoutes.post('/diagnosis-finding-types', authorize(ROLES.SUPER_ADMIN), validate({ body: diagnosisFindingTypeSchema }), async (req, res) => {
+  res.status(201).json(await service.createDiagnosisFindingType(req.body, actorOf(req)));
+});
+settingsRoutes.patch('/diagnosis-finding-types/:id', authorize(ROLES.SUPER_ADMIN), validate({ params: idParamSchema, body: diagnosisFindingTypeUpdateSchema }), async (req, res) => {
+  res.json(await service.updateDiagnosisFindingType(req.params.id as string, req.body, actorOf(req)));
 });
 
 settingsRoutes.get('/diagnosis-findings', async (req, res) => {
