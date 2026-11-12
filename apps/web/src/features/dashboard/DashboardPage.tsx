@@ -276,12 +276,12 @@ function EngineerDashboard() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
         <StatCard
-          label="Pending diagnosis"
-          value={all?.ASSIGNED}
+          label="Pending today"
+          value={by?.ASSIGNED}
           tone="brand"
           icon={ClipboardList}
-          hint="Assigned to you · diagnosis pending"
-          to="/jobs?status=ASSIGNED"
+          hint="Assigned today · diagnosis pending"
+          to="/jobs?status=ASSIGNED&today=true"
         />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
         <StatCard label="Completed today OK" value={by?.READY_FOR_DELIVERY} tone="good" icon={PackageCheck} hint="Repair and testing done · awaiting delivery" to="/jobs?status=READY_FOR_DELIVERY&today=true" />
