@@ -19,6 +19,11 @@ export function useJobListColumns(role: Role | undefined): JobListColumn[] {
   return query.data?.[role] ?? DEFAULT_JOB_LIST_COLUMNS[role];
 }
 
+/** Phone is back at its own branch and ready to hand over (RWR returns need the Branch Manager). */
+export const canDeliverRow = (j: JobListItemDto, role: Role | undefined) =>
+  j.location === 'AT_BRANCH' && j.currentBranch.id === j.branch.id &&
+  ((j.status === 'READY_FOR_DELIVERY' && (role === ROLES.CCO || role === ROLES.BRANCH_MANAGER)) || (j.status === 'RWR' && role === ROLES.BRANCH_MANAGER));
+
 export const jobProblem = (j: JobListItemDto) => j.faults.join(', ');
 
 const ageDays = (j: JobListItemDto) => Math.max(0, Math.floor((Date.now() - new Date(j.createdAt).getTime()) / 86_400_000));
@@ -42,7 +47,7 @@ const WEIGHT: Record<JobListColumn | 'jobNumber', number> = {
 
 export function buildJobColumns(
   keys: JobListColumn[],
-  { role, onApprove }: { role: Role | undefined; onApprove: (job: JobListItemDto) => void },
+  { role, onApprove, onDeliver }: { role: Role | undefined; onApprove: (job: JobListItemDto) => void; onDeliver: (job: JobListItemDto) => void },
 ): Column<JobListItemDto>[] {
   const canApprove = role === ROLES.CCO || role === ROLES.BRANCH_MANAGER;
   // The approval column is only meaningful for staff who can record customer approval.
@@ -68,7 +73,9 @@ export function buildJobColumns(
     ageDays: (j) => <span className="tabular-nums">{ageDays(j)}d</span>,
     approval: (j) => j.status === 'AWAITING_APPROVAL'
       ? <button type="button" onClick={() => onApprove(j)} className="rounded-md bg-orange-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-orange-700">Approval</button>
-      : <span className="text-slate-300">—</span>,
+      : canDeliverRow(j, role)
+        ? <button type="button" onClick={() => onDeliver(j)} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Deliver</button>
+        : <span className="text-slate-300">—</span>,
   };
 
   return [

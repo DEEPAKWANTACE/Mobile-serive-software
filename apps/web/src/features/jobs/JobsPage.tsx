@@ -36,7 +36,8 @@ import { JobStatusBadge } from './JobStatusBadge';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 import { ApprovalDecisionDialog } from './ApprovalDecisionDialog';
-import { buildJobColumns, jobProblem, useJobListColumns } from './jobListColumns';
+import { buildJobColumns, canDeliverRow, jobProblem, useJobListColumns } from './jobListColumns';
+import { DeliverJobDialog } from './DeliverJobDialog';
 
 type Tab = 'show' | 'add' | 'edit' | 'delete';
 
@@ -215,7 +216,8 @@ export function ShowJobs() {
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const columnKeys = useJobListColumns(user?.role);
-  const columns = buildJobColumns(columnKeys, { role: user?.role, onApprove: (j) => setApprovingId(j.id) });
+  const [deliveringId, setDeliveringId] = useState<string | null>(null);
+  const columns = buildJobColumns(columnKeys, { role: user?.role, onApprove: (j) => setApprovingId(j.id), onDeliver: (j) => setDeliveringId(j.id) });
   const canApproveRow = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
   const showCol = (key: JobListColumn) => columnKeys.includes(key);
 
@@ -346,7 +348,9 @@ export function ShowJobs() {
                 </div>
                 {canApproveRow && showCol('approval') && job.status === 'AWAITING_APPROVAL'
                   ? <button type="button" onClick={() => setApprovingId(job.id)} className="shrink-0 rounded-md bg-orange-600 px-2 py-0.5 text-xs font-semibold text-white">Approval</button>
-                  : <JobStatusBadge status={job.status} />}
+                  : showCol('approval') && canDeliverRow(job, user?.role)
+                    ? <button type="button" onClick={() => setDeliveringId(job.id)} className="shrink-0 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">Deliver</button>
+                    : <JobStatusBadge status={job.status} />}
               </div>
               <div className="mt-1 flex items-center justify-between gap-3 text-xs">
                 <span className="min-w-0 flex-1 truncate font-medium" title={job.device}>{job.device || '—'}</span>
@@ -369,6 +373,7 @@ export function ShowJobs() {
         {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
       </div>
       <ApprovalDecisionDialog jobId={approvingId} onClose={() => setApprovingId(null)} />
+      <DeliverJobDialog jobId={deliveringId} onClose={() => setDeliveringId(null)} />
     </div>
   );
 }

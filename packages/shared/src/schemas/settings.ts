@@ -106,10 +106,10 @@ export const JOB_LIST_COLUMN_LABELS: Record<JobListColumn, string> = {
   branch: 'Branch',
   inwardBy: 'Inward by',
   ageDays: 'Days open',
-  approval: 'Approval button',
+  approval: 'Action buttons (Approve / Deliver)',
 };
 export const JOB_LIST_COLUMN_HINTS: Partial<Record<JobListColumn, string>> = {
-  approval: 'Shows “Approve” on jobs waiting for customer approval (CCO / Branch Manager only)',
+  approval: '“Approval” on jobs awaiting customer approval and “Deliver” on jobs ready for pickup (CCO / Branch Manager only)',
   payment: 'Amount paid and balance due',
 };
 
