@@ -9,7 +9,7 @@ import {
   CLOSED_STATUSES,
   ENGINEER_TRANSITIONS,
   JOB_STATUS_LABELS,
-  JOB_STATUSES,
+  JOB_STATUS_FILTER_OPTIONS,
   ROLES,
   type BranchDto,
   type EngineerWorkloadDto,
@@ -149,7 +149,7 @@ function ShowEntries() {
           To <input type="date" value={to} min={from || undefined} onChange={(e) => reset(setTo)(e.target.value)} className={`${inputClass} w-38!`} />
         </label>
         <QuickDateRange onSelect={(f, t) => (setFrom(f), setTo(t), setPage(1))} label={false} />
-        <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
+        <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUS_FILTER_OPTIONS.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
         <FilterSelect
           value={engineerId}
           onChange={reset(setEngineerId)}

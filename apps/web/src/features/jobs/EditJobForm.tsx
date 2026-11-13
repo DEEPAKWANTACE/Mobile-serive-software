@@ -80,7 +80,7 @@ function Inner({
       customerType: job.customerType,
       inwardById: job.inwardBy?.id ?? null,
       phoneDamaged: job.phoneDamaged,
-      warranty: job.warranty,
+      warranty: job.warranty ?? 'OUT_OF_WARRANTY',
       warrantyPeriod: job.warrantyPeriod ?? '',
       warrantyTerms: job.warrantyTerms ?? '',
       totalAmount: (job.estimatedAmount ?? '') as unknown as number,
@@ -242,9 +242,8 @@ function Inner({
         )}
         <Field label="Warranty">
           <select {...register('warranty', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
-            <option value="">Not specified</option>
-            <option value="IN_WARRANTY">In warranty</option>
             <option value="OUT_OF_WARRANTY">Out of warranty</option>
+            <option value="IN_WARRANTY">In warranty</option>
           </select>
         </Field>
         <Field label="Repair warranty period" {...err(errors.warrantyPeriod?.message)}>
