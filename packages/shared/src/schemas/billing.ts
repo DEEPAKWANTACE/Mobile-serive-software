@@ -31,7 +31,7 @@ export type DeliveryData = z.output<typeof deliverySchema>;
 /** What the customer owes, computed on the server from the approved estimate (or inspection charge for RWR). */
 export type BillPreviewDto = {
   kind: 'REPAIR' | 'RWR';
-  lines: { description: string; amount: number }[];
+  lines: { description: string; partCode: string | null; warranty: string | null; amount: number }[];
   subtotal: number;
   /** Advances etc. already received (net of refunds). */
   paid: number;
@@ -48,7 +48,7 @@ export type InvoiceDto = {
   discount: number;
   discountReason: string | null;
   total: number;
-  lines: { description: string; amount: number }[];
+  lines: { description: string; partCode: string | null; warranty: string | null; amount: number }[];
   payments: { kind: 'ADVANCE' | 'FINAL' | 'REFUND'; mode: PaymentMode; amount: number; reference: string | null; createdAt: string }[];
   createdBy: { name: string };
   job: {

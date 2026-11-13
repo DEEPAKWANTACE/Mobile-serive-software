@@ -6,6 +6,7 @@ import {
   type AccessoryOptionDto,
   type BranchWarrantyData,
   type DiagnosisFindingDto,
+  type DiagnosisFindingSubcategoryDto,
   type DiagnosisFindingTypeDto,
   type JobListColumn,
   type JobListColumnsData,
@@ -142,13 +143,48 @@ export async function updateDiagnosisFindingType(id: string, data: { name?: stri
   });
 }
 
-const diagnosisFindingSelect = { id: true, label: true, sortOrder: true, isActive: true, type: { select: { id: true, name: true } } } as const;
+const subcategorySelect = { id: true, name: true, typeId: true, sortOrder: true, isActive: true } as const;
+
+export async function diagnosisFindingSubcategories(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingSubcategoryDto[]> {
+  const all = includeInactive && actor.role === 'SUPER_ADMIN';
+  return prisma.diagnosisFindingSubcategory.findMany({
+    where: all ? {} : { isActive: true, type: { isActive: true } },
+    select: subcategorySelect,
+    orderBy: [{ type: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { name: 'asc' }],
+  });
+}
+
+export async function createDiagnosisFindingSubcategory(data: { name: string; typeId: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingSubcategoryDto> {
+  return prisma.$transaction(async (tx) => {
+    await assertType(tx, data.typeId);
+    const row = await tx.diagnosisFindingSubcategory.create({ data, select: subcategorySelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding_subcategory.created', entityType: 'diagnosis_finding_subcategory', entityId: row.id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
+}
+
+export async function updateDiagnosisFindingSubcategory(id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingSubcategoryDto> {
+  return prisma.$transaction(async (tx) => {
+    const row = await tx.diagnosisFindingSubcategory.update({ where: { id }, data, select: subcategorySelect });
+    await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding_subcategory.updated', entityType: 'diagnosis_finding_subcategory', entityId: id, metadata: data, ip: actor.ip }, tx);
+    return row;
+  });
+}
+
+const diagnosisFindingSelect = {
+  id: true,
+  label: true,
+  sortOrder: true,
+  isActive: true,
+  type: { select: { id: true, name: true } },
+  subcategory: { select: { id: true, name: true } },
+} as const;
 
 export async function diagnosisFindings(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingDto[]> {
   const all = includeInactive && actor.role === 'SUPER_ADMIN';
   return prisma.diagnosisFinding.findMany({
-    // Engineers only see active presets under active types.
-    where: all ? {} : { isActive: true, type: { isActive: true } },
+    // Engineers only see active presets under active types (and active sub categories).
+    where: all ? {} : { isActive: true, type: { isActive: true }, OR: [{ subcategoryId: null }, { subcategory: { isActive: true } }] },
     select: diagnosisFindingSelect,
     orderBy: [{ type: { sortOrder: 'asc' } }, { sortOrder: 'asc' }, { label: 'asc' }],
   });
@@ -158,18 +194,32 @@ async function assertType(tx: Prisma.TransactionClient, typeId: string | undefin
   if (typeId && !(await tx.diagnosisFindingType.count({ where: { id: typeId } }))) throw HttpError.badRequest('Invalid request', { typeId: ['Select a valid type'] });
 }
 
-export async function createDiagnosisFinding(data: { label: string; typeId: string; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
+/** A finding's sub category must belong to the finding's type. */
+async function assertSubcategory(tx: Prisma.TransactionClient, subcategoryId: string | null | undefined, typeId: string) {
+  if (!subcategoryId) return;
+  if (!(await tx.diagnosisFindingSubcategory.count({ where: { id: subcategoryId, typeId } }))) {
+    throw HttpError.badRequest('Invalid request', { subcategoryId: ['Select a sub category of this type'] });
+  }
+}
+
+export async function createDiagnosisFinding(data: { label: string; typeId: string; subcategoryId?: string | null; sortOrder: number }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
     await assertType(tx, data.typeId);
+    await assertSubcategory(tx, data.subcategoryId, data.typeId);
     const row = await tx.diagnosisFinding.create({ data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.created', entityType: 'diagnosis_finding', entityId: row.id, metadata: data, ip: actor.ip }, tx);
     return row;
   });
 }
 
-export async function updateDiagnosisFinding(id: string, data: { label?: string; typeId?: string; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
+export async function updateDiagnosisFinding(id: string, data: { label?: string; typeId?: string; subcategoryId?: string | null; sortOrder?: number; isActive?: boolean }, actor: Actor): Promise<DiagnosisFindingDto> {
   return prisma.$transaction(async (tx) => {
     await assertType(tx, data.typeId);
+    const current = await tx.diagnosisFinding.findUniqueOrThrow({ where: { id }, select: { typeId: true, subcategoryId: true } });
+    const typeId = data.typeId ?? current.typeId;
+    // Moving a finding to another type drops a sub category that belongs to the old type.
+    if (data.subcategoryId === undefined && data.typeId && data.typeId !== current.typeId) data = { ...data, subcategoryId: null };
+    await assertSubcategory(tx, data.subcategoryId, typeId);
     const row = await tx.diagnosisFinding.update({ where: { id }, data, select: diagnosisFindingSelect });
     await recordAudit({ actorId: actor.sub, action: 'diagnosis_finding.updated', entityType: 'diagnosis_finding', entityId: id, metadata: data, ip: actor.ip }, tx);
     return row;

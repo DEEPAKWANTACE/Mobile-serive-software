@@ -7,14 +7,18 @@ import { FormActions } from '@/components/ui/FormActions';
 import { api, ApiError } from '@/lib/api-client';
 import { compressImage } from '@/lib/image';
 import { PhotoPicker } from './PhotoPicker';
+import { PartStockPicker } from '@/features/inventory/PartStockPicker';
+import type { PartStockOptionDto } from '@msm/shared';
 
 export function SpareHoldForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [part, setPart] = useState('');
+  const [catalogPart, setCatalogPart] = useState<PartStockOptionDto | null>(null);
+  const [picking, setPicking] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string>();
   const save = useMutation({
-    mutationFn: () => api.post(`/jobs/${job.id}/spare-hold`, { part, note: note.trim() || null }),
+    mutationFn: () => api.post(`/jobs/${job.id}/spare-hold`, { part, partId: catalogPart?.id ?? null, note: note.trim() || null }),
     onSuccess: () => {
       toast.success('Marked as spare not available');
       void queryClient.invalidateQueries();
@@ -31,9 +35,27 @@ export function SpareHoldForm({ job, onDone }: { job: JobDto; onDone: () => void
       }}
       className="space-y-4"
     >
-      <Field label="Part needed" required error={error}>
-        <input value={part} onChange={(e) => setPart(e.target.value)} autoFocus className={inputClass} placeholder={`e.g. Display – ${job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`}`} />
+      <Field label="Part needed" required error={error} hint="Shown to the store under Part Requests">
+        <input value={part} onChange={(e) => (setPart(e.target.value), setCatalogPart(null))} autoFocus className={inputClass} placeholder={`e.g. Display – ${job.accessoryName ?? `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`}`} />
       </Field>
+      {catalogPart ? (
+        <p className="text-xs text-emerald-700">Linked to part {catalogPart.code} — the store can issue it when it arrives and the job resumes.</p>
+      ) : (
+        <button type="button" onClick={() => setPicking((v) => !v)} className="text-sm font-medium text-brand-600 hover:underline">
+          {picking ? 'Close part list' : 'Pick from parts list (optional)'}
+        </button>
+      )}
+      {picking && !catalogPart && (
+        <PartStockPicker
+          branchId={job.currentBranch.id}
+          allowOutOfStock
+          onPick={(p) => {
+            setCatalogPart(p);
+            setPart(`${p.code} – ${p.name}`);
+            setPicking(false);
+          }}
+        />
+      )}
       <Field label="Note">
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} />
       </Field>

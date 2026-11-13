@@ -110,7 +110,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       retailer: '',
       inwardById: null,
       phoneDamaged: false,
-      warranty: null,
+      warranty: 'OUT_OF_WARRANTY',
       brandId: '',
       deviceModelId: '',
       manualBrand: '',
@@ -459,7 +459,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           </Field>
           <Field label="Warranty">
             <div className="flex flex-wrap gap-4 pt-2 text-sm">
-              {([['', 'Not specified'], ['IN_WARRANTY', 'In warranty'], ['OUT_OF_WARRANTY', 'Out of warranty']] as const).map(([v, label]) => (
+              {([['OUT_OF_WARRANTY', 'Out of warranty'], ['IN_WARRANTY', 'In warranty']] as const).map(([v, label]) => (
                 <label key={v} className="flex items-center gap-1.5">
                   <input type="radio" value={v} {...register('warranty', { setValueAs: (x: string | null) => x || null })} className="accent-brand-600" />
                   {label}
@@ -474,16 +474,22 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </div>
       </Card>
 
+      {!extraDevices.length ? (
+        <div className="theme-panel flex items-center justify-between gap-3 rounded-xl bg-white px-4 py-2.5 ring-1 ring-slate-200/80">
+          <span className="text-sm text-slate-600">More items from the same customer?</span>
+          <Button type="button" size="sm" variant="secondary" onClick={() => setExtraDevices((rows) => [...rows, extraDevice()])}>
+            + Add item
+          </Button>
+        </div>
+      ) : (
       <Card
         title="Additional devices / accessories"
-        subtitle="Use one job sheet when the same customer or retailer brings multiple items"
         actions={
           <Button type="button" size="sm" variant="secondary" onClick={() => setExtraDevices((rows) => [...rows, extraDevice()])}>
             + Add item
           </Button>
         }
       >
-        {extraDevices.length ? (
           <div className="space-y-4">
             {extraDevices.map((device, index) => (
               <ExtraDeviceEditor
@@ -496,10 +502,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               />
             ))}
           </div>
-        ) : (
-          <p className="text-sm text-slate-500">This job sheet currently has one item. Add another phone, tablet, watch, speaker, charger, or other accessory here.</p>
-        )}
       </Card>
+      )}
 
       <Card title="Problem & estimate">
         <div className="mb-4">
@@ -552,14 +556,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         {errors.faults && <p className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
         {errors.manualFault && <p className="mt-1 text-xs text-red-600">{errors.manualFault.message}</p>}
 
-        <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
-          <h3 className="mb-3 text-sm font-semibold text-slate-800">Device Photos</h3>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
-            <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
-          </div>
-        </div>
-
         {selectedFaults.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-4 py-3">
             <span className="text-sm text-slate-600">
@@ -601,62 +597,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           <textarea {...register('customerComplaint')} rows={2} className={inputClass} />
         </Field>
       </Card>
-
-      <Card title="Accessories & condition">
-        <Controller
-          control={control}
-          name="accessories"
-          render={({ field }) => (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {(accessoryOptions.data ?? []).filter((a) => a.isActive).map((option) => {
-                const a = option.name;
-                const checked = field.value?.includes(a) ?? false;
-                return (
-                  <label key={a} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => field.onChange(checked ? field.value!.filter((x) => x !== a) : [...(field.value ?? []), a])}
-                      className="size-4 accent-brand-600"
-                    />
-                    {a}
-                  </label>
-                );
-              })}
-            </div>
-          )}
-        />
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Extra added (other items received)" {...err(errors.accessoriesOther?.message)}>
-            <input {...register('accessoriesOther')} className={inputClass} />
-          </Field>
-          <Field label="Physical condition" hint="Scratches, dents, cracks, missing screws…" {...err(errors.conditionNotes?.message)}>
-            <input {...register('conditionNotes')} className={inputClass} />
-          </Field>
-          <Field label="Physical condition remark" className="sm:col-span-2" {...err(errors.physicalConditionRemark?.message)}>
-            <textarea {...register('physicalConditionRemark')} rows={2} className={inputClass} placeholder="Detailed remark about condition at inward" />
-          </Field>
-        </div>
-      </Card>
-
-      <div id="photos">
-        <Card title="Customer Photos">
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-            <PhotoPicker label={PHOTO_KIND_LABELS.CUSTOMER} files={photos.CUSTOMER} onChange={(f) => setPhotos((p) => ({ ...p, CUSTOMER: f }))} />
-            <PhotoPicker
-              label={PHOTO_KIND_LABELS.ID_PROOF}
-              files={photos.ID_PROOF}
-              required={needsIdProof.length > 0}
-              error={idProofError}
-              onChange={(f) => {
-                setPhotos((p) => ({ ...p, ID_PROOF: f }));
-                if (f.length) setIdProofError(undefined);
-              }}
-              multiple
-            />
-          </div>
-        </Card>
-      </div>
 
       <Card title="Inward, engineer & advance">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -712,6 +652,64 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         </div>
       </Card>
+
+      <Card title="Accessories & condition">
+        <Controller
+          control={control}
+          name="accessories"
+          render={({ field }) => (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {(accessoryOptions.data ?? []).filter((a) => a.isActive).map((option) => {
+                const a = option.name;
+                const checked = field.value?.includes(a) ?? false;
+                return (
+                  <label key={a} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => field.onChange(checked ? field.value!.filter((x) => x !== a) : [...(field.value ?? []), a])}
+                      className="size-4 accent-brand-600"
+                    />
+                    {a}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        />
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Extra added (other items received)" {...err(errors.accessoriesOther?.message)}>
+            <input {...register('accessoriesOther')} className={inputClass} />
+          </Field>
+          <Field label="Physical condition" hint="Scratches, dents, cracks, missing screws…" {...err(errors.conditionNotes?.message)}>
+            <input {...register('conditionNotes')} className={inputClass} />
+          </Field>
+          <Field label="Physical condition remark" className="sm:col-span-2" {...err(errors.physicalConditionRemark?.message)}>
+            <textarea {...register('physicalConditionRemark')} rows={2} className={inputClass} placeholder="Detailed remark about condition at inward" />
+          </Field>
+        </div>
+      </Card>
+
+      <div id="photos">
+        <Card title="Photos" subtitle="Phone, physical condition, customer and Aadhaar / ID">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+            <PhotoPicker label={PHOTO_KIND_LABELS.DEVICE} files={photos.DEVICE} onChange={(f) => setPhotos((p) => ({ ...p, DEVICE: f }))} multiple />
+            <PhotoPicker label={PHOTO_KIND_LABELS.PHYSICAL_CONDITION} files={photos.PHYSICAL_CONDITION} onChange={(f) => setPhotos((p) => ({ ...p, PHYSICAL_CONDITION: f }))} multiple />
+            <PhotoPicker label={PHOTO_KIND_LABELS.CUSTOMER} files={photos.CUSTOMER} onChange={(f) => setPhotos((p) => ({ ...p, CUSTOMER: f }))} />
+            <PhotoPicker
+              label={PHOTO_KIND_LABELS.ID_PROOF}
+              files={photos.ID_PROOF}
+              required={needsIdProof.length > 0}
+              error={idProofError}
+              onChange={(f) => {
+                setPhotos((p) => ({ ...p, ID_PROOF: f }));
+                if (f.length) setIdProofError(undefined);
+              }}
+              multiple
+            />
+          </div>
+        </Card>
+      </div>
 
       <StickyActions>
         <Button variant="secondary" onClick={() => navigate('/jobs')}>

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { JOB_PART_STATUS_LABELS, type PartRequestDto } from '@msm/shared';
+import { JOB_PART_STATUS_LABELS, type PartRequestDto, type SpareHoldDto } from '@msm/shared';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
 import { inputClass } from '@/components/ui/Field';
@@ -34,6 +35,12 @@ export function PartRequestsPage() {
   const { data, isLoading } = useQuery({
     queryKey: ['inventory', 'requests', branchId, tab],
     queryFn: () => api.get<PartRequestDto[]>(`/inventory/part-requests?status=${tab}${branchId ? `&branchId=${branchId}` : ''}`),
+    enabled: !needsBranch,
+  });
+
+  const holds = useQuery({
+    queryKey: ['inventory', 'spare-holds', branchId],
+    queryFn: () => api.get<SpareHoldDto[]>(`/inventory/spare-holds${branchId ? `?branchId=${branchId}` : ''}`),
     enabled: !needsBranch,
   });
 
@@ -130,6 +137,30 @@ export function PartRequestsPage() {
           isLoading={isLoading}
           emptyMessage={tab === 'open' ? 'No pending part requests' : 'No issued parts'}
         />
+      )}
+      {!needsBranch && !!holds.data?.length && (
+        <Card title={`Spare not available — jobs waiting (${holds.data.length})`} subtitle="Engineers marked these jobs as waiting for a part" className="mt-5">
+          <DataTable
+            columns={[
+              {
+                header: 'Job',
+                cell: (h: SpareHoldDto) => (
+                  <div>
+                    {canOpenJobs
+                      ? <Link to={`/jobs/${h.job.id}`} className="font-mono text-sm font-semibold whitespace-nowrap text-brand-600 hover:underline">{h.job.jobNumber}</Link>
+                      : <span className="font-mono text-sm font-semibold whitespace-nowrap">{h.job.jobNumber}</span>}
+                    <div className="text-xs text-slate-500">{h.job.device}</div>
+                  </div>
+                ),
+              },
+              { header: 'Part needed', cell: (h: SpareHoldDto) => <span className="font-medium">{h.part}</span> },
+              { header: 'Engineer', cell: (h: SpareHoldDto) => h.job.engineer ?? '—' },
+              { header: 'Waiting', cell: (h: SpareHoldDto) => (h.since ? `${timeAgo(h.since)}` : '—') },
+            ]}
+            rows={holds.data}
+            rowKey={(h) => h.job.id}
+          />
+        </Card>
       )}
       <Modal open={!!action} onClose={() => setAction(null)} title={action ? ACTION_TEXT[action.kind].title : ''} size="sm">
         {action && <ActionForm action={action} onDone={() => setAction(null)} />}

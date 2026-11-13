@@ -62,19 +62,41 @@ export const diagnosisFindingTypeUpdateSchema = z.object({
 });
 export type DiagnosisFindingTypeDto = { id: string; name: string; sortOrder: number; isActive: boolean };
 
+/** Sub categories under a problem type (e.g. Hardware -> Display & touch). */
+export const diagnosisFindingSubcategorySchema = z.object({
+  name: z.string().trim().min(2, 'Enter a sub category name').max(60),
+  typeId: z.uuid('Select a type'),
+  sortOrder: z.coerce.number().int().min(0).max(999).default(0),
+});
+export const diagnosisFindingSubcategoryUpdateSchema = z.object({
+  name: z.string().trim().min(2, 'Enter a sub category name').max(60).optional(),
+  sortOrder: z.coerce.number().int().min(0).max(999).optional(),
+  isActive: z.boolean().optional(),
+});
+export type DiagnosisFindingSubcategoryDto = { id: string; name: string; typeId: string; sortOrder: number; isActive: boolean };
+
 /** Preset findings shown in the engineer's diagnosis popup. */
 export const diagnosisFindingSchema = z.object({
   label: z.string().trim().min(2, 'Enter a finding').max(200),
   typeId: z.uuid('Select a type'),
+  subcategoryId: z.uuid().nullish(),
   sortOrder: z.coerce.number().int().min(0).max(999).default(0),
 });
 export const diagnosisFindingUpdateSchema = z.object({
   label: z.string().trim().min(2, 'Enter a finding').max(200).optional(),
   typeId: z.uuid('Select a type').optional(),
+  subcategoryId: z.uuid().nullish(),
   sortOrder: z.coerce.number().int().min(0).max(999).optional(),
   isActive: z.boolean().optional(),
 });
-export type DiagnosisFindingDto = { id: string; label: string; type: { id: string; name: string }; sortOrder: number; isActive: boolean };
+export type DiagnosisFindingDto = {
+  id: string;
+  label: string;
+  type: { id: string; name: string };
+  subcategory: { id: string; name: string } | null;
+  sortOrder: number;
+  isActive: boolean;
+};
 
 // ─── Job sheet list columns (Super Admin matrix) ────────────────────────────
 

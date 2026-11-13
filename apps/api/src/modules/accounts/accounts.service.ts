@@ -98,6 +98,10 @@ export async function dayBook(query: DayBookQuery, actor: Actor): Promise<DayBoo
   const from = query.from ?? businessToday();
   const to = query.to ?? from;
   if (from > to) throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
+  if (actor.role === 'CCO') {
+    const earliest = businessToday(new Date(Date.now() - 86_400_000));
+    if (from < earliest || to > businessToday()) throw HttpError.forbidden('CCO can view only today and yesterday in the day book');
+  }
   const branch: { branchId?: string } = actor.branchId ? branchScope(actor) : query.branchId ? { branchId: query.branchId } : {};
   const range = businessRange(from, to);
 

@@ -8,6 +8,7 @@ import {
   type PartRequestData,
   type PartRequestDto,
   type PartRequestListQuery,
+  type SpareHoldDto,
   type StockAdjustmentData,
   type StockListQuery,
   type StockMovementDto,
@@ -262,6 +263,36 @@ export async function requests(query: PartRequestListQuery, actor: Actor) {
       stock: qty.get(r.part.id) ?? 0,
     }),
   );
+}
+
+/** Jobs the engineer marked "spare not available" that have no catalogue request the store can issue. */
+export async function spareHolds(branchId: string | undefined, actor: Actor): Promise<SpareHoldDto[]> {
+  const branch = storeBranch(actor, branchId);
+  assertStore(actor, branch);
+  const rows = await prisma.job.findMany({
+    where: { currentBranchId: branch, status: 'SPARE_PENDING', parts: { none: { status: 'NOT_AVAILABLE' } } },
+    select: {
+      id: true, jobNumber: true, sparePart: true, spareRequestedAt: true, jobType: true, accessoryName: true,
+      manualBrand: true, manualModel: true, brand: { select: { name: true } }, deviceModel: { select: { name: true } },
+      assignedEngineer: { select: { name: true } },
+      statusHistory: { where: { toStatus: 'SPARE_PENDING' }, select: { remark: true }, orderBy: { id: 'desc' }, take: 1 },
+    },
+    orderBy: { spareRequestedAt: 'asc' },
+    take: 200,
+  });
+  return rows.map((j) => ({
+    job: {
+      id: j.id,
+      jobNumber: publicJobNumber(j.jobNumber),
+      device: j.jobType === 'ACCESSORY'
+        ? (j.accessoryName ?? 'Accessory')
+        : (j.manualBrand || j.manualModel ? `${j.manualBrand ?? ''} ${j.manualModel ?? ''}`.trim() : `${j.brand?.name ?? ''} ${j.deviceModel?.name ?? ''}`.trim()) || 'Mobile',
+      engineer: j.assignedEngineer?.name ?? null,
+    },
+    part: j.sparePart ?? 'Spare part',
+    note: j.statusHistory[0]?.remark ?? null,
+    since: j.spareRequestedAt?.toISOString() ?? null,
+  }));
 }
 
 async function loadJobPart(id: string) {

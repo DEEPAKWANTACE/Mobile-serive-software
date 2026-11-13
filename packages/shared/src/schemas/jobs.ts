@@ -37,6 +37,16 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   CANCELLED: 'Cancelled',
 };
 
+/**
+ * Statuses offered in list filters. "Awaiting assignment" is left out: every new job sheet is assigned to an
+ * engineer at intake, so it only appears briefly for phones arriving at the main office (L4).
+ */
+export const JOB_STATUS_FILTER_OPTIONS: readonly JobStatus[] = JOB_STATUSES.filter((s) => s !== 'RECEIVED');
+
+/** Warranty the CCO can attach to each billed item. */
+export const LINE_WARRANTY_OPTIONS = ['No warranty', '7 days', '15 days', '30 days', '3 months', '6 months'] as const;
+export type LineWarranty = (typeof LINE_WARRANTY_OPTIONS)[number];
+
 /** The person or team whose action is needed before the job can move forward. */
 export const JOB_PENDING_WITH: Record<JobStatus, string> = {
   RECEIVED: 'Counter · engineer assignment',
@@ -502,18 +512,48 @@ export type JobEstimateOptionDto = {
   createdAt: string;
 };
 
+const moneyAmount = z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places');
+
+/**
+ * Engineer's diagnosis: preset findings and/or a short note, one repair amount, and the dead-risk flag.
+ * Parts used come from stock separately; the CCO builds the detailed costing when recording approval.
+ */
 export const diagnosisSchema = z
   .object({
-    options: z.array(estimateOptionSchema).max(10).optional().default([]),
     /** Super Admin-managed preset findings; free-text notes remain available. */
     findingIds: z.array(z.uuid()).max(10).default([]),
     notes: optionalText(2000),
-    lines: z.array(estimateLineSchema).min(1, 'Add at least one item').max(30),
+    amount: z.preprocess((v) => (v === '' || v === null ? undefined : v), moneyAmount),
     deadRiskRequested: z.boolean().default(false),
     deadRiskNote: optionalText(500),
   })
   .refine((v) => v.findingIds.length > 0 || !!v.notes, { message: 'Select a finding or describe what you found', path: ['notes'] })
   .refine((v) => !v.deadRiskRequested || !!v.deadRiskNote, { message: 'Explain the dead-device risk', path: ['deadRiskNote'] });
+
+/** One billed item as the CCO edits it: free text or a part from stock, with its warranty and amount. */
+export const costLineSchema = z
+  .object({
+    description: optionalText(200),
+    partId: z.uuid().nullish(),
+    warranty: z.enum(LINE_WARRANTY_OPTIONS).nullish(),
+    amount: moneyAmount,
+  })
+  .refine((l) => l.partId || l.description, { message: 'Describe the item', path: ['description'] });
+export type CostLineInput = z.input<typeof costLineSchema>;
+export type CostLineData = z.output<typeof costLineSchema>;
+
+/** Replace the job's costing (CCO / Branch Manager). Part lines take and return stock. */
+export const jobLinesSchema = z.object({
+  lines: z.array(costLineSchema).min(1, 'Add at least one item').max(30),
+});
+export type JobLinesData = z.output<typeof jobLinesSchema>;
+
+/** Engineer / CCO uses a part from branch stock on the job (stock goes down immediately). */
+export const stockPartAddSchema = z.object({
+  partId: z.uuid('Select a part'),
+  warranty: z.enum(LINE_WARRANTY_OPTIONS).nullish(),
+});
+export type StockPartAddData = z.output<typeof stockPartAddSchema>;
 export type DiagnosisInput = z.input<typeof diagnosisSchema>;
 export type DiagnosisData = z.output<typeof diagnosisSchema>;
 
@@ -524,6 +564,10 @@ export const approvalSchema = z
     /** Optional negotiated amount entered by the CCO while recording approval. */
     amount: z.coerce.number().min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullish(),
     note: optionalText(500),
+    /** Costing agreed with the customer (replaces the estimate lines). */
+    lines: z.array(costLineSchema).min(1, 'Add at least one item').max(30).nullish(),
+    /** The customer also accepted the engineer's dead-device warning in the same call. */
+    deadRiskApproved: z.boolean().optional(),
   })
   .refine((v) => v.decision === 'APPROVED' || v.note, { message: 'Enter the customer\'s reason', path: ['note'] });
 export type ApprovalInput = z.input<typeof approvalSchema>;
@@ -553,7 +597,7 @@ export type StatusChangeData = z.output<typeof statusChangeSchema>;
 
 export const transferRequestSchema = z.object({
   toEngineerId: z.uuid('Select an engineer'),
-  reason: z.string().trim().min(3, 'Enter a reason').max(500),
+  reason: optionalText(500),
   remark: optionalText(500),
 });
 export type TransferRequestInput = z.input<typeof transferRequestSchema>;
@@ -572,6 +616,8 @@ export type TransferListQuery = z.output<typeof transferListQuerySchema>;
 
 export const spareHoldSchema = z.object({
   part: z.string().trim().min(2, 'Enter the part needed').max(200),
+  /** Catalogue part, when known: the store sees it as a "not available" request and can issue it on arrival. */
+  partId: z.uuid().nullish(),
   note: optionalText(500),
 });
 export type SpareHoldInput = z.input<typeof spareHoldSchema>;
@@ -588,7 +634,7 @@ export type RwrData = z.output<typeof rwrSchema>;
 
 export const sendToL4Schema = z.object({
   toBranchId: z.uuid('Select the main office'),
-  reason: z.string().trim().min(3, 'Why is it going to L4?').max(500),
+  reason: optionalText(500),
 });
 export type SendToL4Data = z.output<typeof sendToL4Schema>;
 
@@ -656,6 +702,13 @@ export type RepairNotesData = z.output<typeof repairNotesSchema>;
 
 export const unassignSchema = z.object({ note: optionalText(300) });
 
+/** Start a job sheet again ("repeat repair"): a new linked job that goes straight to the engineer's diagnosis. */
+export const repeatRepairSchema = z.object({
+  engineerId: z.uuid('Assign an engineer'),
+  note: optionalText(500),
+});
+export type RepeatRepairData = z.output<typeof repeatRepairSchema>;
+
 export const customerLookupQuerySchema = z.object({ phone: mobileNumber });
 
 export const photoUploadSchema = z.object({ kind: z.enum(['CUSTOMER', 'ID_PROOF', 'DEVICE', 'PHYSICAL_CONDITION']) });
@@ -717,6 +770,9 @@ export type JobListItemDto = {
   readyAt: string | null;
   deliveredAt: string | null;
   deliveryNote: string | null;
+  hasInvoice: boolean;
+  /** Job number this one repeats ("repeat repair"), if any. */
+  repeatOf: string | null;
 };
 
 export type JobPhotoDto = { id: string; kind: PhotoKind; createdAt: string };
@@ -827,10 +883,14 @@ export type JobDto = {
     part: { id: string; code: string; name: string } | null;
     description: string | null;
     priceLabel: string | null;
+    warranty: string | null;
     amount: number;
   }[];
   estimateOptions: JobEstimateOptionDto[];
   photos: JobPhotoDto[];
+  /** Earlier job sheet this one repeats, and later repeats of this one. */
+  repeatOf: { id: string; jobNumber: string } | null;
+  repeats: { id: string; jobNumber: string; status: JobStatus }[];
 };
 
 export const jobTrendQuerySchema = z.object({
@@ -879,7 +939,8 @@ export const BULK_JOB_ACTION_LABELS: Record<BulkJobAction, string> = {
 /** Who may run each bulk action. Delete is Super Admin only; per-job rules still apply in the services. */
 export const BULK_JOB_ACTION_ROLES: Record<BulkJobAction, readonly Role[]> = {
   assign: ['BRANCH_MANAGER', 'CCO'],
-  unassign: ['BRANCH_MANAGER', 'CCO'],
+  // Every job must stay with an engineer, so taking jobs back without reassigning is no longer offered.
+  unassign: [],
   status: ['SUPER_ADMIN', 'BRANCH_MANAGER'],
   cancel: ['SUPER_ADMIN', 'BRANCH_MANAGER', 'CCO'],
   delete: ['SUPER_ADMIN'],

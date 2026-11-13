@@ -1,29 +1,36 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { EngineerWorkloadDto, JobDto } from '@msm/shared';
+import { L4_SENDABLE_STATUSES, type BranchDto, type EngineerWorkloadDto, type JobDto } from '@msm/shared';
+import { useOptions } from '@/lib/crud';
 import { Button } from '@/components/ui/Button';
 import { Field, inputClass } from '@/components/ui/Field';
 import { FormActions } from '@/components/ui/FormActions';
 import { api } from '@/lib/api-client';
 
-/** Engineer asks a colleague (e.g. senior) to take over the job. */
+/** Engineer hands the job to a colleague (who must accept) or sends the phone to the L4 / main office. */
 export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [to, setTo] = useState('');
   const [reason, setReason] = useState('');
-  const [remark, setRemark] = useState('');
-  const [errors, setErrors] = useState<{ to?: string; reason?: string }>({});
+  const [error, setError] = useState<string>();
   const engineers = useQuery({
     queryKey: ['engineers', job.branch.id],
     queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers?branchId=${job.branch.id}`),
   });
   const options = (engineers.data ?? []).filter((e) => e.id !== job.assignedEngineer?.id);
+  const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
+  const canSendL4 = atHome && L4_SENDABLE_STATUSES.includes(job.status);
+  const { items: offices } = useOptions<BranchDto>('branches', { type: 'MAIN_OFFICE' }, { enabled: canSendL4 });
+  const l4Choices = offices.filter((b) => b.id !== job.branch.id);
+  const toL4 = to.startsWith('l4:');
 
   const send = useMutation({
-    mutationFn: () => api.post(`/jobs/${job.id}/transfers`, { toEngineerId: to, reason, remark }),
+    mutationFn: () => toL4
+      ? api.post(`/jobs/${job.id}/l4/send`, { toBranchId: to.slice(3), reason: reason.trim() || null })
+      : api.post(`/jobs/${job.id}/transfers`, { toEngineerId: to, reason: reason.trim() || null }),
     onSuccess: () => {
-      toast.success('Transfer request sent — the job stays with you until it is accepted');
+      toast.success(toL4 ? 'Sent to L4 — the main office must receive it' : 'Transfer request sent — the job stays with you until it is accepted');
       void queryClient.invalidateQueries();
       onDone();
     },
@@ -34,30 +41,37 @@ export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () =
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const errs = { to: to ? undefined : 'Select an engineer', reason: reason.trim().length >= 3 ? undefined : 'Enter a reason' };
-        setErrors(errs);
-        if (!errs.to && !errs.reason) send.mutate();
+        if (!to) return setError('Select where to transfer the job');
+        send.mutate();
       }}
       className="space-y-4"
     >
-      <Field label="Transfer to" required error={errors.to}>
-        <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
-          <option value="">Select engineer</option>
-          {options.map((e) => (
-            <option key={e.id} value={e.id}>
-              {e.name} — {e.openJobs} open
-            </option>
-          ))}
+      <Field label="Transfer to" required error={error}>
+        <select value={to} onChange={(e) => (setTo(e.target.value), setError(undefined))} className={inputClass}>
+          <option value="">Select engineer or L4</option>
+          <optgroup label="Engineers">
+            {options.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name} — {e.openJobs} open
+              </option>
+            ))}
+          </optgroup>
+          {canSendL4 && l4Choices.length > 0 && (
+            <optgroup label="L4 / main office (for repair)">
+              {l4Choices.map((b) => <option key={b.id} value={`l4:${b.id}`}>{b.name} ({b.code})</option>)}
+            </optgroup>
+          )}
         </select>
       </Field>
-      <Field label="Reason" required error={errors.reason}>
-        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Board-level work, needs a senior" />
+      <Field label="Reason" hint="Optional">
+        <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={inputClass} placeholder={toL4 ? 'e.g. Board-level work not possible here' : 'e.g. Board-level work, needs a senior'} />
       </Field>
-      <Field label="Remark" hint="Work done so far, parts already tried — optional">
-        <input value={remark} onChange={(e) => setRemark(e.target.value)} maxLength={300} className={inputClass} />
-      </Field>
-      <p className="text-xs text-slate-500">The other engineer must accept. Until then the job stays with you.</p>
-      <FormActions onCancel={onDone} loading={send.isPending} submitLabel="Send request" />
+      <p className="text-xs text-slate-500">
+        {toL4
+          ? 'The phone goes to the main office and its engineer takes over. Customer calls and delivery stay with this branch.'
+          : 'The other engineer must accept. Until then the job stays with you.'}
+      </p>
+      <FormActions onCancel={onDone} loading={send.isPending} submitLabel={toL4 ? 'Send to L4' : 'Send request'} />
     </form>
   );
 }

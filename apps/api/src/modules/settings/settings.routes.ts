@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -50,6 +50,16 @@ settingsRoutes.post('/diagnosis-finding-types', authorize(ROLES.SUPER_ADMIN), va
 });
 settingsRoutes.patch('/diagnosis-finding-types/:id', authorize(ROLES.SUPER_ADMIN), validate({ params: idParamSchema, body: diagnosisFindingTypeUpdateSchema }), async (req, res) => {
   res.json(await service.updateDiagnosisFindingType(req.params.id as string, req.body, actorOf(req)));
+});
+
+settingsRoutes.get('/diagnosis-finding-subcategories', async (req, res) => {
+  res.json(await service.diagnosisFindingSubcategories(req.query.all === 'true', actorOf(req)));
+});
+settingsRoutes.post('/diagnosis-finding-subcategories', authorize(ROLES.SUPER_ADMIN), validate({ body: diagnosisFindingSubcategorySchema }), async (req, res) => {
+  res.status(201).json(await service.createDiagnosisFindingSubcategory(req.body, actorOf(req)));
+});
+settingsRoutes.patch('/diagnosis-finding-subcategories/:id', authorize(ROLES.SUPER_ADMIN), validate({ params: idParamSchema, body: diagnosisFindingSubcategoryUpdateSchema }), async (req, res) => {
+  res.json(await service.updateDiagnosisFindingSubcategory(req.params.id as string, req.body, actorOf(req)));
 });
 
 settingsRoutes.get('/diagnosis-findings', async (req, res) => {

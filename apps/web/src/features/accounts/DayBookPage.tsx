@@ -32,6 +32,8 @@ export function DayBookPage() {
   const { user } = useAuth();
   const canVoid = !!user && EXPENSE_VOID_ROLES.includes(user.role);
   const canOpenJobs = user?.role !== ROLES.ACCOUNTS;
+  // CCO only sees today and yesterday — no older records.
+  const isCco = user?.role === ROLES.CCO;
   const [from, setFrom] = useState(todayIso());
   const [to, setTo] = useState(todayIso());
   const [branchId, setBranchId] = useState('');
@@ -110,10 +112,27 @@ export function DayBookPage() {
       <PageHeader title="Day Book" description="Money received, refunds and office expenses" actions={<Button onClick={() => setAdding(true)}>Add expense</Button>} />
       <FilterBar>
         <BranchScopePicker value={branchId} onChange={setBranchId} />
-        <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="From" className={`${inputClass} w-40!`} />
-        <span className="text-slate-500">to</span>
-        <input type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} aria-label="To" className={`${inputClass} w-40!`} />
-        <QuickDateRange onSelect={quick} allowAll={false} label={false} />
+        {isCco ? (
+          <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
+            {([['Today', todayIso()], ['Yesterday', todayIso(-1)]] as const).map(([label, day]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => quick(day, day)}
+                className={`rounded px-3 py-1.5 ${from === day && to === day ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} aria-label="From" className={`${inputClass} w-40!`} />
+            <span className="text-slate-500">to</span>
+            <input type="date" value={to} min={from} max={todayIso()} onChange={(e) => setTo(e.target.value)} aria-label="To" className={`${inputClass} w-40!`} />
+            <QuickDateRange onSelect={quick} allowAll={false} label={false} />
+          </>
+        )}
       </FilterBar>
 
       {error && <p className="text-sm text-red-600">{error.message}</p>}

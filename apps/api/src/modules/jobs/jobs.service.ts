@@ -435,6 +435,7 @@ const listSelect = {
   deliveredAt: true,
   deliveryNote: true,
   invoice: { select: { total: true } },
+  repeatOf: { select: { jobNumber: true } },
   inwardBy: { select: { name: true } },
   transfers: { where: { status: 'PENDING' }, select: { id: true } },
   payments: { select: { kind: true, amount: true } },
@@ -583,6 +584,8 @@ export async function list(query: JobListQuery, actor: Actor) {
     readyAt: j.readyAt?.toISOString() ?? null,
     deliveredAt: j.deliveredAt?.toISOString() ?? null,
     deliveryNote: j.deliveryNote,
+    hasInvoice: !!j.invoice,
+    repeatOf: j.repeatOf ? publicJobNumber(j.repeatOf.jobNumber) : null,
   }));
   return toPage(items, total, query);
 }
@@ -709,12 +712,15 @@ const detailSelect = {
       id: true,
       description: true,
       priceLabel: true,
+      warranty: true,
       amount: true,
       fault: { select: { id: true, name: true } },
       part: { select: { id: true, code: true, name: true } },
     },
     orderBy: { sortOrder: 'asc' },
   },
+  repeatOf: { select: { id: true, jobNumber: true } },
+  repeats: { select: { id: true, jobNumber: true, status: true }, orderBy: { createdAt: 'asc' } },
   estimateOptions: {
     select: {
       id: true,
@@ -817,6 +823,8 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     invoice,
     movements,
     devicePasswordEnc,
+    repeatOf,
+    repeats,
     testingAt,
     cancelledAt,
     statusHistory,
@@ -906,6 +914,8 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
       receiveNote: m.receiveNote,
     })),
     invoice: invoice && { ...invoice, total: invoice.total.toNumber() },
+    repeatOf: repeatOf && { id: repeatOf.id, jobNumber: publicJobNumber(repeatOf.jobNumber) },
+    repeats: repeats.map((r) => ({ ...r, jobNumber: publicJobNumber(r.jobNumber) })),
     pendingTransfer: pending
       ? { id: pending.id, from: pending.fromEngineer, to: pending.toEngineer, reason: pending.reason, createdAt: pending.createdAt.toISOString() }
       : null,

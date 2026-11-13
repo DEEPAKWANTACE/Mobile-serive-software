@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { DEFAULT_JOB_LIST_COLUMNS, JOB_LIST_COLUMN_LABELS, ROLES, type JobListColumn, type JobListColumnsDto, type JobListItemDto, type Role } from '@msm/shared';
@@ -39,23 +40,66 @@ const truncate = (text: string | null | undefined, className = '') => (
   <span className={`block truncate ${className}`} title={text ?? undefined}>{text || '—'}</span>
 );
 
+const actionClass = 'inline-flex h-7 min-w-[4.75rem] items-center justify-center rounded-md px-2.5 text-xs font-semibold shadow-xs transition';
+
+type ActionHandlers = { role: Role | undefined; onApprove: (job: JobListItemDto) => void; onDeliver: (job: JobListItemDto) => void };
+
+/** The one action a row needs now: record approval, deliver, or open the invoice of a delivered job. */
+export function JobRowAction({ job, role, onApprove, onDeliver, fallback }: ActionHandlers & { job: JobListItemDto; fallback?: ReactNode }) {
+  const counter = role === ROLES.CCO || role === ROLES.BRANCH_MANAGER;
+  if (counter && job.status === 'AWAITING_APPROVAL') {
+    return <button type="button" onClick={() => onApprove(job)} className={`${actionClass} bg-orange-600 text-white hover:bg-orange-700`}>Approval</button>;
+  }
+  if (canDeliverRow(job, role)) {
+    return <button type="button" onClick={() => onDeliver(job)} className={`${actionClass} bg-emerald-600 text-white hover:bg-emerald-700`}>Deliver</button>;
+  }
+  if (counter && job.hasInvoice) {
+    return (
+      <Link to={`/jobs/${job.id}/invoice`} className={`${actionClass} border border-slate-300 bg-white text-slate-700 hover:bg-slate-50`} title="View / download invoice">
+        Invoice
+      </Link>
+    );
+  }
+  return <>{fallback ?? <span className="text-slate-300">—</span>}</>;
+}
+
+/** Plain-text value of a column (used for the phone cards). */
+export function jobCellText(k: JobListColumn, j: JobListItemDto): string {
+  switch (k) {
+    case 'status': return j.pendingWith;
+    case 'date': return formatDate(j.createdAt);
+    case 'customerName': return j.customer.name;
+    case 'customerMobile': return j.customer.phone;
+    case 'device': return j.device;
+    case 'problem': return jobProblem(j);
+    case 'engineer': return j.assignedEngineer?.name ?? 'Unassigned';
+    case 'pendingWith': return j.pendingWith;
+    case 'estimate': return j.quotedAmount !== null ? formatCurrency(j.quotedAmount) : j.totalAmount ? formatCurrency(j.totalAmount) : '—';
+    case 'payment': return j.balance > 0 ? `Due ${formatCurrency(j.balance)}` : j.balance < 0 ? `Credit ${formatCurrency(-j.balance)}` : j.paid > 0 ? `Paid ${formatCurrency(j.paid)}` : 'Not billed';
+    case 'imei': return j.imei ?? j.serialNumber ?? '—';
+    case 'city': return j.city ?? '—';
+    case 'branch': return j.branch.code;
+    case 'inwardBy': return j.inwardBy ?? '—';
+    case 'ageDays': return `${ageDays(j)}d open`;
+    case 'approval': return '';
+  }
+}
+
 /** Relative width weight per column, so the fixed table layout gives text-heavy columns more room. */
-const WEIGHT: Record<JobListColumn | 'jobNumber', number> = {
-  jobNumber: 12, status: 14, date: 9, customerName: 13, customerMobile: 11, device: 14, problem: 17, engineer: 11,
-  pendingWith: 14, estimate: 9, payment: 11, imei: 13, city: 9, branch: 9, inwardBy: 10, ageDays: 7, approval: 10,
+const WEIGHT: Record<Exclude<JobListColumn, 'approval'>, number> = {
+  status: 14, date: 9, customerName: 13, customerMobile: 11, device: 14, problem: 17, engineer: 11,
+  pendingWith: 14, estimate: 9, payment: 11, imei: 13, city: 9, branch: 9, inwardBy: 10, ageDays: 7,
 };
 
-export function buildJobColumns(
-  keys: JobListColumn[],
-  { role, onApprove, onDeliver }: { role: Role | undefined; onApprove: (job: JobListItemDto) => void; onDeliver: (job: JobListItemDto) => void },
-): Column<JobListItemDto>[] {
-  const canApprove = role === ROLES.CCO || role === ROLES.BRANCH_MANAGER;
-  // The approval column is only meaningful for staff who can record customer approval.
-  const visible = keys.filter((k) => k !== 'approval' || canApprove);
-  const total = WEIGHT.jobNumber + visible.reduce((sum, k) => sum + WEIGHT[k], 0);
-  const width = (k: JobListColumn | 'jobNumber') => ({ width: `${((WEIGHT[k] / total) * 100).toFixed(2)}%` });
+export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers): Column<JobListItemDto>[] {
+  const canApprove = handlers.role === ROLES.CCO || handlers.role === ROLES.BRANCH_MANAGER;
+  // The action column is only meaningful for staff who can approve / deliver; it always sits right after the job ID.
+  const showAction = keys.includes('approval') && canApprove;
+  const rest = keys.filter((k): k is Exclude<JobListColumn, 'approval'> => k !== 'approval');
+  const total = rest.reduce((sum, k) => sum + WEIGHT[k], 0) || 1;
+  const fixedRem = 5.75 + (showAction ? 6.5 : 0);
 
-  const cells: Record<JobListColumn, Column<JobListItemDto>['cell']> = {
+  const cells: Record<Exclude<JobListColumn, 'approval'>, Column<JobListItemDto>['cell']> = {
     status: (j) => <JobStatusBadge status={j.status} />,
     date: (j) => <span className="whitespace-nowrap text-slate-600">{formatDate(j.createdAt)}</span>,
     customerName: (j) => truncate(j.customer.name, 'font-medium'),
@@ -71,24 +115,24 @@ export function buildJobColumns(
     branch: (j) => truncate(j.branch.code),
     inwardBy: (j) => truncate(j.inwardBy),
     ageDays: (j) => <span className="tabular-nums">{ageDays(j)}d</span>,
-    approval: (j) => j.status === 'AWAITING_APPROVAL'
-      ? <button type="button" onClick={() => onApprove(j)} className="rounded-md bg-orange-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-orange-700">Approval</button>
-      : canDeliverRow(j, role)
-        ? <button type="button" onClick={() => onDeliver(j)} className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700">Deliver</button>
-        : <span className="text-slate-300">—</span>,
   };
 
   return [
     {
-      header: 'Job Sheet ID',
-      className: '',
+      header: 'Job ID',
       cell: (j) => (
-        <Link to={`/jobs/${j.id}`} className="block truncate font-mono text-sm font-semibold text-brand-600 hover:underline" title={formatJobNumber(j.jobNumber)}>
-          {formatJobNumber(j.jobNumber)}
+        <Link to={`/jobs/${j.id}`} className="block truncate font-mono text-sm font-semibold text-brand-600 hover:underline" title={j.repeatOf ? `Repeat of ${formatJobNumber(j.repeatOf)}` : formatJobNumber(j.jobNumber)}>
+          {formatJobNumber(j.jobNumber)}{j.repeatOf && <span className="ml-1 text-violet-600">↻</span>}
         </Link>
       ),
-      style: width('jobNumber'),
+      style: { width: '5.75rem' },
     },
-    ...visible.map((k) => ({ header: k === 'approval' ? 'Action' : JOB_LIST_COLUMN_LABELS[k], cell: cells[k], style: width(k) })),
+    ...(showAction ? [{ header: 'Action', cell: (j: JobListItemDto) => <JobRowAction job={j} {...handlers} />, style: { width: '6.5rem' } }] : []),
+    // The remaining width (after the fixed ID / action columns) is shared by weight.
+    ...rest.map((k) => ({
+      header: JOB_LIST_COLUMN_LABELS[k],
+      cell: cells[k],
+      style: { width: `calc((100% - ${fixedRem}rem) * ${(WEIGHT[k] / total).toFixed(4)})` },
+    })),
   ];
 }

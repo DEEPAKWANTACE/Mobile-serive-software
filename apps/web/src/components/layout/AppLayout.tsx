@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
-import { LogOut, Menu, Search, Smartphone, X } from 'lucide-react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
+import { LogOut, Menu, Plus, Search, Smartphone, X } from 'lucide-react';
 import { ROLE_LABELS, ROLES } from '@msm/shared';
 import { useAuth } from '@/features/auth/auth-context';
 import { useShopSettings } from '@/features/settings/useShopSettings';
@@ -90,6 +90,16 @@ export function AppLayout() {
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
+            {user.role === ROLES.CCO && (
+              <Link
+                to="/jobs/new"
+                className="inline-flex items-center gap-1.5 rounded-md bg-brand-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-brand-700 sm:text-sm"
+                title="Create a new job sheet"
+              >
+                <Plus className="size-4" />
+                <span className="hidden sm:inline">New job sheet</span>
+              </Link>
+            )}
             <ThemePicker />
             <ReminderCenter />
             {([ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] as const).some((r) => r === user.role) && (

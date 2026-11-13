@@ -5,8 +5,9 @@ import { toast } from 'sonner';
 import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
+  JOB_LIST_COLUMN_LABELS,
+  JOB_STATUS_FILTER_OPTIONS,
   JOB_STATUS_LABELS,
-  JOB_STATUSES,
   PAYMENT_MODE_LABELS,
   PAYMENT_MODES,
   ROLES,
@@ -36,7 +37,7 @@ import { JobStatusBadge } from './JobStatusBadge';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 import { ApprovalDecisionDialog } from './ApprovalDecisionDialog';
-import { buildJobColumns, canDeliverRow, jobProblem, useJobListColumns } from './jobListColumns';
+import { buildJobColumns, jobCellText, JobRowAction, useJobListColumns } from './jobListColumns';
 import { DeliverJobDialog } from './DeliverJobDialog';
 
 type Tab = 'show' | 'add' | 'edit' | 'delete';
@@ -122,8 +123,29 @@ const viewParams = (v: string) =>
             : v === 'over15' ? { open: true, minAgeDays: 15 }
               : {};
 
+/** Short labels for the phone cards. */
+const MOBILE_LABELS: Partial<Record<JobListColumn, string>> = {
+  date: 'Date', customerName: 'Customer', customerMobile: 'Mobile', device: 'Model', problem: 'Problem', engineer: 'Engineer',
+  pendingWith: 'Pending', estimate: 'Estimate', payment: 'Payment', imei: 'IMEI', city: 'City', branch: 'Branch', inwardBy: 'Inward', ageDays: 'Age',
+};
+/** Columns that get a full line on the phone card. */
+const MOBILE_WIDE: readonly JobListColumn[] = ['device', 'problem', 'pendingWith'];
+
+/** Card body fields for the chosen columns and the card height they need (px). */
+function mobileLayout(keys: JobListColumn[]) {
+  const fields = keys.filter((k) => k !== 'status' && k !== 'approval');
+  let lines = 0;
+  let half = 0;
+  for (const k of fields) {
+    if (MOBILE_WIDE.includes(k)) lines += 1;
+    else half += 1;
+  }
+  lines += Math.ceil(half / 2);
+  return { fields, height: 50 + Math.max(1, lines) * 18 };
+}
+
 /** Keep exactly as many records as fit inside the visible Job Master area. */
-function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
+function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>, mobileCardHeight: number) {
   const [pageSize, setPageSize] = useState(8);
   useLayoutEffect(() => {
     const element = viewport.current;
@@ -134,14 +156,14 @@ function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>) {
         // Single-line cells: a desktop row is ~45px including its divider (status badge sets the height).
         // Keep a small safety margin so the final row is always fully visible.
         ? Math.max(4, Math.floor((element.clientHeight - 44) / 46))
-        : Math.max(1, Math.floor((element.clientHeight - 8) / 92));
+        : Math.max(1, Math.floor((element.clientHeight - 8) / (mobileCardHeight + 8)));
       setPageSize((current) => current === next ? current : next);
     };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [viewport]);
+  }, [viewport, mobileCardHeight]);
   return pageSize;
 }
 
@@ -182,7 +204,9 @@ export function ShowJobs() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
   const listViewportRef = useRef<HTMLDivElement>(null);
-  const pageSize = useFittedPageSize(listViewportRef);
+  const columnKeys = useJobListColumns(user?.role);
+  const mobile = mobileLayout(columnKeys);
+  const pageSize = useFittedPageSize(listViewportRef, mobile.height);
   const canBulk = bulkActionsFor(user?.role).length > 0;
   const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
   // Clear the selection only when a filter really changes (SearchInput re-sends its value after every render).
@@ -215,10 +239,9 @@ export function ShowJobs() {
   });
 
   const [approvingId, setApprovingId] = useState<string | null>(null);
-  const columnKeys = useJobListColumns(user?.role);
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
-  const columns = buildJobColumns(columnKeys, { role: user?.role, onApprove: (j) => setApprovingId(j.id), onDeliver: (j) => setDeliveringId(j.id) });
-  const canApproveRow = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
+  const actionHandlers = { role: user?.role, onApprove: (j: JobListItemDto) => setApprovingId(j.id), onDeliver: (j: JobListItemDto) => setDeliveringId(j.id) };
+  const columns = buildJobColumns(columnKeys, actionHandlers);
   const showCol = (key: JobListColumn) => columnKeys.includes(key);
 
   const exportCsv = async () => {
@@ -258,7 +281,7 @@ export function ShowJobs() {
             {VIEWS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         )}
-        <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
+        <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUS_FILTER_OPTIONS.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
         <button type="button" onClick={() => setFiltersOpen((open) => !open)} className="relative inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50" aria-expanded={filtersOpen}>
           <SlidersHorizontal className="size-4" /> Filters
           {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
@@ -284,7 +307,7 @@ export function ShowJobs() {
               </select>
             )}
             <div className="md:hidden">
-              <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUSES.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
+              <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUS_FILTER_OPTIONS.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
             </div>
             <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" className="w-full! md:w-56!" />
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
@@ -339,27 +362,27 @@ export function ShowJobs() {
         </div>
         <div className="job-list-mobile grid min-h-full content-start gap-2 md:hidden">
           {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
-            <article key={job.id} className={`h-[84px] overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
-              <div className="flex items-start justify-between gap-2">
+            <article key={job.id} style={{ height: mobile.height }} className={`overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
+              <div className="flex h-7 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   {canBulk && <input type="checkbox" aria-label={`Select ${formatJobNumber(job.jobNumber)}`} checked={selected.has(job.id)} onChange={() => { const ids = new Set(selected.keys()); if (ids.has(job.id)) ids.delete(job.id); else ids.add(job.id); changeSelection(ids); }} className="size-4 shrink-0 accent-brand-600" />}
-                  <Link to={`/jobs/${job.id}`} className="truncate font-mono text-sm font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}</Link>
-                  {showCol('customerName') && <span className="truncate text-xs font-medium text-slate-700">{job.customer.name}</span>}
+                  <Link to={`/jobs/${job.id}`} className="shrink-0 font-mono text-sm font-semibold text-brand-600">{formatJobNumber(job.jobNumber)}{job.repeatOf && <span className="ml-1 text-violet-600">↻</span>}</Link>
+                  {showCol('status') && <span className="min-w-0 truncate"><JobStatusBadge status={job.status} /></span>}
                 </div>
-                {canApproveRow && showCol('approval') && job.status === 'AWAITING_APPROVAL'
-                  ? <button type="button" onClick={() => setApprovingId(job.id)} className="shrink-0 rounded-md bg-orange-600 px-2 py-0.5 text-xs font-semibold text-white">Approval</button>
-                  : showCol('approval') && canDeliverRow(job, user?.role)
-                    ? <button type="button" onClick={() => setDeliveringId(job.id)} className="shrink-0 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-semibold text-white">Deliver</button>
-                    : <JobStatusBadge status={job.status} />}
+                {showCol('approval') && <span className="shrink-0"><JobRowAction job={job} {...actionHandlers} fallback={null} /></span>}
               </div>
-              <div className="mt-1 flex items-center justify-between gap-3 text-xs">
-                <span className="min-w-0 flex-1 truncate font-medium" title={job.device}>{job.device || '—'}</span>
-                {showCol('engineer') && <span className="shrink-0 truncate text-slate-600">{job.assignedEngineer?.name ?? 'Unassigned'}</span>}
-              </div>
-              <div className="mt-1 flex items-center justify-between gap-3 text-[11px] text-slate-500">
-                <span className="min-w-0 flex-1 truncate">{showCol('problem') ? (jobProblem(job) || '—') : formatDate(job.createdAt)}</span>
-                {showCol('customerMobile') && <a href={`tel:${job.customer.phone}`} className="shrink-0 text-brand-600">{job.customer.phone}</a>}
-              </div>
+              <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs leading-4">
+                {mobile.fields.map((k) => (
+                  <div key={k} className={`flex min-w-0 gap-1 ${MOBILE_WIDE.includes(k) ? 'col-span-2' : ''}`}>
+                    <dt className="shrink-0 text-slate-400">{MOBILE_LABELS[k] ?? JOB_LIST_COLUMN_LABELS[k]}:</dt>
+                    <dd className="min-w-0 truncate font-medium text-slate-700">
+                      {k === 'customerMobile'
+                        ? <a href={`tel:${job.customer.phone}`} className="text-brand-600">{job.customer.phone}</a>
+                        : jobCellText(k, job) || '—'}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             </article>
           ))}
         </div>

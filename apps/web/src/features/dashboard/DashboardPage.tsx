@@ -283,12 +283,20 @@ function EngineerDashboard() {
           hint="Assigned today · diagnosis pending"
           to="/jobs?status=ASSIGNED&today=true"
         />
+        <StatCard
+          label="Pending total"
+          value={all?.ASSIGNED}
+          tone="warning"
+          icon={Inbox}
+          hint="All jobs waiting for diagnosis"
+          to="/jobs?status=ASSIGNED"
+        />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
         <StatCard label="Completed today OK" value={by?.READY_FOR_DELIVERY} tone="good" icon={PackageCheck} hint="Repair and testing done · awaiting delivery" to="/jobs?status=READY_FOR_DELIVERY&today=true" />
-        {card('Repaired – return pending', 'REPAIRED', PackageCheck)}
+        {card('Repair done', 'REPAIRED', PackageCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
-        {card('RWR', 'RWR_PENDING', ShieldAlert, 'warning')}
+        {card('Return without repair (RWR)', 'RWR_PENDING', ShieldAlert, 'warning')}
         <StatCard label="Transfer job" value={stats.data?.transferJobs} icon={ArrowLeftRight} hint="Requests in / out, accepted today, or to L4" to="/#engineer-transfers" />
       </div>
       <div id="engineer-transfers" className="scroll-mt-4" />
@@ -449,8 +457,7 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="Awaiting assignment" value={by?.RECEIVED} to="/jobs?status=RECEIVED" tone={by?.RECEIVED ? 'warning' : 'default'} icon={UserCheck} hint="Phones here without an engineer" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <StatCard label="With engineers" value={withEngineer} to="/jobs?view=engineers" tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
         <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to="/jobs?view=ready" tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
         <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to="/jobs?status=AWAITING_APPROVAL" tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
@@ -661,7 +668,8 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      {/* Only phones arriving at a main office (L4) wait here; new job sheets are always assigned at intake. */}
+      {!!queue.data?.items.length && <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         <Card
           title="Waiting for an engineer"
           subtitle="Oldest first"
@@ -686,7 +694,7 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
             />
           </Card>
         )}
-      </div>
+      </div>}
 
       <AssignEngineerDialog
         job={
@@ -706,7 +714,6 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
 /** Workflow stages shown in the "where jobs are now" bars, in workflow order. */
 const PIPELINE: [JobStatus, string][] = [
-  ['RECEIVED', 'Awaiting engineer'],
   ['ASSIGNED', 'Diagnosis'],
   ['AWAITING_APPROVAL', 'Customer approval'],
   ['IN_REPAIR', 'In repair'],

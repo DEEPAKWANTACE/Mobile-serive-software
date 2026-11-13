@@ -179,6 +179,21 @@ export type JobPartDto = {
 };
 
 /** Store queue row: a job part with its job context and current stock. */
+/** Parts a CCO / engineer can use on a job, with the branch's stock. */
+export const partStockQuerySchema = z.object({
+  search: z.string().trim().max(60).optional(),
+  branchId: z.uuid().optional(),
+});
+export type PartStockOptionDto = { id: string; code: string; name: string; sellingPrice: number; stock: number };
+
+/** Jobs waiting because the engineer marked "spare not available" (shown to the store). */
+export type SpareHoldDto = {
+  job: { id: string; jobNumber: string; device: string; engineer: string | null };
+  part: string;
+  note: string | null;
+  since: string | null;
+};
+
 export type PartRequestDto = JobPartDto & {
   job: { id: string; jobNumber: string; device: string; status: string; engineer: string | null };
   stock: number;

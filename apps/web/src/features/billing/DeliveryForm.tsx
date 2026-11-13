@@ -129,9 +129,13 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         <ul className="divide-y divide-slate-100 text-sm">
           {bill.kind === 'REPAIR' ? (
             bill.lines.map((l, i) => (
-              <li key={i} className="flex justify-between px-3 py-1.5">
-                <span>{l.description}</span>
-                <span>{formatCurrency(l.amount)}</span>
+              <li key={i} className="flex justify-between gap-3 px-3 py-1.5">
+                <span>
+                  {l.partCode && <span className="mr-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">{l.partCode}</span>}
+                  {l.description}
+                  {l.warranty && <span className="ml-1.5 rounded bg-emerald-50 px-1.5 text-xs text-emerald-700">Warranty: {l.warranty}</span>}
+                </span>
+                <span className="shrink-0">{formatCurrency(l.amount)}</span>
               </li>
             ))
           ) : (

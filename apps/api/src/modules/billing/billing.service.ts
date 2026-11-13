@@ -36,6 +36,7 @@ const billSelect = {
     select: {
       description: true,
       priceLabel: true,
+      warranty: true,
       amount: true,
       fault: { select: { name: true } },
       part: { select: { code: true, name: true } },
@@ -48,7 +49,7 @@ const billSelect = {
 type BillJob = Prisma.JobGetPayload<{ select: typeof billSelect }>;
 
 function lineText(l: BillJob['estimateLines'][number]) {
-  const base = l.part ? `${l.part.code} ${l.part.name}` : l.fault ? `${l.fault.name}${l.priceLabel ? ` (${l.priceLabel})` : ''}` : (l.description ?? 'Service');
+  const base = l.part ? l.part.name : l.fault ? `${l.fault.name}${l.priceLabel ? ` (${l.priceLabel})` : ''}` : (l.description ?? 'Service');
   return (l.part || l.fault) && l.description ? `${base} — ${l.description}` : base;
 }
 
@@ -76,7 +77,9 @@ async function loadBillJob(jobId: string, actor: Actor) {
 
 function buildPreview(job: BillJob): BillPreviewDto {
   const isRwr = job.status === 'RWR';
-  const lines = isRwr ? [] : job.estimateLines.map((l) => ({ description: lineText(l), amount: l.amount.toNumber() }));
+  const lines = isRwr
+    ? []
+    : job.estimateLines.map((l) => ({ description: lineText(l), partCode: l.part?.code ?? null, warranty: l.warranty, amount: l.amount.toNumber() }));
   return {
     kind: isRwr ? 'RWR' : 'REPAIR',
     lines,
@@ -148,7 +151,9 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   }
   if (bill.accessories.length && !data.accessoriesReturned) throw invalid('accessoriesReturned', 'Confirm the accessories were returned');
 
-  const lines = bill.kind === 'RWR' && data.inspectionCharge > 0 ? [{ description: 'Inspection / diagnosis charge', amount: data.inspectionCharge }] : bill.lines;
+  const lines = bill.kind === 'RWR' && data.inspectionCharge > 0
+    ? [{ description: 'Inspection / diagnosis charge', partCode: null, warranty: null, amount: data.inspectionCharge }]
+    : bill.lines;
   const subtotal = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
   if (data.discount > subtotal) throw invalid('discount', 'Discount cannot be more than the bill');
   const total = roundMoney(subtotal - data.discount);
@@ -262,7 +267,7 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
       discountReason: true,
       total: true,
       createdBy: { select: { name: true } },
-      lines: { select: { description: true, amount: true }, orderBy: { sortOrder: 'asc' } },
+      lines: { select: { description: true, partCode: true, warranty: true, amount: true }, orderBy: { sortOrder: 'asc' } },
       branch: { select: { name: true, code: true, address: true, phone: true } },
       job: {
         select: {
@@ -299,7 +304,7 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
     discount: inv.discount.toNumber(),
     discountReason: inv.discountReason,
     total: inv.total.toNumber(),
-    lines: inv.lines.map((l) => ({ description: l.description, amount: l.amount.toNumber() })),
+    lines: inv.lines.map((l) => ({ description: l.description, partCode: l.partCode, warranty: l.warranty, amount: l.amount.toNumber() })),
     payments: job.payments.map((p) => ({ ...p, amount: p.amount.toNumber(), createdAt: p.createdAt.toISOString() })),
     createdBy: inv.createdBy,
     job: {

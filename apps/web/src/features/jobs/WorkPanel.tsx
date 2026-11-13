@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useFieldArray, useForm } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -22,12 +22,11 @@ import {
   type DeadRiskApprovalData,
   type DiagnosisData,
   type DiagnosisFindingDto,
+  type DiagnosisFindingSubcategoryDto,
   type DiagnosisFindingTypeDto,
   type DiagnosisInput,
-  type FaultDto,
   type JobDto,
   type JobStatus,
-  type ModelPriceDto,
   type NegotiatedEstimateData,
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
@@ -37,18 +36,17 @@ import { FormActions } from '@/components/ui/FormActions';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/features/auth/auth-context';
 import { api } from '@/lib/api-client';
-import { useOptions } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { formatCurrency, formatDateTime, timeAgo } from '@/lib/format';
 import { RwrForm, SpareHoldForm, SpareReceivedForm } from './HoldAndRwrForms';
 import { CancelTransferButton, TransferRequestForm, TransferResponseButtons } from './TransferActions';
-import { PartCodeInput } from '@/features/inventory/PartCodeInput';
 import { DeliveryForm } from '@/features/billing/DeliveryForm';
 import { L4Panel } from '@/features/l4/L4Actions';
 import { Link } from 'react-router';
 import { LogCallForm } from '@/features/calling/LogCallForm';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 import { ApprovalDecisionForm } from './ApprovalDecisionDialog';
+import { EditCostingForm } from './CostLinesEditor';
 
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
 export function WorkPanel({ job }: { job: JobDto }) {
@@ -60,6 +58,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const [approving, setApproving] = useState<'APPROVED' | 'REJECTED' | null>(null);
   const [approvingDeadRisk, setApprovingDeadRisk] = useState(false);
   const [negotiating, setNegotiating] = useState(false);
+  const [editingCosting, setEditingCosting] = useState(false);
   const [deciding, setDeciding] = useState(false);
   const [directApproveOptionId, setDirectApproveOptionId] = useState<string | null>(null);
   const [transition, setTransition] = useState<{ to: JobStatus; label: string; noteRequired?: boolean } | null>(null);
@@ -331,6 +330,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
                     {l.part?.name ?? l.fault?.name ?? l.description}
                     {l.fault && l.description && <span className="text-slate-500"> — {l.description}</span>}
                     {l.priceLabel && <span className="text-slate-500"> ({l.priceLabel})</span>}
+                    {l.warranty && <span className="ml-1 rounded bg-emerald-50 px-1.5 text-xs text-emerald-700">{l.warranty}</span>}
                   </span>
                   <span>{formatCurrency(l.amount)}</span>
                 </li>
@@ -384,8 +384,8 @@ export function WorkPanel({ job }: { job: JobDto }) {
                   {job.approvedBy ? ` — confirmed by ${job.approvedBy.name}` : ' at intake'}
                   {job.customerResponse && ` (“${job.customerResponse}”)`}
                 </p>
-                {canApprove && !job.invoice && job.status !== 'DELIVERED' && job.status !== 'CANCELLED' && (
-                  <Button size="sm" variant="secondary" onClick={() => setNegotiating(true)}>Edit negotiated amount</Button>
+                {canApprove && !job.invoice && !['DELIVERED', 'CANCELLED', 'RWR', 'RWR_PENDING'].includes(job.status) && (
+                  <Button size="sm" variant="secondary" onClick={() => setEditingCosting(true)}>Edit costing</Button>
                 )}
               </div>
             )}
@@ -432,7 +432,10 @@ export function WorkPanel({ job }: { job: JobDto }) {
       >
         {approving && <ApprovalForm job={job} decision={approving} initialOptionId={directApproveOptionId} onDone={() => { setApproving(null); setDirectApproveOptionId(null); }} />}
       </Modal>
-      <Modal open={deciding} onClose={() => setDeciding(false)} title="Customer approval" size="md">
+      <Modal open={editingCosting} onClose={() => setEditingCosting(false)} title="Edit costing" size="lg">
+        {editingCosting && <EditCostingForm job={job} onDone={() => setEditingCosting(false)} />}
+      </Modal>
+      <Modal open={deciding} onClose={() => setDeciding(false)} title="Customer approval" size="lg">
         {deciding && <ApprovalDecisionForm job={job} onDone={() => setDeciding(false)} />}
       </Modal>
       <Modal open={approvingDeadRisk} onClose={() => setApprovingDeadRisk(false)} title="Separate dead-risk approval" size="sm">
@@ -444,7 +447,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
       <Modal open={action === 'deliver'} onClose={() => setAction(null)} title={`Deliver ${job.jobNumber}`} size="lg">
         {action === 'deliver' && <DeliveryForm job={job} onDone={() => setAction(null)} />}
       </Modal>
-      <Modal open={action === 'transfer'} onClose={() => setAction(null)} title="Transfer job to another engineer" size="sm">
+      <Modal open={action === 'transfer'} onClose={() => setAction(null)} title="Transfer job" size="sm">
         {action === 'transfer' && <TransferRequestForm job={job} onDone={() => setAction(null)} />}
       </Modal>
       <Modal open={action === 'spare'} onClose={() => setAction(null)} title="Spare not available" size="sm">
@@ -477,7 +480,6 @@ export function WorkPanel({ job }: { job: JobDto }) {
 // ─── Diagnosis form (engineer) ──────────────────────────────────────────────
 
 function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
-  const faults = useOptions<FaultDto>('faults', { branchId: job.branch.id });
   const findings = useQuery({
     queryKey: ['settings', 'diagnosis-findings'],
     queryFn: () => api.get<DiagnosisFindingDto[]>('/settings/diagnosis-findings'),
@@ -486,97 +488,64 @@ function DiagnosisForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
     queryKey: ['settings', 'diagnosis-finding-types'],
     queryFn: () => api.get<DiagnosisFindingTypeDto[]>('/settings/diagnosis-finding-types'),
   });
-  const prices = useQuery({
-    queryKey: ['models', job.model?.id ?? 'accessory', 'prices'],
-    queryFn: () => job.model ? api.get<ModelPriceDto[]>(`/models/${job.model.id}/prices`) : Promise.resolve([]),
+  const subcategories = useQuery({
+    queryKey: ['settings', 'diagnosis-finding-subcategories'],
+    queryFn: () => api.get<DiagnosisFindingSubcategoryDto[]>('/settings/diagnosis-finding-subcategories'),
   });
   // Native selects need their options present before the form mounts, or they show the wrong choice.
-  if (!faults.data || !prices.data || !findings.data || !findingTypes.data) return <p className="text-sm text-slate-500">Loading…</p>;
-  return <DiagnosisFormInner job={job} faults={faults.items} prices={prices.data} findings={findings.data} findingTypes={findingTypes.data} onDone={onDone} />;
+  if (!findings.data || !findingTypes.data || !subcategories.data) return <p className="text-sm text-slate-500">Loading…</p>;
+  return <DiagnosisFormInner job={job} findings={findings.data} findingTypes={findingTypes.data} subcategories={subcategories.data} onDone={onDone} />;
 }
 
-function DiagnosisFormInner({ job, faults, prices, findings, findingTypes, onDone }: { job: JobDto; faults: FaultDto[]; prices: ModelPriceDto[]; findings: DiagnosisFindingDto[]; findingTypes: DiagnosisFindingTypeDto[]; onDone: () => void }) {
+function DiagnosisFormInner({ job, findings, findingTypes, subcategories, onDone }: {
+  job: JobDto;
+  findings: DiagnosisFindingDto[];
+  findingTypes: DiagnosisFindingTypeDto[];
+  subcategories: DiagnosisFindingSubcategoryDto[];
+  onDone: () => void;
+}) {
   const queryClient = useQueryClient();
+  const partsTotal = job.estimateLines.filter((l) => l.part).reduce((sum, l) => sum + l.amount, 0);
+  const serviceTotal = job.estimateLines.filter((l) => !l.part).reduce((sum, l) => sum + l.amount, 0);
+  const initialAmount = job.diagnosedAt ? serviceTotal : (job.estimatedAmount ?? '');
 
-  // Start from the previous estimate, else from the faults reported at intake (with their chosen price).
-  const intakeLines: DiagnosisInput['lines'] = job.devices.flatMap((device, deviceIndex) => {
-    const deviceLabel = job.devices.length > 1
-      ? `Item ${deviceIndex + 1}: ${device.accessoryName ?? `${device.brand?.name ?? device.manualBrand ?? ''} ${device.model?.name ?? device.manualModel ?? ''}`.trim()}`
-      : '';
-    return [
-      ...device.faults.map((fault) => ({
-        faultId: fault.id,
-        priceId: null,
-        partId: null,
-        description: [deviceLabel, fault.priceLabel].filter(Boolean).join(' — '),
-        amount: fault.price ?? ('' as unknown as number),
-      })),
-      ...(device.manualFault ? [{
-        faultId: null,
-        priceId: null,
-        partId: null,
-        description: [deviceLabel, device.manualFault].filter(Boolean).join(' — '),
-        amount: '' as unknown as number,
-      }] : []),
-    ];
-  });
-  const initialLines: DiagnosisInput['lines'] = job.estimateLines.length
-    ? job.estimateLines.map((l) => ({ faultId: l.fault?.id ?? null, priceId: null, partId: l.part?.id ?? null, description: l.description ?? '', amount: l.amount }))
-    : intakeLines;
-
-  const initialOptions: DiagnosisInput['options'] = (job.estimateOptions && job.estimateOptions.length > 0)
-    ? job.estimateOptions.map((o) => ({ id: o.id, title: o.title, description: o.description ?? '', amount: o.amount }))
-    : [];
-
-  const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<DiagnosisInput, unknown, DiagnosisData>({
+  const { register, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<DiagnosisInput, unknown, DiagnosisData>({
     resolver: zodResolver(diagnosisSchema),
     defaultValues: {
       notes: job.diagnosisNotes ?? '',
       findingIds: job.diagnosisFindings.map((finding) => finding.id),
-      lines: initialLines,
-      options: initialOptions,
+      amount: initialAmount as number,
       deadRiskRequested: job.deadRiskRequested,
       deadRiskNote: job.deadRiskNote ?? '',
     },
   });
-  const { fields, append, remove } = useFieldArray({ control, name: 'lines' });
-  const { fields: optionFields, append: appendOption, remove: removeOption } = useFieldArray({ control, name: 'options' });
-  const lines = watch('lines');
-  const options = watch('options');
   const deadRiskRequested = watch('deadRiskRequested');
+  const amount = Number(watch('amount')) || 0;
   const selectedFindings = watch('findingIds') ?? [];
   const toggleFinding = (id: string) =>
     setValue('findingIds', selectedFindings.includes(id) ? selectedFindings.filter((f) => f !== id) : [...selectedFindings, id], { shouldDirty: true });
-  const countIn = (typeId: string) => findings.filter((f) => f.type.id === typeId && selectedFindings.includes(f.id)).length;
+  const countIn = (match: (f: DiagnosisFindingDto) => boolean) => findings.filter((f) => match(f) && selectedFindings.includes(f.id)).length;
   // Open on the type of the first finding already chosen, else the first type.
   const [findingType, setFindingType] = useState<string>(() =>
     findings.find((f) => job.diagnosisFindings.some((d) => d.id === f.id))?.type.id ?? findingTypes[0]?.id ?? '');
+  const [subcategory, setSubcategory] = useState<string>('');
+  const typeSubcategories = subcategories.filter((c) => c.typeId === findingType);
+  const visibleFindings = findings.filter((f) => f.type.id === findingType && (!subcategory || f.subcategory?.id === subcategory));
   const findingTypeName = findingTypes.find((t) => t.id === findingType)?.name ?? '';
-  // Parts added by code in this session (name/price shown on the line).
-  const [partInfo, setPartInfo] = useState<Record<string, { code: string; name: string; price: number }>>(() =>
-    Object.fromEntries(job.estimateLines.flatMap((l) => (l.part ? [[l.part.id, { code: l.part.code, name: l.part.name, price: l.amount }]] : []))),
-  );
-
-  const optionsFor = (faultId?: string | null) => prices.filter((p) => p.faultId === faultId);
-  const amountOf = (l: DiagnosisInput['lines'][number]) => {
-    const option = prices.find((p) => p.id === l.priceId);
-    if (option) return option.price;
-    if (l.partId && partInfo[l.partId]) return partInfo[l.partId]!.price;
-    return Number(l.amount) || 0;
-  };
-  const total = lines.reduce((sum, l) => sum + amountOf(l), 0);
   const agreed = job.approvedAmount ?? job.estimatedAmount;
 
   const save = useMutation({
     mutationFn: (data: DiagnosisData) =>
       api.put<{ status: JobStatus; autoApproved: boolean }>(`/jobs/${job.id}/diagnosis`, data),
-    onSuccess: () => {
-      toast.success('Estimate sent to the CCO for customer approval');
+    onSuccess: (r) => {
+      toast.success(r.autoApproved ? 'Diagnosis updated — approval unchanged' : 'Estimate sent to the CCO for customer approval');
       void queryClient.invalidateQueries();
       onDone();
     },
     onError: (err) => handleFormError(err, setError),
   });
+
+  const chip = (on: boolean) => `rounded-full border px-3 py-1.5 text-sm transition ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-brand-400'}`;
 
   return (
     <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
@@ -585,221 +554,66 @@ function DiagnosisFormInner({ job, faults, prices, findings, findingTypes, onDon
           <h4 className="text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">1</span>What did you find?</h4>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             Problem type
-            <select value={findingType} onChange={(e) => setFindingType(e.target.value)} className={`${inputClass} w-40!`} aria-label="Problem type">
+            <select value={findingType} onChange={(e) => (setFindingType(e.target.value), setSubcategory(''))} className={`${inputClass} w-40!`} aria-label="Problem type">
               {findingTypes.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}{countIn(t.id) ? ` (${countIn(t.id)})` : ''}</option>
+                <option key={t.id} value={t.id}>{t.name}{countIn((f) => f.type.id === t.id) ? ` (${countIn((f) => f.type.id === t.id)})` : ''}</option>
               ))}
             </select>
           </label>
         </div>
+        {typeSubcategories.length > 0 && (
+          <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1" role="tablist" aria-label="Sub category">
+            {[{ id: '', name: 'All' }, ...typeSubcategories].map((c) => {
+              const n = c.id ? countIn((f) => f.subcategory?.id === c.id) : 0;
+              return (
+                <button
+                  key={c.id || 'all'}
+                  type="button"
+                  role="tab"
+                  aria-selected={subcategory === c.id}
+                  onClick={() => setSubcategory(c.id)}
+                  className={`shrink-0 rounded-md px-2.5 py-1 text-xs font-medium ${subcategory === c.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                >
+                  {c.name}{n ? ` · ${n}` : ''}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
-          {findings.filter((f) => f.type.id === findingType).map((finding) => {
+          {visibleFindings.map((finding) => {
             const on = selectedFindings.includes(finding.id);
             return (
-              <button
-                key={finding.id}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleFinding(finding.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm transition ${on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-brand-400'}`}
-              >
+              <button key={finding.id} type="button" aria-pressed={on} onClick={() => toggleFinding(finding.id)} className={chip(on)}>
                 {on ? '✓ ' : ''}{finding.label}
               </button>
             );
           })}
-          {!findings.some((f) => f.type.id === findingType) && <p className="text-sm text-slate-500">No {findingTypeName ? `${findingTypeName.toLowerCase()} ` : ''}presets yet — Super Admin can add them.</p>}
+          {!visibleFindings.length && <p className="text-sm text-slate-500">No {findingTypeName ? `${findingTypeName.toLowerCase()} ` : ''}presets here yet — Super Admin can add them.</p>}
         </div>
         {selectedFindings.length > 0 && (
           <p className="mt-3 text-xs text-slate-600">
-            Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => `${f.label} (${f.type.name})`).join(', ')}
+            Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => f.label).join(', ')}
           </p>
         )}
-        <Field label="Additional notes" className="mt-3" error={errors.notes?.message} hint="Select presets above, write notes, or both">
-          <textarea {...register('notes')} rows={2} className={inputClass} placeholder="e.g. Phone dead — PMIC IC faulty, display OK" />
+        <Field label="Notes" className="mt-3" error={errors.notes?.message} hint="2–3 lines are enough">
+          <textarea {...register('notes')} rows={3} className={inputClass} placeholder="e.g. Phone dead — PMIC IC faulty, display OK" />
         </Field>
       </section>
 
       <section className="rounded-lg border border-slate-200 p-3">
-        <h4 className="mb-3 text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">2</span>Work & charges</h4>
-        <div className="space-y-2">
-          {fields.map((field, i) => {
-            const line = lines[i];
-            const opts = optionsFor(line?.faultId);
-            const lineErr = errors.lines?.[i];
-            const part = line?.partId ? partInfo[line.partId] : undefined;
-            if (part) {
-              return (
-                <div key={field.id} className="flex items-center justify-between gap-2 rounded-md border border-slate-200 p-2 text-sm">
-                  <span>
-                    <span className="font-mono font-semibold">{part.code}</span> · {part.name}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    {formatCurrency(part.price)}
-                    <button
-                      type="button"
-                      onClick={() => remove(i)}
-                      aria-label="Remove line"
-                      className="rounded px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                </div>
-              );
-            }
-            return (
-              <div key={field.id} className="rounded-md border border-slate-200 p-2">
-                <div className="flex flex-wrap items-start gap-2">
-                  <select
-                    {...register(`lines.${i}.faultId`, {
-                      setValueAs: (v: string | null) => v || null,
-                      onChange: () => setValue(`lines.${i}.priceId`, null),
-                    })}
-                    aria-label="Fault"
-                    className={`${inputClass} w-52!`}
-                  >
-                    <option value="">Other / custom work</option>
-                    {faults.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.category ? `${f.category.name} › ` : ''}
-                        {f.name}
-                      </option>
-                    ))}
-                  </select>
-                  {opts.length > 0 && (
-                    <select
-                      {...register(`lines.${i}.priceId`, { setValueAs: (v: string | null) => v || null })}
-                      aria-label="Price option"
-                      className={`${inputClass} w-48!`}
-                    >
-                      <option value="">Enter amount manually</option>
-                      {opts.map((o) => (
-                        <option key={o.id} value={o.id}>
-                          {o.label} — {formatCurrency(o.price)}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <input
-                    {...register(`lines.${i}.description`)}
-                    placeholder={line?.faultId ? 'Note (optional)' : 'Work, e.g. IC level issue'}
-                    aria-label="Description"
-                    className={`${inputClass} min-w-40 flex-1`}
-                  />
-                  {!line?.priceId && (
-                    <input
-                      {...register(`lines.${i}.amount`)}
-                      inputMode="decimal"
-                      placeholder="₹ Amount"
-                      aria-label="Amount"
-                      className={`${inputClass} w-28!`}
-                    />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => remove(i)}
-                    aria-label="Remove line"
-                    className="rounded px-2 py-2 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
-                </div>
-                {(lineErr?.description || lineErr?.amount || lineErr?.root) && (
-                  <p className="mt-1 text-xs text-red-600">
-                    {lineErr.description?.message ?? lineErr.amount?.message ?? lineErr.root?.message}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        {errors.lines?.message && <p className="mt-1 text-xs text-red-600">{errors.lines.message}</p>}
-        <div className="mt-2 flex flex-wrap items-start gap-4">
-          <Button variant="link" className="mt-2" onClick={() => append({ faultId: null, priceId: null, partId: null, description: '', amount: '' as unknown as number })}>
-            + Add item
-          </Button>
-          <div>
-            <div className="mb-1 text-xs text-slate-500">Add a part by code — price is filled in automatically</div>
-            <PartCodeInput
-              branchId={job.branch.id}
-              actionLabel="Add part"
-              onFound={(p) => {
-                setPartInfo((info) => ({ ...info, [p.id]: { code: p.code, name: p.name, price: p.sellingPrice } }));
-                append({ faultId: null, priceId: null, partId: p.id, description: '', amount: null });
-              }}
-            />
-          </div>
-        </div>
+        <h4 className="mb-3 text-sm font-semibold text-slate-900"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-brand-600 text-xs text-white">2</span>Amount</h4>
+        <Field label="Repair amount (₹)" required error={errors.amount?.message} hint={partsTotal > 0 ? `Parts from stock (${formatCurrency(partsTotal)}) are billed in addition` : 'The CCO confirms the final costing with the customer'}>
+          <input {...register('amount')} inputMode="decimal" className={`${inputClass} max-w-48`} placeholder="₹ 0" />
+        </Field>
       </section>
-
-      <div className="rounded-lg border border-indigo-200 bg-indigo-50/30 p-4">
-        <div className="flex items-center justify-between mb-2">
-          <div>
-            <h4 className="text-sm font-semibold text-indigo-950"><span className="mr-1.5 inline-grid size-5 place-items-center rounded-full bg-indigo-600 text-xs text-white">3</span>Options for the customer (optional)</h4>
-            <p className="text-xs text-indigo-700">Give the CCO 2–3 options to present to the customer (e.g. Option 1: Original Part ₹3,500, Option 2: Compatible Part ₹2,200).</p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => appendOption({ title: `Option ${(optionFields.length + 1)}`, description: '', amount: '' as unknown as number })}
-          >
-            + Add option
-          </Button>
-        </div>
-        {optionFields.length > 0 ? (
-          <div className="mt-3 space-y-3">
-            {optionFields.map((field, idx) => (
-              <div key={field.id} className="grid grid-cols-1 gap-2 rounded-md border border-indigo-200 bg-white p-3 sm:grid-cols-12 sm:items-center">
-                <div className="sm:col-span-4">
-                  <input
-                    {...register(`options.${idx}.title`)}
-                    placeholder="e.g. Compatible Screen"
-                    className={inputClass}
-                  />
-                  {errors.options?.[idx]?.title && <p className="mt-1 text-xs text-red-600">{errors.options[idx]?.title?.message}</p>}
-                </div>
-                <div className="sm:col-span-5">
-                  <input
-                    {...register(`options.${idx}.description`)}
-                    placeholder="Notes (e.g. 1 month warranty)"
-                    className={inputClass}
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <input
-                    {...register(`options.${idx}.amount`)}
-                    type="number"
-                    step="0.01"
-                    placeholder="Amount ₹"
-                    className={inputClass}
-                  />
-                  {errors.options?.[idx]?.amount && <p className="mt-1 text-xs text-red-600">{errors.options[idx]?.amount?.message}</p>}
-                </div>
-                <div className="flex justify-end sm:col-span-1">
-                  <button
-                    type="button"
-                    onClick={() => removeOption(idx)}
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                    title="Remove option"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-xs text-slate-500 italic">No alternative options added. The standard line total below will be sent as the default quote.</p>
-        )}
-      </div>
 
       <div className={`rounded-lg border p-4 ${deadRiskRequested ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-slate-50/50'}`}>
         <label className="flex items-start gap-3 text-sm font-medium text-slate-800">
           <input type="checkbox" {...register('deadRiskRequested')} className="mt-0.5 size-4 accent-red-600" />
           <span>
             Dead-device risk — repair/opening could make the phone fully dead or worsen its condition
-            <span className="mt-1 block text-xs font-normal text-slate-600">The CCO must record a separate customer acknowledgement before repair can begin.</span>
+            <span className="mt-1 block text-xs font-normal text-slate-600">The CCO must record the customer's acknowledgement before repair can begin.</span>
           </span>
         </label>
         {deadRiskRequested && (
@@ -811,12 +625,12 @@ function DiagnosisFormInner({ job, faults, prices, findings, findingTypes, onDon
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between rounded-md bg-slate-100 px-4 py-3 ring-1 ring-slate-200">
         <div className="text-sm text-slate-600">
-          Total estimate
+          Total estimate{partsTotal > 0 && ' (incl. parts)'}
           <span className="block text-xs text-orange-700">
-            CCO must call the customer and record approval{agreed !== null ? ` (earlier amount: ${formatCurrency(agreed)})` : ''}
+            CCO calls the customer and records approval{agreed !== null ? ` (earlier amount: ${formatCurrency(agreed)})` : ''}
           </span>
         </div>
-        <span className="text-lg font-semibold">{formatCurrency(total)}</span>
+        <span className="text-lg font-semibold">{formatCurrency(amount + partsTotal)}</span>
       </div>
 
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Submit estimate" />

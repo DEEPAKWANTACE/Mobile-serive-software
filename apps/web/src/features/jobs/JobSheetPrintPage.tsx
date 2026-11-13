@@ -183,7 +183,21 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         <div className="mb-1 font-semibold">Pattern:</div><PatternBoxes />
       </div>
     </div>
-    <div className="border-b border-slate-700 py-2 font-bold print:flex print:min-h-[7mm] print:shrink-0 print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
+    {job.approvedAt && job.estimateLines.length > 0 ? (
+      <div className="border-b border-slate-700 py-2 print:shrink-0 print:py-1">
+        <div className="font-bold">Approved costing: {formatCurrency(job.approvedAmount ?? job.quotedAmount ?? 0)}</div>
+        <ul className="mt-0.5 text-[0.9em]">
+          {job.estimateLines.map((l) => (
+            <li key={l.id} className="flex justify-between gap-2">
+              <span>{l.part ? `${l.part.code} ${l.part.name}` : (l.fault?.name ?? l.description)}{l.warranty ? ` · Warranty ${l.warranty}` : ''}</span>
+              <span className="whitespace-nowrap">{formatCurrency(l.amount)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : (
+      <div className="border-b border-slate-700 py-2 font-bold print:flex print:min-h-[7mm] print:shrink-0 print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
+    )}
     {!!advance.length && <div className="border-b border-slate-300 py-2 print:shrink-0 print:py-1">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
     {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs print:shrink-0 print:py-1 print:text-[9px]"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
     <div lang="mr" className="flex-1 py-3 text-[12px] leading-relaxed text-slate-800 print:min-h-0 print:overflow-hidden print:py-1 print:text-[9px] print:leading-snug">

@@ -41,6 +41,9 @@ import {
   photoUploadSchema,
   ROLES,
   bulkJobActionSchema,
+  jobLinesSchema,
+  repeatRepairSchema,
+  stockPartAddSchema,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
 import { multipartJson } from '../../middleware/multipart-json.ts';
@@ -54,6 +57,7 @@ import * as service from './jobs.service.ts';
 import * as l4 from './l4.service.ts';
 import * as editing from './edit.service.ts';
 import * as bulk from './bulk.service.ts';
+import * as costing from './costing.service.ts';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -211,6 +215,24 @@ jobRoutes.post(
   controller.rwr,
 );
 jobRoutes.post('/:id/rwr/finalize', authorize(ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema }), controller.finalizeRwr);
+// Costing: CCO edits items; engineer / CCO use parts from stock (stock changes immediately).
+jobRoutes.put('/:id/lines', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobLinesSchema }), async (req, res) => {
+  res.json(await costing.setLines(req.params.id as string, req.body, actorOf(req)));
+});
+jobRoutes.post('/:id/stock-parts', authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: stockPartAddSchema }), async (req, res) => {
+  res.status(201).json(await costing.addStockPart(req.params.id as string, req.body, actorOf(req)));
+});
+jobRoutes.delete(
+  '/:id/stock-parts/:lineId',
+  authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.CCO),
+  validate({ params: z.object({ id: z.uuid(), lineId: z.uuid() }) }),
+  async (req, res) => {
+    res.json(await costing.removeStockPart(req.params.id as string, req.params.lineId as string, actorOf(req)));
+  },
+);
+jobRoutes.post('/:id/repeat', authorize(ROLES.CCO), validate({ params: idParamSchema, body: repeatRepairSchema }), async (req, res) => {
+  res.status(201).json(await costing.repeatRepair(req.params.id as string, req.body, actorOf(req)));
+});
 jobRoutes.post(
   '/:id/parts',
   authorize(ROLES.ENGINEER),

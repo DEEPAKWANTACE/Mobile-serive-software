@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
@@ -25,6 +25,7 @@ import {
   PHOTO_KIND_LABELS,
   PHOTO_KINDS,
   ROLES,
+  type EngineerWorkloadDto,
   type JobDto,
   type JobHistoryEntryDto,
   type JobPhotoDto,
@@ -46,7 +47,9 @@ import { AuthImage } from './AuthImage';
 import { uploadJobPhotos, useJob, useJobHistory } from './api';
 import { JobStatusBadge } from './JobStatusBadge';
 import { PhotoPicker } from './PhotoPicker';
-import { JobPartsCard } from './JobPartsCard';
+import { StockPartsCard } from './StockPartsCard';
+import { DeliverJobDialog } from './DeliverJobDialog';
+import { Combobox } from '@/components/ui/Combobox';
 import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
 import { EditJobForm } from './EditJobForm';
@@ -59,9 +62,11 @@ export function JobDetailPage() {
   const { id = '' } = useParams();
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = (searchParams.get('tab') ?? 'overview') as DetailTab;
-  const setTab = (next: DetailTab) => setSearchParams(next === 'overview' ? {} : { tab: next }, { replace: true });
+  const tab = searchParams.get('tab') as DetailTab | null;
+  const setTab = (next: DetailTab) => setSearchParams({ tab: next }, { replace: true });
   const { data: job, isLoading, error } = useJob(id);
+  const [delivering, setDelivering] = useState(false);
+  const [repeating, setRepeating] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [editing, setEditing] = useState(false);
   const [unassigning, setUnassigning] = useState(false);
@@ -122,16 +127,23 @@ export function JobDetailPage() {
   ].join(', ') || job.customerComplaint || '—';
   const amount = job.approvedAmount ?? job.quotedAmount ?? job.estimatedAmount;
 
+  // Overview is hidden for now (its content stays below); engineers only get repair work and photos.
   const tabs: { key: DetailTab; label: string; show: boolean }[] = [
-    { key: 'overview', label: 'Overview', show: true },
+    { key: 'overview', label: 'Overview', show: false },
     { key: 'work', label: 'Repair work', show: !readOnlyViewer },
-    { key: 'payments', label: 'Amount & payments', show: true },
+    { key: 'payments', label: 'Amount & payments', show: !isEngineer },
     { key: 'photos', label: 'Photos', show: true },
-    { key: 'history', label: isEngineer ? 'Calls' : 'Calls & history', show: !readOnlyViewer || !isEngineer },
-    { key: 'l4', label: 'L4 / main office', show: !readOnlyViewer },
+    { key: 'history', label: 'Calls & history', show: !isEngineer },
+    { key: 'l4', label: 'L4 / main office', show: !readOnlyViewer && !isEngineer },
   ];
   const visibleTabs = tabs.filter((t) => t.show);
-  const activeTab = visibleTabs.some((t) => t.key === tab) ? tab : 'overview';
+  const activeTab: DetailTab = visibleTabs.find((t) => t.key === tab)?.key ?? visibleTabs[0]?.key ?? 'photos';
+  const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
+  const ownBranch = !user?.branch || user.branch.id === job.branch.id;
+  const canDeliver = atHome && ownBranch && (
+    (job.status === 'READY_FOR_DELIVERY' && (user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER))
+    || (job.status === 'RWR' && user?.role === ROLES.BRANCH_MANAGER));
+  const canRepeat = user?.role === ROLES.CCO && ownBranch;
 
   return (
     <div className="space-y-4">
@@ -156,7 +168,24 @@ export function JobDetailPage() {
           <h1 className="font-mono text-2xl font-semibold">{formatJobNumber(job.jobNumber)}</h1>
           <JobStatusBadge status={job.status} />
           <span className="text-xs text-slate-500">Pending with: <span className="font-medium text-slate-700">{JOB_PENDING_WITH[job.status]}</span></span>
+          {canDeliver && (
+            <Button size="sm" className="bg-emerald-600! hover:bg-emerald-700!" onClick={() => setDelivering(true)}>Deliver</Button>
+          )}
         </div>
+        {(job.repeatOf || job.repeats.length > 0) && (
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {job.repeatOf && (
+              <Link to={`/jobs/${job.repeatOf.id}`} className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-800 ring-1 ring-violet-200 hover:underline">
+                ↻ Repeat repair of {formatJobNumber(job.repeatOf.jobNumber)}
+              </Link>
+            )}
+            {job.repeats.map((r) => (
+              <Link key={r.id} to={`/jobs/${r.id}`} className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-800 ring-1 ring-violet-200 hover:underline">
+                ↻ Repeated as {formatJobNumber(r.jobNumber)} · {JOB_STATUS_LABELS[r.status]}
+              </Link>
+            ))}
+          </div>
+        )}
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           <Row label="Customer"><span className="font-medium">{job.customer.name}</span></Row>
           <Row label="Mobile"><a href={`tel:${job.customer.phone}`} className="font-medium text-brand-600 hover:underline">{job.customer.phone}</a></Row>
@@ -169,9 +198,6 @@ export function JobDetailPage() {
                 <Button size="sm" variant={job.assignedEngineer ? 'secondary' : 'primary'} onClick={() => setAssigning(true)}>
                   {job.assignedEngineer ? 'Reassign' : 'Assign'}
                 </Button>
-              )}
-              {canAssign && job.status === 'ASSIGNED' && job.assignedEngineer && (
-                <Button size="sm" variant="secondary" onClick={() => setUnassigning(true)}>Unassign</Button>
               )}
             </span>
             {job.assignedAt && <span className="block text-xs text-slate-500">since {formatDateTime(job.assignedAt)}</span>}
@@ -189,6 +215,14 @@ export function JobDetailPage() {
             <Link to={`/jobs/${job.id}/print`}>
               <Button size="sm" variant="secondary">🖨 Print job sheet</Button>
             </Link>
+            {job.invoice && user?.role !== ROLES.SUPER_ADMIN && (
+              <Link to={`/jobs/${job.id}/invoice`}>
+                <Button size="sm" variant="secondary">🧾 Invoice {job.invoice.invoiceNumber}</Button>
+              </Link>
+            )}
+            {canRepeat && (
+              <Button size="sm" variant="secondary" onClick={() => setRepeating(true)}>↻ Repeat repair</Button>
+            )}
             {!closed && (!user?.branch || user.branch.id === job.branch.id) && (
               <>
                 <Button size="sm" variant="secondary" onClick={() => { setTimerValue(job.dueAt); setTimerEditing(true); }}>
@@ -240,6 +274,10 @@ export function JobDetailPage() {
         onConfirm={() => unassign.mutate()}
         onClose={() => setUnassigning(false)}
       />
+      <DeliverJobDialog jobId={delivering ? job.id : null} onClose={() => setDelivering(false)} />
+      <Modal open={repeating} onClose={() => setRepeating(false)} title={`Repeat repair · ${formatJobNumber(job.jobNumber)}`} size="sm">
+        {repeating && <RepeatRepairForm job={job} onDone={() => setRepeating(false)} />}
+      </Modal>
       <AssignEngineerDialog
         job={
           assigning
@@ -281,9 +319,8 @@ export function JobDetailPage() {
         )}
         {activeTab === 'work' && (
           <>
+            <StockPartsCard job={job} />
             <WorkPanel job={job} />
-            <RepairNotes job={job} />
-            <JobPartsCard job={job} />
           </>
         )}
         {activeTab === 'payments' && <Estimate job={job} readOnly={readOnlyViewer} />}
@@ -317,6 +354,53 @@ export function JobDetailPage() {
 type DetailTab = 'overview' | 'work' | 'payments' | 'photos' | 'history' | 'l4';
 /** Statuses where someone must act in the Repair work tab. */
 const ACTION_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'CUSTOMER_REJECTED', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'READY_FOR_DELIVERY', 'RWR_PENDING', 'RWR'];
+
+/** CCO starts the job again as a new linked job sheet that goes straight to the engineer's diagnosis. */
+function RepeatRepairForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [engineerId, setEngineerId] = useState(job.assignedEngineer?.id ?? job.assignments.at(-1)?.engineer.id ?? '');
+  const [note, setNote] = useState('');
+  const [error, setError] = useState<string>();
+  const engineers = useQuery({
+    queryKey: ['engineers', job.branch.id],
+    queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers?branchId=${job.branch.id}`),
+  });
+  const save = useMutation({
+    mutationFn: () => api.post<{ id: string; jobNumber: string }>(`/jobs/${job.id}/repeat`, { engineerId, note: note.trim() || null }),
+    onSuccess: (created) => {
+      toast.success(`Repeat job sheet ${formatJobNumber(created.jobNumber)} created — sent for diagnosis`, {
+        duration: 10000,
+        action: { label: '🖨 Print job sheet', onClick: () => navigate(`/jobs/${created.id}/print`) },
+      });
+      void queryClient.invalidateQueries();
+      onDone();
+      navigate(`/jobs/${created.id}`);
+    },
+    onError: (err) => setError(err.message),
+  });
+  return (
+    <form onSubmit={(e) => (e.preventDefault(), engineerId ? save.mutate() : setError('Select an engineer'))} className="space-y-4">
+      <p className="text-sm text-slate-600">
+        A new job sheet is created for the same customer and device, linked to {formatJobNumber(job.jobNumber)}. It goes straight to the engineer for diagnosis.
+      </p>
+      <Field label="Engineer" required>
+        <Combobox
+          value={engineerId}
+          onChange={setEngineerId}
+          placeholder="Select engineer"
+          emptyText="No active engineers in this branch"
+          options={(engineers.data ?? []).map((e) => ({ value: e.id, label: e.name, hint: `${e.openJobs} open` }))}
+        />
+      </Field>
+      <Field label="What is the problem now?" hint="Optional">
+        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Same display issue came back after 5 days" />
+      </Field>
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+      <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Start repeat repair" />
+    </form>
+  );
+}
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -838,6 +922,20 @@ function describe(entry: JobHistoryEntryDto) {
       return `Part not available: ${meta.part}${meta.jobOnHold ? ' — job waiting for spare' : ''}`;
     case 'job.part_returned':
       return `Part returned to stock: ${meta.code} ${meta.name}`;
+    case 'job.part_used':
+      return `Part used from stock: ${meta.code} ${meta.name}${Number(meta.quantity) > 1 ? ` × ${meta.quantity}` : ''}`;
+    case 'job.costing_updated':
+      return `Costing updated — total ${formatCurrency(Number(meta.total ?? 0))}`;
+    case 'job.repeat_started':
+      return `Repeat repair started as ${meta.jobNumber}${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.rwr_requested':
+      return `RWR requested — “${meta.note ?? ''}”`;
+    case 'job.rwr_finalized':
+      return 'RWR finalized by Branch Manager';
+    case 'job.dead_risk_approved':
+      return `Dead-device risk accepted by customer${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.approved_estimate_changed':
+      return `Approved amount changed ${formatCurrency(Number(meta.from ?? 0))} → ${formatCurrency(Number(meta.to ?? 0))}`;
     case 'job.part_cancelled':
       return `Part request cancelled: ${meta.code} ${meta.name}`;
     case 'job.delivered':

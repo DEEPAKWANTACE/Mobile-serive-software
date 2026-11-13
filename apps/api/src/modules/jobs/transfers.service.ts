@@ -78,7 +78,8 @@ export async function list(query: TransferListQuery, actor: Actor) {
   return rows.map(toDto);
 }
 
-export async function request(jobId: string, { toEngineerId, reason, remark }: TransferRequestData, actor: Actor) {
+export async function request(jobId: string, { toEngineerId, reason: givenReason, remark }: TransferRequestData, actor: Actor) {
+  const reason = givenReason ?? 'Transfer requested';
   const job = await loadForAccess(jobId, actor);
   if (job.assignedEngineerId !== actor.sub) throw HttpError.forbidden('Only the engineer holding the job can transfer it');
   if (!TRANSFERABLE_STATUSES.includes(job.status)) throw HttpError.conflict('This job cannot be transferred at its current stage');

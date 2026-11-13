@@ -17,6 +17,7 @@ import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
 import * as controller from './inventory.controller.ts';
 import * as transfers from './transfers.service.ts';
+import * as service from './inventory.service.ts';
 import { actorOf } from '../../lib/request-context.ts';
 
 export const inventoryRoutes = Router();
@@ -49,6 +50,10 @@ inventoryRoutes.post(
   validate({ params: idParamSchema }),
   controller.cancel,
 );
+
+inventoryRoutes.get('/spare-holds', store, async (req, res) => {
+  res.json(await service.spareHolds(typeof req.query.branchId === 'string' ? req.query.branchId : undefined, actorOf(req)));
+});
 
 // Stock transfers between branches
 inventoryRoutes.get('/transfers', store, validate({ query: stockTransferListQuerySchema }), async (req, res) => {

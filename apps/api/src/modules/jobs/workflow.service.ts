@@ -22,6 +22,7 @@ import { recordAudit } from '../audit/audit.service.ts';
 import { assertBranchAccess } from '../../lib/access.ts';
 import { createPhotoRows, loadForAccess, preparePhotos, withStoredPhotos } from './jobs.service.ts';
 import { recordStatus } from './history.ts';
+import { currentLines, writeLines, type CostLine } from './costing.service.ts';
 
 /**
  * Job workflow after assignment:
@@ -64,88 +65,52 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
 
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },
-    select: {
-      deviceModelId: true,
-      estimatedAmount: true,
-      approvedAmount: true,
-      devices: { select: { deviceModelId: true } },
-    },
+    select: { estimatedAmount: true, approvedAmount: true, approvedAt: true, deadRiskRequested: true, deadRiskApprovedAt: true },
   });
-
-  // Resolve price options server-side; the client only says which option was picked.
-  const priceIds = data.lines.flatMap((l) => (l.priceId ? [l.priceId] : []));
-  const faultIds = [...new Set(data.lines.flatMap((l) => (l.faultId ? [l.faultId] : [])))];
-  const partIds = [...new Set(data.lines.flatMap((l) => (l.partId ? [l.partId] : [])))];
-  const [prices, faultCount, parts, findings] = await Promise.all([
-    prisma.servicePrice.findMany({
-      where: { id: { in: priceIds } },
-      select: { id: true, faultId: true, deviceModelId: true, label: true, price: true },
-    }),
-    prisma.fault.count({ where: { id: { in: faultIds } } }),
-    prisma.part.findMany({ where: { id: { in: partIds }, isActive: true }, select: { id: true, sellingPrice: true } }),
-    prisma.diagnosisFinding.findMany({
-      where: { id: { in: data.findingIds }, isActive: true },
-      select: { id: true, label: true },
-    }),
-  ]);
-  if (parts.length !== partIds.length) throw HttpError.badRequest('Invalid request', { lines: ['Unknown or inactive part in estimate'] });
-  const partPrice = new Map(parts.map((p) => [p.id, p.sellingPrice.toNumber()]));
-  if (faultCount !== faultIds.length) throw HttpError.badRequest('Invalid request', { lines: ['Unknown fault in estimate'] });
+  const findings = await prisma.diagnosisFinding.findMany({
+    where: { id: { in: data.findingIds }, isActive: true },
+    select: { id: true, label: true },
+  });
   if (findings.length !== data.findingIds.length) {
     throw HttpError.badRequest('Invalid request', { findingIds: ['One or more diagnosis findings are unknown or inactive'] });
   }
-  const priceById = new Map(prices.map((p) => [p.id, p]));
-  const validModelIds = new Set([job.deviceModelId, ...job.devices.map((device) => device.deviceModelId)].filter((id): id is string => !!id));
 
-  const lines = data.lines.map((l, i) => {
-    const partId = l.partId ?? null;
-    // A part line is charged at the part's selling price ("enter code → amount comes").
-    if (partId && !l.priceId) {
-      return { faultId: l.faultId ?? null, partId, description: l.description ?? null, priceLabel: null, amount: partPrice.get(partId)!, sortOrder: i };
-    }
-    if (!l.priceId) {
-      return { faultId: l.faultId ?? null, partId, description: l.description ?? null, priceLabel: null, amount: l.amount!, sortOrder: i };
-    }
-    const p = priceById.get(l.priceId);
-    if (!p || !validModelIds.has(p.deviceModelId) || (l.faultId && p.faultId !== l.faultId)) {
-      throw HttpError.badRequest('Invalid request', { lines: ['A selected price is not valid for this model'] });
-    }
-    return { faultId: p.faultId, partId, description: l.description ?? null, priceLabel: p.label, amount: p.price.toNumber(), sortOrder: i };
-  });
-  const total = Math.round(lines.reduce((sum, l) => sum + l.amount, 0) * 100) / 100;
-
-  // Every engineer-entered estimate returns to the CCO so the customer's decision is explicit.
   const agreed = job.approvedAmount ?? job.estimatedAmount;
-  const status: JobStatus = 'AWAITING_APPROVAL';
+  const remark = `Diagnosed: ${data.notes ?? findings.map((finding) => finding.label).join(', ')}`;
 
-  await prisma.$transaction(async (tx) => {
-    await moveFrom(tx, id, access.status, {
+  return prisma.$transaction(async (tx) => {
+    // Parts already taken from stock stay on the bill; the engineer's amount replaces the other items.
+    const parts = (await currentLines(tx, id)).filter((l) => l.partId);
+    const lines: CostLine[] = [...parts, { description: 'Repair charges', partId: null, warranty: null, amount: data.amount }];
+    const total = await writeLines(tx, access, lines, actor);
+    // Updating notes during repair without changing the agreed amount keeps the customer's approval.
+    const keepApproval = access.status === 'IN_REPAIR' && job.approvedAt !== null && job.approvedAmount?.toNumber() === total
+      && (!data.deadRiskRequested || (job.deadRiskRequested && job.deadRiskApprovedAt !== null));
+    const status: JobStatus = keepApproval ? 'IN_REPAIR' : 'AWAITING_APPROVAL';
+    const common = {
       diagnosisNotes: data.notes ?? null,
       diagnosedAt: new Date(),
       quotedAmount: total,
-      status,
-      customerResponse: null,
-      approvedAmount: null,
-      approvedAt: null,
-      approvedById: null,
       deadRiskRequested: data.deadRiskRequested,
       deadRiskNote: data.deadRiskRequested ? data.deadRiskNote : null,
-      deadRiskApprovedAt: null,
-      deadRiskApprovedById: null,
-    }, { actor, remark: `Diagnosed: ${data.notes ?? findings.map((finding) => finding.label).join(', ')}` });
-    await tx.jobEstimateLine.deleteMany({ where: { jobId: id } });
-    await tx.jobEstimateLine.createMany({ data: lines.map((l) => ({ ...l, jobId: id })) });
-    if (data.options && data.options.length > 0) {
-      await tx.jobEstimateOption.deleteMany({ where: { jobId: id } });
-      await tx.jobEstimateOption.createMany({
-        data: data.options.map((opt) => ({
-          jobId: id,
-          title: opt.title,
-          description: opt.description ?? null,
-          amount: opt.amount,
-        })),
-      });
+    } satisfies Prisma.JobUncheckedUpdateManyInput;
+    if (keepApproval) {
+      const { count } = await tx.job.updateMany({ where: { id, status: access.status }, data: common });
+      if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+    } else {
+      await moveFrom(tx, id, access.status, {
+        ...common,
+        status,
+        customerResponse: null,
+        approvedAmount: null,
+        approvedAt: null,
+        approvedById: null,
+        deadRiskApprovedAt: null,
+        deadRiskApprovedById: null,
+      }, { actor, remark });
     }
+    // Customer options are no longer prepared by the engineer.
+    await tx.jobEstimateOption.deleteMany({ where: { jobId: id } });
     await tx.jobDiagnosisFinding.deleteMany({ where: { jobId: id } });
     if (findings.length) {
       await tx.jobDiagnosisFinding.createMany({
@@ -162,9 +127,8 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
         metadata: {
           total,
           status,
-          autoApproved: false,
+          autoApproved: keepApproval,
           earlierAmount: agreed?.toNumber() ?? null,
-          items: lines.length,
           findings: findings.map((finding) => finding.label),
           deadRiskRequested: data.deadRiskRequested,
           deadRiskNote: data.deadRiskNote ?? null,
@@ -173,8 +137,8 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
       },
       tx,
     );
+    return { status, quotedAmount: total, autoApproved: keepApproval };
   });
-  return { status, quotedAmount: total, autoApproved: false };
 }
 
 // ─── Customer approval (CCO) ────────────────────────────────────────────────
@@ -203,7 +167,7 @@ async function syncApprovedTotal(tx: Prisma.TransactionClient, jobId: string, ta
   }
 }
 
-export async function decideApproval(id: string, { decision, selectedOptionId, amount, note }: ApprovalData, actor: Actor) {
+export async function decideApproval(id: string, { decision, selectedOptionId, amount, note, lines, deadRiskApproved }: ApprovalData, actor: Actor) {
   const access = await loadForAccess(id, actor);
   if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the owning branch can record customer approval');
   if (access.status !== 'AWAITING_APPROVAL') throw notAllowed(access.status);
@@ -213,7 +177,11 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
   });
 
   const approved = decision === 'APPROVED';
-  let finalApprovedAmount = amount ?? job.quotedAmount?.toNumber() ?? null;
+  const editedLines: CostLine[] | null = approved && lines?.length
+    ? lines.map((l) => ({ description: l.description ?? null, partId: l.partId ?? null, warranty: l.warranty ?? null, amount: l.amount }))
+    : null;
+  const linesTotal = editedLines ? Math.round(editedLines.reduce((s, l) => s + l.amount, 0) * 100) / 100 : null;
+  let finalApprovedAmount = amount ?? linesTotal ?? job.quotedAmount?.toNumber() ?? null;
   let selectedOptionTitle: string | null = null;
   if (approved && selectedOptionId) {
     const option = job.estimateOptions.find((candidate) => candidate.id === selectedOptionId);
@@ -225,7 +193,9 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
     throw HttpError.badRequest('Invalid request', { amount: ['Enter the approved amount'] });
   }
 
-  const waitingForDeadRisk = approved && job.deadRiskRequested && !job.deadRiskApprovedAt;
+  // The dead-risk warning can be accepted in the same call; otherwise it still needs its own confirmation.
+  const deadRiskNow = approved && job.deadRiskRequested && !job.deadRiskApprovedAt && !!deadRiskApproved;
+  const waitingForDeadRisk = approved && job.deadRiskRequested && !job.deadRiskApprovedAt && !deadRiskApproved;
   const status: JobStatus = approved ? (waitingForDeadRisk ? 'AWAITING_APPROVAL' : 'IN_REPAIR') : 'CUSTOMER_REJECTED';
   const approvalNote = [
     selectedOptionTitle ? `Selected: ${selectedOptionTitle}` : null,
@@ -235,6 +205,7 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
 
   await prisma.$transaction(async (tx) => {
     if (approved) {
+      if (editedLines) await writeLines(tx, access, editedLines, actor);
       await tx.jobEstimateOption.updateMany({ where: { jobId: id }, data: { isApproved: false } });
       if (selectedOptionId) await tx.jobEstimateOption.update({ where: { id: selectedOptionId }, data: { isApproved: true } });
       await syncApprovedTotal(tx, id, finalApprovedAmount!);
@@ -243,7 +214,10 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
     const update = {
       customerResponse: approvalNote,
       ...(approved
-        ? { approvedAt: new Date(), approvedById: actor.sub, approvedAmount: finalApprovedAmount!, quotedAmount: finalApprovedAmount! }
+        ? {
+          approvedAt: new Date(), approvedById: actor.sub, approvedAmount: finalApprovedAmount!, quotedAmount: finalApprovedAmount!,
+          ...(deadRiskNow && { deadRiskApprovedAt: new Date(), deadRiskApprovedById: actor.sub }),
+        }
         : { approvedAt: null, approvedById: null }),
     } satisfies Prisma.JobUncheckedUpdateManyInput;
     const remark = approved
@@ -262,7 +236,7 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
         entityType: 'job',
         entityId: id,
         branchId: access.branchId,
-        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk },
+        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk, deadRiskApproved: deadRiskNow, items: editedLines?.length ?? null },
         ip: actor.ip,
       },
       tx,
@@ -380,9 +354,13 @@ export async function changeStatus(id: string, { status: to, note }: StatusChang
 
 // ─── Spare not available ────────────────────────────────────────────────────
 
-export async function spareHold(id: string, { part, note }: SpareHoldData, actor: Actor) {
+export async function spareHold(id: string, { part, partId, note }: SpareHoldData, actor: Actor) {
   const access = await loadForEngineer(id, actor);
   if (!SPARE_HOLD_STATUSES.includes(access.status)) throw notAllowed(access.status);
+  const catalogPart = partId
+    ? await prisma.part.findFirst({ where: { id: partId, isActive: true }, select: { id: true, sellingPrice: true } })
+    : null;
+  if (partId && !catalogPart) throw HttpError.badRequest('Invalid request', { partId: ['Select an active part'] });
 
   await prisma.$transaction(async (tx) => {
     await moveFrom(tx, id, access.status, {
@@ -391,6 +369,15 @@ export async function spareHold(id: string, { part, note }: SpareHoldData, actor
       spareRequestedAt: new Date(),
       statusBeforeHold: access.status,
     }, { actor, remark: `Spare not available: ${part}${note ? ` — ${note}` : ''}` });
+    // The store sees it under Part Requests and can issue it when it arrives (the job then resumes).
+    if (catalogPart) {
+      await tx.jobPart.create({
+        data: {
+          jobId: id, partId: catalogPart.id, quantity: 1, unitPrice: catalogPart.sellingPrice, status: 'NOT_AVAILABLE',
+          note: note ?? 'Spare not available', requestedById: actor.sub,
+        },
+      });
+    }
     await recordAudit(
       {
         actorId: actor.sub,

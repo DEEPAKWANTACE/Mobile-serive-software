@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Download, MessageSquare, Search } from 'lucide-react';
+import { Copy, Download, FileText, MessageSquare, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  JOB_STATUS_FILTER_OPTIONS,
   JOB_STATUS_LABELS,
-  JOB_STATUSES,
   ROLES,
   type BranchDto,
   type DashboardSummaryDto,
@@ -26,6 +26,8 @@ import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
 import { api } from '@/lib/api-client';
 import { toQueryString, useOptions } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
+import { openPrintWindow, writeTable } from '@/lib/print-table';
+import { Modal } from '@/components/ui/Modal';
 import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/format';
 
 const PAYMENT_LABELS: Record<EngineerReportRowDto['paymentStatus'], { label: string; cls: string }> = {
@@ -37,6 +39,41 @@ const PAYMENT_LABELS: Record<EngineerReportRowDto['paymentStatus'], { label: str
 };
 
 type Filters = { jobNumber: string; from: string; to: string; engineerId: string; status: string; branchId: string };
+
+/** Export fields: Excel gets all of them, the PDF only the chosen ones. */
+const EXPORT_FIELDS: { key: string; label: string; value: (r: EngineerReportRowDto) => string | number | null }[] = [
+  { key: 'jobNumber', label: 'Job No', value: (r) => r.job.jobNumber },
+  { key: 'date', label: 'Date', value: (r) => formatDate(r.job.createdAt) },
+  { key: 'customer', label: 'Customer', value: (r) => r.customer },
+  { key: 'product', label: 'Product', value: (r) => r.product },
+  { key: 'problem', label: 'Problem', value: (r) => r.problem },
+  { key: 'engineer', label: 'Engineer', value: (r) => r.engineer },
+  { key: 'status', label: 'Status', value: (r) => JOB_STATUS_LABELS[r.job.status as JobStatus] ?? r.job.status },
+  { key: 'assigned', label: 'Assigned', value: (r) => (r.assignedAt ? formatDateTime(r.assignedAt) : '') },
+  { key: 'testing', label: 'Testing Date', value: (r) => (r.testingAt ? formatDate(r.testingAt) : '') },
+  { key: 'repaired', label: 'Repair Date', value: (r) => (r.repairedAt ? formatDate(r.repairedAt) : '') },
+  { key: 'amount', label: 'Amount', value: (r) => r.totalAmount },
+  { key: 'paid', label: 'Paid', value: (r) => r.paidAmount },
+  { key: 'balance', label: 'Balance', value: (r) => r.balance },
+  { key: 'payment', label: 'Payment', value: (r) => PAYMENT_LABELS[r.paymentStatus].label },
+  { key: 'transfers', label: 'Transfer History', value: (r) => r.transferHistory },
+  { key: 'remarks', label: 'Remarks', value: (r) => r.remarks },
+];
+/** One-click column sets for the PDF. */
+const PDF_PRESETS: { label: string; keys: string[] }[] = [
+  { label: 'Short', keys: ['jobNumber', 'date', 'customer', 'product', 'engineer', 'status', 'amount'] },
+  { label: 'Pending check', keys: ['jobNumber', 'date', 'product', 'problem', 'engineer', 'status'] },
+  { label: 'Money', keys: ['jobNumber', 'customer', 'engineer', 'amount', 'paid', 'balance', 'payment'] },
+  { label: 'All', keys: EXPORT_FIELDS.map((f) => f.key) },
+];
+const PDF_COLUMNS_KEY = 'engineer-report-pdf-columns';
+const loadPdfColumns = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PDF_COLUMNS_KEY) ?? 'null') as string[] | null;
+    if (Array.isArray(saved) && saved.length) return saved.filter((k) => EXPORT_FIELDS.some((f) => f.key === k));
+  } catch { /* storage unavailable */ }
+  return PDF_PRESETS[0]!.keys;
+};
 const EMPTY: Filters = { jobNumber: '', from: '', to: '', engineerId: '', status: '', branchId: '' };
 
 /** Engineer Report: jobs per engineer (current or past assignment) with status, repair date, amount and payment status. */
@@ -140,17 +177,42 @@ export function EngineerReportPage() {
     ...(isSuperAdmin ? [{ header: 'Branch', cell: (r: EngineerReportRowDto) => r.job.branchCode }] : []),
   ];
 
+  const fetchAll = () => api.get<Paginated<EngineerReportRowDto>>(`/reports/engineer-jobs?${toQueryString({ ...applied, page: 1, pageSize: 500 })}`);
   const exportCsv = async () => {
-    const all = await api.get<Paginated<EngineerReportRowDto>>(`/reports/engineer-jobs?${toQueryString({ ...applied, page: 1, pageSize: 500 })}`);
+    const all = await fetchAll();
     downloadCsv(
       `engineer_report_${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Job No', 'Date', 'Customer', 'Product', 'Problem', 'Engineer', 'Status', 'Assigned', 'Testing Date', 'Repair Date', 'Amount', 'Paid', 'Balance', 'Payment', 'Transfer History', 'Remarks'],
-      all.items.map((r) => [
-        r.job.jobNumber, formatDate(r.job.createdAt), r.customer, r.product, r.problem, r.engineer, JOB_STATUS_LABELS[r.job.status as JobStatus] ?? r.job.status,
-        r.assignedAt ? formatDateTime(r.assignedAt) : '', r.testingAt ? formatDate(r.testingAt) : '', r.repairedAt ? formatDate(r.repairedAt) : '',
-        r.totalAmount, r.paidAmount, r.balance, PAYMENT_LABELS[r.paymentStatus].label, r.transferHistory, r.remarks,
-      ]),
+      EXPORT_FIELDS.map((f) => f.label),
+      all.items.map((r) => EXPORT_FIELDS.map((f) => f.value(r))),
     );
+  };
+
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfColumns, setPdfColumns] = useState<string[]>(loadPdfColumns);
+  const exportPdf = async () => {
+    const fields = EXPORT_FIELDS.filter((f) => pdfColumns.includes(f.key));
+    if (!fields.length) return toast.error('Select at least one column');
+    try { localStorage.setItem(PDF_COLUMNS_KEY, JSON.stringify(pdfColumns)); } catch { /* storage unavailable */ }
+    const win = openPrintWindow();
+    if (!win) return toast.error('Allow pop-ups to download the PDF');
+    setPdfOpen(false);
+    try {
+      const all = await fetchAll();
+      const period = applied.from || applied.to ? `${applied.from ? formatDate(applied.from) : '…'} to ${applied.to ? formatDate(applied.to) : '…'}` : 'All dates';
+      writeTable(win, {
+        title: 'Engineer Report',
+        subtitle: `${period} · ${all.total} job${all.total === 1 ? '' : 's'}${all.total > all.items.length ? ` (first ${all.items.length})` : ''}`,
+        headers: fields.map((f) => f.label),
+        rows: all.items.map((r) => fields.map((f) => {
+          const v = f.value(r);
+          return typeof v === 'number' && ['amount', 'paid', 'balance'].includes(f.key) ? formatCurrency(v) : v;
+        })),
+        landscape: fields.length > 7,
+      });
+    } catch (err) {
+      win.close();
+      toast.error(err instanceof Error ? err.message : 'Could not build the PDF');
+    }
   };
 
   return (
@@ -234,7 +296,7 @@ export function EngineerReportPage() {
         <Field label="Status" className="lg:w-44">
           <select value={draft.status} onChange={set('status')} className={inputClass}>
             <option value="">All statuses</option>
-            {JOB_STATUSES.map((s) => <option key={s} value={s}>{JOB_STATUS_LABELS[s]}</option>)}
+            {JOB_STATUS_FILTER_OPTIONS.map((s) => <option key={s} value={s}>{JOB_STATUS_LABELS[s]}</option>)}
           </select>
         </Field>
         <div className="flex items-end gap-2">
@@ -244,10 +306,54 @@ export function EngineerReportPage() {
       </form>
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-600">{report.data ? `${report.data.total} job${report.data.total === 1 ? '' : 's'}` : ''}</p>
-        <Button variant="secondary" size="sm" onClick={() => void exportCsv()}>
-          <Download className="size-4" /> Excel
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => void exportCsv()}>
+            <Download className="size-4" /> Excel
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setPdfOpen(true)}>
+            <FileText className="size-4" /> PDF
+          </Button>
+        </div>
       </div>
+      <Modal open={pdfOpen} onClose={() => setPdfOpen(false)} title="Download PDF" size="md">
+        <div className="space-y-4">
+          <div>
+            <div className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">Quick select</div>
+            <div className="flex flex-wrap gap-2">
+              {PDF_PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => setPdfColumns(p.keys)}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ring-1 ${p.keys.length === pdfColumns.length && p.keys.every((k) => pdfColumns.includes(k)) ? 'bg-brand-600 text-white ring-brand-600' : 'bg-white text-slate-700 ring-slate-300 hover:bg-slate-50'}`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {EXPORT_FIELDS.map((f) => (
+              <label key={f.key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={pdfColumns.includes(f.key)}
+                  onChange={(e) => setPdfColumns((cols) => (e.target.checked ? [...cols, f.key] : cols.filter((k) => k !== f.key)))}
+                  className="size-4 accent-brand-600"
+                />
+                {f.label}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500">Uses the current filters. In the print window choose “Save as PDF”.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setPdfOpen(false)}>Cancel</Button>
+            <Button onClick={() => void exportPdf()} disabled={!pdfColumns.length}>
+              <FileText className="size-4" /> Download PDF ({pdfColumns.length} columns)
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <DataTable columns={columns} rows={report.data?.items} rowKey={(r) => r.job.id} isLoading={report.isLoading} emptyMessage="No jobs match these filters" />
       {report.data && <Pagination page={report.data.page} pageSize={report.data.pageSize} total={report.data.total} onChange={setPage} />}
     </div>

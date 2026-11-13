@@ -25,7 +25,8 @@ import { publicJobNumber } from './job-number.ts';
 const isCounter = (actor: Actor) =>
   actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
 
-export async function sendToL4(jobId: string, { toBranchId, reason }: SendToL4Data, actor: Actor) {
+export async function sendToL4(jobId: string, { toBranchId, reason: givenReason }: SendToL4Data, actor: Actor) {
+  const reason = givenReason ?? null;
   const job = await loadForAccess(jobId, actor);
   if (job.location !== 'AT_BRANCH' || job.currentBranchId !== job.branchId) throw HttpError.conflict('The phone is not at its own branch');
   const allowed = job.assignedEngineerId === actor.sub || (isCounter(actor) && (!actor.branchId || actor.branchId === job.branchId));
@@ -52,7 +53,7 @@ export async function sendToL4(jobId: string, { toBranchId, reason }: SendToL4Da
     });
     await tx.jobMovement.create({ data: { jobId, direction: 'TO_L4', fromBranchId: job.branchId, toBranchId: target.id, reason, sentById: actor.sub } });
     await endAssignment(tx, jobId, 'SENT_TO_L4');
-    await recordStatus(tx, { jobId, from: job.status, to: 'RECEIVED', actorId: actor.sub, engineerId: null, remark: `Sent to L4 (${target.code}): ${reason}` });
+    await recordStatus(tx, { jobId, from: job.status, to: 'RECEIVED', actorId: actor.sub, engineerId: null, remark: `Sent to L4 (${target.code})${reason ? `: ${reason}` : ''}` });
     await recordAudit(
       {
         actorId: actor.sub,

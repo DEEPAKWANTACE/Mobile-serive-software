@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { DiagnosisFindingDto, DiagnosisFindingTypeDto } from '@msm/shared';
+import type { DiagnosisFindingDto, DiagnosisFindingSubcategoryDto, DiagnosisFindingTypeDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
@@ -9,7 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { api } from '@/lib/api-client';
 
-type FindingDraft = { label: string; typeId: string; sortOrder: number; isActive: boolean };
+type FindingDraft = { label: string; typeId: string; subcategoryId: string; sortOrder: number; isActive: boolean };
 type TypeDraft = { name: string; sortOrder: number; isActive: boolean };
 
 export function DiagnosisFindingsPage() {
@@ -21,6 +21,11 @@ export function DiagnosisFindingsPage() {
   const [editingType, setEditingType] = useState<DiagnosisFindingTypeDto | null>(null);
   const [typeName, setTypeName] = useState('');
   const [typeOrder, setTypeOrder] = useState(0);
+  const [subcategoryId, setSubcategoryId] = useState('');
+  const [subName, setSubName] = useState('');
+  const [subType, setSubType] = useState('');
+  const [subOrder, setSubOrder] = useState(0);
+  const [editingSub, setEditingSub] = useState<DiagnosisFindingSubcategoryDto | null>(null);
 
   const types = useQuery({
     queryKey: ['settings', 'diagnosis-finding-types', 'all'],
@@ -30,18 +35,35 @@ export function DiagnosisFindingsPage() {
     queryKey: ['settings', 'diagnosis-findings', 'all'],
     queryFn: () => api.get<DiagnosisFindingDto[]>('/settings/diagnosis-findings?all=true'),
   });
+  const subcategories = useQuery({
+    queryKey: ['settings', 'diagnosis-finding-subcategories', 'all'],
+    queryFn: () => api.get<DiagnosisFindingSubcategoryDto[]>('/settings/diagnosis-finding-subcategories?all=true'),
+  });
   const activeTypes = (types.data ?? []).filter((t) => t.isActive);
+  const subsOf = (id: string) => (subcategories.data ?? []).filter((c) => c.typeId === id);
   // Default the "Add finding" type to the first active type once types load.
   useEffect(() => {
     if (!typeId && activeTypes[0]) setTypeId(activeTypes[0].id);
-  }, [typeId, activeTypes]);
+    if (!subType && activeTypes[0]) setSubType(activeTypes[0].id);
+  }, [typeId, subType, activeTypes]);
 
   const refresh = () => Promise.all([
     queryClient.invalidateQueries({ queryKey: ['settings', 'diagnosis-findings'] }),
     queryClient.invalidateQueries({ queryKey: ['settings', 'diagnosis-finding-types'] }),
+    queryClient.invalidateQueries({ queryKey: ['settings', 'diagnosis-finding-subcategories'] }),
   ]);
+  const createSub = useMutation({
+    mutationFn: () => api.post('/settings/diagnosis-finding-subcategories', { name: subName, typeId: subType, sortOrder: subOrder }),
+    onSuccess: () => {
+      toast.success('Sub category added');
+      setSubName('');
+      setSubOrder(0);
+      void refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const create = useMutation({
-    mutationFn: () => api.post('/settings/diagnosis-findings', { label, typeId, sortOrder }),
+    mutationFn: () => api.post('/settings/diagnosis-findings', { label, typeId, subcategoryId: subcategoryId || null, sortOrder }),
     onSuccess: () => {
       toast.success('Diagnosis finding added');
       setLabel('');
@@ -100,6 +122,51 @@ export function DiagnosisFindingsPage() {
         </div>
       </Card>
 
+      <Card title="Sub categories" subtitle="Second level under each type, e.g. Hardware → Display & touch">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (subName.trim().length < 2 || !subType) return;
+            createSub.mutate();
+          }}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[11rem_1fr_9rem_auto] sm:items-end"
+        >
+          <Field label="Type">
+            <select value={subType} onChange={(event) => setSubType(event.target.value)} className={inputClass}>
+              {activeTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Sub category name">
+            <input value={subName} onChange={(event) => setSubName(event.target.value)} className={inputClass} placeholder="e.g. Display & touch" />
+          </Field>
+          <Field label="Display order">
+            <input type="number" min={0} max={999} value={subOrder} onChange={(event) => setSubOrder(Number(event.target.value))} className={inputClass} />
+          </Field>
+          <Button type="submit" loading={createSub.isPending} disabled={!subType}>Add sub category</Button>
+        </form>
+        <div className="mt-4 space-y-3">
+          {(types.data ?? []).map((type) => (
+            <div key={type.id}>
+              <div className="mb-1.5 text-xs font-semibold tracking-wide text-slate-500 uppercase">{type.name}</div>
+              <div className="flex flex-wrap gap-2">
+                {subsOf(type.id).map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setEditingSub(sub)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm hover:border-brand-400 ${sub.isActive ? 'border-slate-300 bg-white text-slate-800' : 'border-slate-200 bg-slate-50 text-slate-400 line-through'}`}
+                  >
+                    {sub.name}
+                    <span className="text-xs text-slate-500">{(findings.data ?? []).filter((f) => f.subcategory?.id === sub.id).length}</span>
+                  </button>
+                ))}
+                {!subsOf(type.id).length && <span className="text-sm text-slate-400">No sub categories</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       <Card title="Add finding" subtitle="Engineers may select one or more presets and still add free-text notes">
         <form
           onSubmit={(event) => {
@@ -107,14 +174,20 @@ export function DiagnosisFindingsPage() {
             if (!label.trim() || !typeId) return;
             create.mutate();
           }}
-          className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_11rem_9rem_auto] sm:items-end"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_10rem_11rem_7rem_auto] sm:items-end"
         >
           <Field label="Finding">
             <input value={label} onChange={(event) => setLabel(event.target.value)} className={inputClass} placeholder="e.g. Charging IC shorted" />
           </Field>
           <Field label="Type">
-            <select value={typeId} onChange={(event) => setTypeId(event.target.value)} className={inputClass}>
+            <select value={typeId} onChange={(event) => (setTypeId(event.target.value), setSubcategoryId(''))} className={inputClass}>
               {activeTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Sub category">
+            <select value={subcategoryId} onChange={(event) => setSubcategoryId(event.target.value)} className={inputClass}>
+              <option value="">— None —</option>
+              {subsOf(typeId).filter((c) => c.isActive).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
           <Field label="Display order">
@@ -138,7 +211,7 @@ export function DiagnosisFindingsPage() {
                     <div key={finding.id} className="flex flex-wrap items-center justify-between gap-3 bg-white px-4 py-3">
                       <div>
                         <div className={`font-medium ${finding.isActive ? 'text-slate-900' : 'text-slate-400 line-through'}`}>{finding.label}</div>
-                        <div className="text-xs text-slate-500">Order {finding.sortOrder} · {finding.isActive ? 'Available to engineers' : 'Inactive'}</div>
+                        <div className="text-xs text-slate-500">{finding.subcategory ? `${finding.subcategory.name} · ` : ''}Order {finding.sortOrder} · {finding.isActive ? 'Available to engineers' : 'Inactive'}</div>
                       </div>
                       <Button size="sm" variant="secondary" onClick={() => setEditing(finding)}>Edit</Button>
                     </div>
@@ -152,7 +225,10 @@ export function DiagnosisFindingsPage() {
       </Card>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title="Edit diagnosis finding" size="sm">
-        {editing && <EditFinding finding={editing} types={types.data ?? []} onDone={() => { setEditing(null); void refresh(); }} />}
+        {editing && <EditFinding finding={editing} types={types.data ?? []} subcategories={subcategories.data ?? []} onDone={() => { setEditing(null); void refresh(); }} />}
+      </Modal>
+      <Modal open={!!editingSub} onClose={() => setEditingSub(null)} title="Edit sub category" size="sm">
+        {editingSub && <EditSubcategory sub={editingSub} onDone={() => { setEditingSub(null); void refresh(); }} />}
       </Modal>
       <Modal open={!!editingType} onClose={() => setEditingType(null)} title="Edit problem type" size="sm">
         {editingType && <EditType type={editingType} onDone={() => { setEditingType(null); void refresh(); }} />}
@@ -161,10 +237,10 @@ export function DiagnosisFindingsPage() {
   );
 }
 
-function EditFinding({ finding, types, onDone }: { finding: DiagnosisFindingDto; types: DiagnosisFindingTypeDto[]; onDone: () => void }) {
-  const [draft, setDraft] = useState<FindingDraft>({ label: finding.label, typeId: finding.type.id, sortOrder: finding.sortOrder, isActive: finding.isActive });
+function EditFinding({ finding, types, subcategories, onDone }: { finding: DiagnosisFindingDto; types: DiagnosisFindingTypeDto[]; subcategories: DiagnosisFindingSubcategoryDto[]; onDone: () => void }) {
+  const [draft, setDraft] = useState<FindingDraft>({ label: finding.label, typeId: finding.type.id, subcategoryId: finding.subcategory?.id ?? '', sortOrder: finding.sortOrder, isActive: finding.isActive });
   const save = useMutation({
-    mutationFn: () => api.patch(`/settings/diagnosis-findings/${finding.id}`, draft),
+    mutationFn: () => api.patch(`/settings/diagnosis-findings/${finding.id}`, { ...draft, subcategoryId: draft.subcategoryId || null }),
     onSuccess: () => {
       toast.success('Diagnosis finding updated');
       onDone();
@@ -177,8 +253,14 @@ function EditFinding({ finding, types, onDone }: { finding: DiagnosisFindingDto;
         <input value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} className={inputClass} />
       </Field>
       <Field label="Type">
-        <select value={draft.typeId} onChange={(event) => setDraft({ ...draft, typeId: event.target.value })} className={inputClass}>
+        <select value={draft.typeId} onChange={(event) => setDraft({ ...draft, typeId: event.target.value, subcategoryId: '' })} className={inputClass}>
           {types.filter((t) => t.isActive || t.id === draft.typeId).map((t) => <option key={t.id} value={t.id}>{t.name}{t.isActive ? '' : ' (inactive)'}</option>)}
+        </select>
+      </Field>
+      <Field label="Sub category">
+        <select value={draft.subcategoryId} onChange={(event) => setDraft({ ...draft, subcategoryId: event.target.value })} className={inputClass}>
+          <option value="">— None —</option>
+          {subcategories.filter((c) => c.typeId === draft.typeId && (c.isActive || c.id === draft.subcategoryId)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </Field>
       <Field label="Display order">
@@ -188,6 +270,37 @@ function EditFinding({ finding, types, onDone }: { finding: DiagnosisFindingDto;
         <input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} className="size-4 accent-brand-600" />
         Available to engineers
       </label>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
+        <Button type="submit" loading={save.isPending}>Save changes</Button>
+      </div>
+    </form>
+  );
+}
+
+function EditSubcategory({ sub, onDone }: { sub: DiagnosisFindingSubcategoryDto; onDone: () => void }) {
+  const [draft, setDraft] = useState({ name: sub.name, sortOrder: sub.sortOrder, isActive: sub.isActive });
+  const save = useMutation({
+    mutationFn: () => api.patch(`/settings/diagnosis-finding-subcategories/${sub.id}`, draft),
+    onSuccess: () => {
+      toast.success('Sub category updated');
+      onDone();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  return (
+    <form onSubmit={(event) => { event.preventDefault(); save.mutate(); }} className="space-y-4">
+      <Field label="Name" required>
+        <input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} className={inputClass} />
+      </Field>
+      <Field label="Display order">
+        <input type="number" min={0} max={999} value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} className={inputClass} />
+      </Field>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={draft.isActive} onChange={(event) => setDraft({ ...draft, isActive: event.target.checked })} className="size-4 accent-brand-600" />
+        Show to engineers
+      </label>
+      <p className="text-xs text-slate-500">Turning a sub category off hides its findings from engineers.</p>
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
         <Button type="submit" loading={save.isPending}>Save changes</Button>

@@ -95,6 +95,8 @@ export function InvoicePage() {
           <thead>
             <tr className="border-b border-slate-200 text-left text-xs text-slate-500 uppercase">
               <th className="py-1.5">Description</th>
+              <th className="py-1.5">Part code</th>
+              <th className="py-1.5">Warranty</th>
               <th className="py-1.5 text-right">Amount</th>
             </tr>
           </thead>
@@ -103,29 +105,31 @@ export function InvoicePage() {
               inv.lines.map((l, i) => (
                 <tr key={i} className="border-b border-slate-100">
                   <td className="py-1.5">{l.description}</td>
+                  <td className="py-1.5 font-mono text-xs">{l.partCode ?? '—'}</td>
+                  <td className="py-1.5 text-xs">{l.warranty ?? '—'}</td>
                   <td className="py-1.5 text-right">{formatCurrency(l.amount)}</td>
                 </tr>
               ))
             ) : (
               <tr className="border-b border-slate-100">
-                <td className="py-1.5 text-slate-500">No charge</td>
+                <td className="py-1.5 text-slate-500" colSpan={3}>No charge</td>
                 <td className="py-1.5 text-right">{formatCurrency(0)}</td>
               </tr>
             )}
           </tbody>
           <tfoot>
             <tr>
-              <td className="pt-2 text-right text-slate-600">Subtotal</td>
+              <td className="pt-2 text-right text-slate-600" colSpan={3}>Subtotal</td>
               <td className="pt-2 text-right">{formatCurrency(inv.subtotal)}</td>
             </tr>
             {inv.discount > 0 && (
               <tr>
-                <td className="text-right text-slate-600">Discount{inv.discountReason && ` (${inv.discountReason})`}</td>
+                <td className="text-right text-slate-600" colSpan={3}>Discount{inv.discountReason && ` (${inv.discountReason})`}</td>
                 <td className="text-right">− {formatCurrency(inv.discount)}</td>
               </tr>
             )}
             <tr className="text-base font-bold">
-              <td className="pt-1 text-right">Total</td>
+              <td className="pt-1 text-right" colSpan={3}>Total</td>
               <td className="pt-1 text-right">{formatCurrency(inv.total)}</td>
             </tr>
           </tfoot>

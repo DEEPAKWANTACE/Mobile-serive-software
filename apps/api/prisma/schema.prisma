@@ -111,8 +111,8 @@ model User {
   expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
   expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
   callLogs               CallLog[]
-  remindersCreated       Reminder[]          @relation("ReminderCreatedBy")
-  remindersAssigned      Reminder[]          @relation("ReminderAssignedTo")
+  remindersCreated       Reminder[]         @relation("ReminderCreatedBy")
+  remindersAssigned      Reminder[]         @relation("ReminderAssignedTo")
   jobsDelivered          Job[]              @relation("JobDeliveredBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
@@ -136,17 +136,17 @@ model User {
   createdAt              DateTime           @default(now()) @map("created_at")
   updatedAt              DateTime           @updatedAt @map("updated_at")
 
-  branch       Branch?       @relation(fields: [branchId], references: [id])
-  sessions     Session[]
-  auditLogs    AuditLog[]
-  jobsCreated  Job[]         @relation("JobCreatedBy")
-  jobsAssigned Job[]         @relation("JobAssignedEngineer")
-  jobsApproved Job[]         @relation("JobApprovedBy")
-  deadRiskApprovals Job[]    @relation("JobDeadRiskApprovedBy")
-  transfersOut JobTransfer[] @relation("TransferFrom")
-  transfersIn  JobTransfer[] @relation("TransferTo")
-  jobPhotos    JobPhoto[]
-  payments     Payment[]
+  branch            Branch?       @relation(fields: [branchId], references: [id])
+  sessions          Session[]
+  auditLogs         AuditLog[]
+  jobsCreated       Job[]         @relation("JobCreatedBy")
+  jobsAssigned      Job[]         @relation("JobAssignedEngineer")
+  jobsApproved      Job[]         @relation("JobApprovedBy")
+  deadRiskApprovals Job[]         @relation("JobDeadRiskApprovedBy")
+  transfersOut      JobTransfer[] @relation("TransferFrom")
+  transfersIn       JobTransfer[] @relation("TransferTo")
+  jobPhotos         JobPhoto[]
+  payments          Payment[]
 
   @@index([branchId, role])
   @@map("users")
@@ -202,10 +202,10 @@ model Brand {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  models DeviceModel[]
-  jobs   Job[]
+  models     DeviceModel[]
+  jobs       Job[]
   jobDevices JobDevice[]
-  branch Branch?       @relation(fields: [branchId], references: [id])
+  branch     Branch?       @relation(fields: [branchId], references: [id])
 
   @@unique([branchId, name])
   @@index([branchId, isActive])
@@ -221,9 +221,9 @@ model DeviceModel {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  brand  Brand          @relation(fields: [brandId], references: [id])
-  prices ServicePrice[]
-  jobs   Job[]
+  brand      Brand          @relation(fields: [brandId], references: [id])
+  prices     ServicePrice[]
+  jobs       Job[]
   jobDevices JobDevice[]
 
   @@unique([brandId, name])
@@ -261,12 +261,12 @@ model Fault {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  category      FaultCategory?    @relation(fields: [categoryId], references: [id])
-  prices        ServicePrice[]
-  jobFaults     JobFault[]
-  estimateLines JobEstimateLine[]
+  category        FaultCategory?    @relation(fields: [categoryId], references: [id])
+  prices          ServicePrice[]
+  jobFaults       JobFault[]
+  estimateLines   JobEstimateLine[]
   jobDeviceFaults JobDeviceFault[]
-  branch        Branch?           @relation(fields: [branchId], references: [id])
+  branch          Branch?           @relation(fields: [branchId], references: [id])
 
   @@unique([branchId, name])
   @@index([branchId, isActive])
@@ -377,7 +377,7 @@ model Job {
   /// Dealer / shopkeeper who brought the phone (if not walk-in).
   retailer                String?
   /// Whether this job was received directly from a customer or through a retailer.
-  customerType            JobCustomerType   @default(CUSTOMER) @map("customer_type")
+  customerType            JobCustomerType    @default(CUSTOMER) @map("customer_type")
   /// Staff member who physically took the phone in (defaults to the creator).
   inwardById              String?            @map("inward_by_id") @db.Uuid
   phoneDamaged            Boolean            @default(false) @map("phone_damaged")
@@ -462,24 +462,28 @@ model Job {
   updatedAt               DateTime           @updatedAt @map("updated_at")
   /// Promised completion time. Open timed jobs are prioritised in branch queues.
   dueAt                   DateTime?          @map("due_at")
+  /// "Repeat repair": the earlier job sheet this one was started again from.
+  repeatOfJobId           String?            @map("repeat_of_job_id") @db.Uuid
+  repeatOf                Job?               @relation("JobRepeat", fields: [repeatOfJobId], references: [id], onDelete: SetNull)
+  repeats                 Job[]              @relation("JobRepeat")
 
-  branch           Branch            @relation(fields: [branchId], references: [id])
-  customer         Customer          @relation(fields: [customerId], references: [id])
-  brand            Brand?            @relation(fields: [brandId], references: [id])
-  deviceModel      DeviceModel?      @relation(fields: [deviceModelId], references: [id])
-  createdBy        User              @relation("JobCreatedBy", fields: [createdById], references: [id])
-  assignedEngineer User?             @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
-  approvedBy       User?             @relation("JobApprovedBy", fields: [approvedById], references: [id])
-  deadRiskApprovedBy User?           @relation("JobDeadRiskApprovedBy", fields: [deadRiskApprovedById], references: [id])
-  estimateLines    JobEstimateLine[]
-  estimateOptions  JobEstimateOption[]
-  devices          JobDevice[]
-  diagnosisFindings JobDiagnosisFinding[]
-  faults           JobFault[]
-  photos           JobPhoto[]
-  payments         Payment[]
-  transfers        JobTransfer[]
-  reminders        Reminder[]
+  branch             Branch                @relation(fields: [branchId], references: [id])
+  customer           Customer              @relation(fields: [customerId], references: [id])
+  brand              Brand?                @relation(fields: [brandId], references: [id])
+  deviceModel        DeviceModel?          @relation(fields: [deviceModelId], references: [id])
+  createdBy          User                  @relation("JobCreatedBy", fields: [createdById], references: [id])
+  assignedEngineer   User?                 @relation("JobAssignedEngineer", fields: [assignedEngineerId], references: [id])
+  approvedBy         User?                 @relation("JobApprovedBy", fields: [approvedById], references: [id])
+  deadRiskApprovedBy User?                 @relation("JobDeadRiskApprovedBy", fields: [deadRiskApprovedById], references: [id])
+  estimateLines      JobEstimateLine[]
+  estimateOptions    JobEstimateOption[]
+  devices            JobDevice[]
+  diagnosisFindings  JobDiagnosisFinding[]
+  faults             JobFault[]
+  photos             JobPhoto[]
+  payments           Payment[]
+  transfers          JobTransfer[]
+  reminders          Reminder[]
 
   @@index([branchId, createdAt])
   @@index([branchId, status])
@@ -488,37 +492,38 @@ model Job {
   @@index([assignedEngineerId, status])
   @@index([currentBranchId, status])
   @@index([branchId, dueAt])
+  @@index([repeatOfJobId])
   @@map("jobs")
 }
 
 /// One physical device or accessory received under a job sheet. Legacy Job device columns
 /// remain as a first-device snapshot for backwards compatibility with reports and invoices.
 model JobDevice {
-  id                      String       @id @default(uuid(7)) @db.Uuid
-  jobId                   String       @map("job_id") @db.Uuid
-  sortOrder               Int          @default(0) @map("sort_order")
-  jobType                 JobType      @default(MOBILE) @map("job_type")
-  accessoryName           String?      @map("accessory_name")
-  brandId                 String?      @map("brand_id") @db.Uuid
-  deviceModelId           String?      @map("device_model_id") @db.Uuid
-  manualBrand             String?      @map("manual_brand")
-  manualModel             String?      @map("manual_model")
-  manualFault             String?      @map("manual_fault")
+  id                      String   @id @default(uuid(7)) @db.Uuid
+  jobId                   String   @map("job_id") @db.Uuid
+  sortOrder               Int      @default(0) @map("sort_order")
+  jobType                 JobType  @default(MOBILE) @map("job_type")
+  accessoryName           String?  @map("accessory_name")
+  brandId                 String?  @map("brand_id") @db.Uuid
+  deviceModelId           String?  @map("device_model_id") @db.Uuid
+  manualBrand             String?  @map("manual_brand")
+  manualModel             String?  @map("manual_model")
+  manualFault             String?  @map("manual_fault")
   imei                    String?
   imei2                   String?
-  serialNumber            String?      @map("serial_number")
+  serialNumber            String?  @map("serial_number")
   color                   String?
-  customerComplaint       String?      @map("customer_complaint")
+  customerComplaint       String?  @map("customer_complaint")
   accessories             String[]
-  accessoriesOther        String?      @map("accessories_other")
-  conditionNotes          String?      @map("condition_notes")
-  physicalConditionRemark String?      @map("physical_condition_remark")
-  createdAt               DateTime     @default(now()) @map("created_at")
-  updatedAt               DateTime     @updatedAt @map("updated_at")
+  accessoriesOther        String?  @map("accessories_other")
+  conditionNotes          String?  @map("condition_notes")
+  physicalConditionRemark String?  @map("physical_condition_remark")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
 
-  job         Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  brand       Brand?       @relation(fields: [brandId], references: [id])
-  deviceModel DeviceModel? @relation(fields: [deviceModelId], references: [id])
+  job         Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  brand       Brand?           @relation(fields: [brandId], references: [id])
+  deviceModel DeviceModel?     @relation(fields: [deviceModelId], references: [id])
   faults      JobDeviceFault[]
 
   @@index([jobId, sortOrder])
@@ -543,20 +548,20 @@ model JobDeviceFault {
 
 /// Personal follow-up reminder. Job deadlines and approval tasks are generated from Job rows.
 model Reminder {
-  id          String    @id @default(uuid(7)) @db.Uuid
-  title       String
-  dueAt       DateTime  @map("due_at")
-  completedAt DateTime? @map("completed_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  createdById String    @map("created_by_id") @db.Uuid
-  assignedToId String   @map("assigned_to_id") @db.Uuid
-  branchId    String?   @map("branch_id") @db.Uuid
-  jobId       String?   @map("job_id") @db.Uuid
+  id           String    @id @default(uuid(7)) @db.Uuid
+  title        String
+  dueAt        DateTime  @map("due_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  createdById  String    @map("created_by_id") @db.Uuid
+  assignedToId String    @map("assigned_to_id") @db.Uuid
+  branchId     String?   @map("branch_id") @db.Uuid
+  jobId        String?   @map("job_id") @db.Uuid
 
   createdBy  User    @relation("ReminderCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
   assignedTo User    @relation("ReminderAssignedTo", fields: [assignedToId], references: [id], onDelete: Cascade)
-  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  job       Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  branch     Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  job        Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   @@index([createdById, completedAt, dueAt])
   @@index([assignedToId, completedAt, dueAt])
@@ -634,34 +639,55 @@ model DiagnosisFindingType {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  findings DiagnosisFinding[]
+  findings      DiagnosisFinding[]
+  subcategories DiagnosisFindingSubcategory[]
 
   @@map("diagnosis_finding_types")
 }
 
-/// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
-model DiagnosisFinding {
+/// Second level under a problem type, e.g. Hardware → Display, Battery & charging.
+model DiagnosisFindingSubcategory {
   id        String   @id @default(uuid(7)) @db.Uuid
-  label     String   @unique
   typeId    String   @map("type_id") @db.Uuid
+  name      String
   sortOrder Int      @default(0) @map("sort_order")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  type DiagnosisFindingType @relation(fields: [typeId], references: [id])
-  jobs JobDiagnosisFinding[]
+  type     DiagnosisFindingType @relation(fields: [typeId], references: [id])
+  findings DiagnosisFinding[]
+
+  @@unique([typeId, name])
+  @@map("diagnosis_finding_subcategories")
+}
+
+/// Super Admin-managed diagnosis presets that engineers can select in addition to free text.
+model DiagnosisFinding {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  label         String   @unique
+  typeId        String   @map("type_id") @db.Uuid
+  subcategoryId String?  @map("subcategory_id") @db.Uuid
+  sortOrder     Int      @default(0) @map("sort_order")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  type        DiagnosisFindingType         @relation(fields: [typeId], references: [id])
+  subcategory DiagnosisFindingSubcategory? @relation(fields: [subcategoryId], references: [id])
+  jobs        JobDiagnosisFinding[]
 
   @@index([isActive, sortOrder])
   @@index([typeId])
+  @@index([subcategoryId])
   @@map("diagnosis_findings")
 }
 
 /// Selected diagnosis presets on a job. labelSnapshot preserves the wording used at diagnosis time.
 model JobDiagnosisFinding {
-  jobId             String @map("job_id") @db.Uuid
+  jobId              String @map("job_id") @db.Uuid
   diagnosisFindingId String @map("diagnosis_finding_id") @db.Uuid
-  labelSnapshot     String @map("label_snapshot")
+  labelSnapshot      String @map("label_snapshot")
 
   job              Job              @relation(fields: [jobId], references: [id], onDelete: Cascade)
   diagnosisFinding DiagnosisFinding @relation(fields: [diagnosisFindingId], references: [id])
@@ -736,6 +762,8 @@ model JobEstimateLine {
   description String? // free text, e.g. "IC level issue"
   priceLabel  String? @map("price_label")
   amount      Decimal @db.Decimal(10, 2)
+  /// Warranty given on this item, e.g. "30 days" (chosen by the CCO).
+  warranty    String?
   sortOrder   Int     @default(0) @map("sort_order")
 
   job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
@@ -749,8 +777,8 @@ model JobEstimateLine {
 model JobEstimateOption {
   id          String   @id @default(uuid(7)) @db.Uuid
   jobId       String   @map("job_id") @db.Uuid
-  title       String   // e.g. "Option 1: Compatible Screen" or "Option 2: Original Screen"
-  description String?  // details/notes for this option
+  title       String // e.g. "Option 1: Compatible Screen" or "Option 2: Original Screen"
+  description String? // details/notes for this option
   amount      Decimal  @db.Decimal(10, 2)
   isApproved  Boolean  @default(false) @map("is_approved")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -932,6 +960,8 @@ model InvoiceLine {
   invoiceId   String  @map("invoice_id") @db.Uuid
   description String
   amount      Decimal @db.Decimal(10, 2)
+  partCode    String? @map("part_code")
+  warranty    String?
   sortOrder   Int     @default(0) @map("sort_order")
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
@@ -1074,18 +1104,18 @@ model StockTransfer {
 
 /// Business identity printed on invoices and job sheets.
 model ShopSettings {
-  id           String   @id @default("default")
-  shopName     String   @map("shop_name")
-  legalName    String?  @map("legal_name")
-  gstin        String?
-  address      String?
-  phone        String?
-  email        String?
-  logoKey      String?  @map("logo_key")
-  invoiceTerms String?  @map("invoice_terms")
+  id             String   @id @default("default")
+  shopName       String   @map("shop_name")
+  legalName      String?  @map("legal_name")
+  gstin          String?
+  address        String?
+  phone          String?
+  email          String?
+  logoKey        String?  @map("logo_key")
+  invoiceTerms   String?  @map("invoice_terms")
   /// Super Admin column matrix for the job sheet list: { [role]: columnKey[] }. Null = built-in defaults.
-  jobListColumns Json?  @map("job_list_columns")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  jobListColumns Json?    @map("job_list_columns")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("shop_settings")
 }
