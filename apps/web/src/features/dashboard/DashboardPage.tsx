@@ -277,14 +277,6 @@ function EngineerDashboard() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
         <StatCard
-          label="RR · Repeat repair"
-          value={stats.data?.repeatRepairs}
-          tone={stats.data?.repeatRepairs ? 'critical' : 'default'}
-          icon={RotateCcw}
-          hint="Came back after an earlier repair"
-          to="/jobs?repeat=true&open=true"
-        />
-        <StatCard
           label="Pending"
           value={all?.ASSIGNED}
           tone="warning"
@@ -294,6 +286,14 @@ function EngineerDashboard() {
         />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
         <StatCard label="Completed today OK" value={by?.READY_FOR_DELIVERY} tone="good" icon={PackageCheck} hint="Repair and testing done · awaiting delivery" to="/jobs?status=READY_FOR_DELIVERY&today=true" />
+        <StatCard
+          label="RR · Repeat repair"
+          value={stats.data?.repeatRepairs}
+          tone={stats.data?.repeatRepairs ? 'critical' : 'default'}
+          icon={RotateCcw}
+          hint="Came back after an earlier repair"
+          to="/jobs?repeat=true&open=true"
+        />
         {card('Repair done', 'REPAIRED', PackageCheck)}
         {card('Testing', 'TESTING', TestTube2)}
         {card('Spare not available', 'SPARE_PENDING', PackageSearch, 'warning')}
