@@ -19,6 +19,7 @@ import {
   PhoneCall,
   Plus,
   Receipt,
+  RotateCcw,
   Search,
   ShieldAlert,
   TestTube2,
@@ -276,19 +277,19 @@ function EngineerDashboard() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
         {card('To repair', 'IN_REPAIR', Wrench, 'good')}
         <StatCard
-          label="Pending today"
-          value={by?.ASSIGNED}
-          tone="brand"
-          icon={ClipboardList}
-          hint="Assigned today · diagnosis pending"
-          to="/jobs?status=ASSIGNED&today=true"
+          label="RR · Repeat repair"
+          value={stats.data?.repeatRepairs}
+          tone={stats.data?.repeatRepairs ? 'critical' : 'default'}
+          icon={RotateCcw}
+          hint="Came back after an earlier repair"
+          to="/jobs?repeat=true&open=true"
         />
         <StatCard
-          label="Pending total"
+          label="Pending"
           value={all?.ASSIGNED}
           tone="warning"
           icon={Inbox}
-          hint="All jobs waiting for diagnosis"
+          hint={by ? `Waiting for diagnosis · ${by.ASSIGNED} today` : 'Waiting for diagnosis'}
           to="/jobs?status=ASSIGNED"
         />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
@@ -457,10 +458,18 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard label="With engineers" value={withEngineer} to="/jobs?view=engineers" tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
         <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to="/jobs?view=ready" tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
         <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to="/jobs?status=AWAITING_APPROVAL" tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
+        <StatCard
+          label="RR · Repeat repair"
+          value={stats.data?.repeatRepairs}
+          to={`/jobs?repeat=true&open=true${branchId ? `&branchId=${branchId}` : ''}`}
+          tone={stats.data?.repeatRepairs ? 'critical' : 'default'}
+          icon={RotateCcw}
+          hint="Open jobs that came back"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">

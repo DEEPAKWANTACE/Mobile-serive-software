@@ -76,7 +76,8 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
   }
 
   const agreed = job.approvedAmount ?? job.estimatedAmount;
-  const remark = `Diagnosed: ${data.notes ?? findings.map((finding) => finding.label).join(', ')}`;
+  const found = data.notes ?? findings.map((finding) => finding.label).join(', ');
+  const remark = found ? `Diagnosed: ${found}` : 'Diagnosed';
 
   return prisma.$transaction(async (tx) => {
     // Parts already taken from stock stay on the bill; the engineer's amount replaces the other items.
@@ -170,10 +171,13 @@ async function syncApprovedTotal(tx: Prisma.TransactionClient, jobId: string, ta
 export async function decideApproval(id: string, { decision, selectedOptionId, amount, note, lines, deadRiskApproved }: ApprovalData, actor: Actor) {
   const access = await loadForAccess(id, actor);
   if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the owning branch can record customer approval');
-  if (access.status !== 'AWAITING_APPROVAL') throw notAllowed(access.status);
+  // The counter may also record the customer's answer before the engineer has diagnosed ("pending diagnosis"):
+  // the agreed costing then stands in for the engineer's estimate and the job goes straight to repair.
+  if (access.status !== 'AWAITING_APPROVAL' && access.status !== 'ASSIGNED') throw notAllowed(access.status);
+  const beforeDiagnosis = access.status === 'ASSIGNED';
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },
-    select: { quotedAmount: true, estimateOptions: true, deadRiskRequested: true, deadRiskApprovedAt: true },
+    select: { quotedAmount: true, estimatedAmount: true, estimateOptions: true, deadRiskRequested: true, deadRiskApprovedAt: true },
   });
 
   const approved = decision === 'APPROVED';
@@ -181,7 +185,7 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
     ? lines.map((l) => ({ description: l.description ?? null, partId: l.partId ?? null, warranty: l.warranty ?? null, amount: l.amount }))
     : null;
   const linesTotal = editedLines ? Math.round(editedLines.reduce((s, l) => s + l.amount, 0) * 100) / 100 : null;
-  let finalApprovedAmount = amount ?? linesTotal ?? job.quotedAmount?.toNumber() ?? null;
+  let finalApprovedAmount = amount ?? linesTotal ?? job.quotedAmount?.toNumber() ?? (beforeDiagnosis ? job.estimatedAmount?.toNumber() : null) ?? null;
   let selectedOptionTitle: string | null = null;
   if (approved && selectedOptionId) {
     const option = job.estimateOptions.find((candidate) => candidate.id === selectedOptionId);
@@ -216,18 +220,19 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
       ...(approved
         ? {
           approvedAt: new Date(), approvedById: actor.sub, approvedAmount: finalApprovedAmount!, quotedAmount: finalApprovedAmount!,
+          ...(beforeDiagnosis && { diagnosedAt: new Date(), diagnosisNotes: 'Estimate approved by CCO before engineer diagnosis' }),
           ...(deadRiskNow && { deadRiskApprovedAt: new Date(), deadRiskApprovedById: actor.sub }),
         }
         : { approvedAt: null, approvedById: null }),
     } satisfies Prisma.JobUncheckedUpdateManyInput;
     const remark = approved
-      ? `Customer approved${approvalNote ? `: ${approvalNote}` : ''}${waitingForDeadRisk ? ' — waiting for separate dead-risk approval' : ''}`
+      ? `Customer approved${beforeDiagnosis ? ' before diagnosis' : ''}${approvalNote ? `: ${approvalNote}` : ''}${waitingForDeadRisk ? ' — waiting for separate dead-risk approval' : ''}`
       : `Customer rejected: ${note ?? ''}`;
-    if (status === 'AWAITING_APPROVAL') {
-      const result = await tx.job.updateMany({ where: { id, status: 'AWAITING_APPROVAL' }, data: update });
+    if (status === access.status) {
+      const result = await tx.job.updateMany({ where: { id, status: access.status }, data: update });
       if (!result.count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
     } else {
-      await moveFrom(tx, id, 'AWAITING_APPROVAL', { ...update, status }, { actor, remark });
+      await moveFrom(tx, id, access.status, { ...update, status }, { actor, remark });
     }
     await recordAudit(
       {
@@ -236,7 +241,7 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
         entityType: 'job',
         entityId: id,
         branchId: access.branchId,
-        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk, deadRiskApproved: deadRiskNow, items: editedLines?.length ?? null },
+        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk, deadRiskApproved: deadRiskNow, items: editedLines?.length ?? null, beforeDiagnosis },
         ip: actor.ip,
       },
       tx,

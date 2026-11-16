@@ -454,6 +454,11 @@ export const jobListQuerySchema = listQuerySchema.extend({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  /** true = repeat repairs (RR) only: job sheets started again from an earlier one. */
+  repeat: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
 });
 export type JobListQuery = z.output<typeof jobListQuerySchema>;
 
@@ -515,7 +520,7 @@ export type JobEstimateOptionDto = {
 const moneyAmount = z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places');
 
 /**
- * Engineer's diagnosis: preset findings and/or a short note, one repair amount, and the dead-risk flag.
+ * Engineer's diagnosis: optional preset findings and note, one repair amount, and the dead-risk flag.
  * Parts used come from stock separately; the CCO builds the detailed costing when recording approval.
  */
 export const diagnosisSchema = z
@@ -527,7 +532,6 @@ export const diagnosisSchema = z
     deadRiskRequested: z.boolean().default(false),
     deadRiskNote: optionalText(500),
   })
-  .refine((v) => v.findingIds.length > 0 || !!v.notes, { message: 'Select a finding or describe what you found', path: ['notes'] })
   .refine((v) => !v.deadRiskRequested || !!v.deadRiskNote, { message: 'Explain the dead-device risk', path: ['deadRiskNote'] });
 
 /** One billed item as the CCO edits it: free text or a part from stock, with its warranty and amount. */
@@ -915,6 +919,8 @@ export type JobStatsDto = {
   today: { byStatus: Record<JobStatus, number>; total: number };
   /** Jobs received today (createdAt), used by the branch dashboard. */
   receivedToday: number;
+  /** Open repeat repairs (RR): job sheets started again from an earlier one. */
+  repeatRepairs: number;
 };
 
 export type JobHistoryEntryDto = {

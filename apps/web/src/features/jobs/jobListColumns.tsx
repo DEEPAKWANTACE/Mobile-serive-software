@@ -44,11 +44,15 @@ const actionClass = 'inline-flex h-7 min-w-[4.75rem] items-center justify-center
 
 type ActionHandlers = { role: Role | undefined; onApprove: (job: JobListItemDto) => void; onDeliver: (job: JobListItemDto) => void };
 
-/** The one action a row needs now: record approval, deliver, or open the invoice of a delivered job. */
+/** The one action a row needs now: record approval (also ahead of the engineer's diagnosis), deliver, or open the invoice. */
 export function JobRowAction({ job, role, onApprove, onDeliver, fallback }: ActionHandlers & { job: JobListItemDto; fallback?: ReactNode }) {
   const counter = role === ROLES.CCO || role === ROLES.BRANCH_MANAGER;
   if (counter && job.status === 'AWAITING_APPROVAL') {
     return <button type="button" onClick={() => onApprove(job)} className={`${actionClass} bg-orange-600 text-white hover:bg-orange-700`}>Approval</button>;
+  }
+  // Pending diagnosis: the counter can already record an approval the customer gave, skipping the wait.
+  if (counter && job.status === 'ASSIGNED' && job.currentBranch.id === job.branch.id) {
+    return <button type="button" onClick={() => onApprove(job)} title="Customer already agreed — record approval before diagnosis" className={`${actionClass} border border-orange-300 bg-orange-50 text-orange-800 hover:bg-orange-100`}>Approval</button>;
   }
   if (canDeliverRow(job, role)) {
     return <button type="button" onClick={() => onDeliver(job)} className={`${actionClass} bg-emerald-600 text-white hover:bg-emerald-700`}>Deliver</button>;

@@ -58,12 +58,18 @@ export function jobBranchScope(actor: Actor): Prisma.JobWhereInput {
   return { OR: [{ branchId: scope.branchId }, { currentBranchId: scope.branchId }] };
 }
 
+/**
+ * Everything still waiting on the engineer. A customer-rejected job stays with them until they return it
+ * without repair, so it must not drop out of their list.
+ */
+const ENGINEER_VISIBLE_STATUSES: readonly JobStatus[] = [...ENGINEER_OPEN_STATUSES, 'CUSTOMER_REJECTED'];
+
 function engineerJobScope(actor: Actor): Prisma.JobWhereInput {
   const twoDaysAgo = new Date(Date.now() - 2 * 86_400_000);
   return {
     assignedEngineerId: actor.sub,
     OR: [
-      { status: { in: [...ENGINEER_OPEN_STATUSES] } },
+      { status: { in: [...ENGINEER_VISIBLE_STATUSES] } },
       { status: 'READY_FOR_DELIVERY', readyAt: { gte: twoDaysAgo } },
       { status: 'DELIVERED', deliveredAt: { gte: twoDaysAgo } },
     ],
@@ -495,6 +501,7 @@ export async function list(query: JobListQuery, actor: Actor) {
   if (query.today) and.push({ updatedAt: businessRange(businessToday(), businessToday()) });
   if (query.completed) and.push({ status: { in: ['READY_FOR_DELIVERY', 'DELIVERED'] } });
   if (query.balanceDue) and.push({ id: { in: await jobIdsWithBalanceDue() } });
+  if (query.repeat) and.push({ repeatOfJobId: { not: null } });
   if (s) {
     for (const term of s.split(/\s+/).filter(Boolean)) and.push({
       OR: [
@@ -783,7 +790,7 @@ export async function loadForAccess(id: string, actor: Actor) {
     const offered = await prisma.jobTransfer.count({ where: { jobId: id, toEngineerId: actor.sub, status: 'PENDING' } });
     if (!offered) throw HttpError.forbidden('This job is not assigned to you');
   }
-  if (isEngineer(actor) && job.assignedEngineerId === actor.sub && !ENGINEER_OPEN_STATUSES.includes(job.status)) {
+  if (isEngineer(actor) && job.assignedEngineerId === actor.sub && !ENGINEER_VISIBLE_STATUSES.includes(job.status)) {
     const completedAt = job.deliveredAt ?? job.readyAt;
     if (!completedAt || completedAt.getTime() < Date.now() - 2 * 86_400_000) {
       throw HttpError.forbidden('Completed jobs remain available to engineers for two days');
@@ -1214,13 +1221,20 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
       ? { currentBranchId: branch }
       : {};
   const today = businessToday();
-  const [groups, todayGroups, atL4, receivedToday, transferRows, l4TransferRows] = await Promise.all([
+  // Same scope as the job list, so the RR card and the list it opens always agree.
+  const repeatScope: Prisma.JobWhereInput = isEngineer(actor)
+    ? engineerJobScope(actor)
+    : branch
+      ? { OR: [{ branchId: branch }, { currentBranchId: branch }] }
+      : {};
+  const [groups, todayGroups, atL4, receivedToday, repeatRepairs, transferRows, l4TransferRows] = await Promise.all([
     prisma.job.groupBy({ by: ['status'], where, _count: { _all: true } }),
     prisma.job.groupBy({ by: ['status'], where: { AND: [where, { updatedAt: businessRange(today, today) }] }, _count: { _all: true } }),
     branch && !isEngineer(actor)
       ? prisma.job.count({ where: { branchId: branch, OR: [{ currentBranchId: { not: branch } }, { location: { not: 'AT_BRANCH' } }] } })
       : Promise.resolve(0),
     prisma.job.count({ where: { AND: [where, { createdAt: businessRange(today, today) }] } }),
+    prisma.job.count({ where: { AND: [repeatScope, { repeatOfJobId: { not: null }, status: { notIn: [...CLOSED_STATUSES] } }] } }),
     isEngineer(actor)
       ? prisma.jobTransfer.findMany({
         where: {
@@ -1249,7 +1263,7 @@ export async function stats(actor: Actor, branchId?: string): Promise<JobStatsDt
     return { byStatus, total: Object.values(byStatus).reduce((a, b) => a + b, 0) };
   };
   const transferJobs = new Set([...transferRows, ...l4TransferRows].map((row) => row.jobId)).size;
-  return { ...count(groups), transferJobs, atL4, today: count(todayGroups), receivedToday };
+  return { ...count(groups), transferJobs, atL4, today: count(todayGroups), receivedToday, repeatRepairs };
 }
 
 // ─── Dashboard trend ────────────────────────────────────────────────────────

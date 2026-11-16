@@ -66,6 +66,9 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
   const d = summary.data;
   const jobs = (extra: Record<string, string> = {}) =>
     linkable ? `/jobs?${toQueryString({ ...range, branchId, ...extra })}` : undefined;
+  // Pending figures are "open right now", so their lists are not narrowed to the chosen period.
+  const openJobs = (extra: Record<string, string> = {}) =>
+    linkable ? `/jobs?${toQueryString({ branchId, ...extra })}` : undefined;
   const money = (value?: number) => (value === undefined ? undefined : formatCurrency(value));
   const activePreset = presets.find((preset) => preset.from === from && preset.to === to)?.key;
   const periodLabel = activePreset
@@ -90,11 +93,11 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="Total in" value={d?.totalIn} to={jobs()} tone="brand" icon={ArrowDownToLine} hint="Jobs received" />
         <StatCard label="Total out" value={d?.totalOut} to={jobs({ view: 'out' })} tone="good" icon={ArrowUpFromLine} hint="Delivered" />
-        <StatCard label="Pending works" value={d?.pending} to={jobs({ view: 'pending' })} icon={Wrench} hint={d ? `${d.underRepair} with engineers` : undefined} />
+        <StatCard label="Pending works" value={d?.pending} to={openJobs({ view: 'pending' })} icon={Wrench} hint={d ? `All open jobs · ${d.underRepair} with engineers` : undefined} />
         <StatCard
           label="More than 15 days"
           value={d?.over15Days}
-          to={jobs({ view: 'over15' })}
+          to={openJobs({ view: 'over15' })}
           tone={d?.over15Days ? 'critical' : 'default'}
           icon={Hourglass}
           hint="Still open"
@@ -215,7 +218,7 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
             {d.engineerPending.map((engineer) => (
               <li key={engineer.engineerId}>
                 <Link
-                  to={jobs({ view: 'pending', engineerId: engineer.engineerId }) ?? '#'}
+                  to={openJobs({ view: 'pending', engineerId: engineer.engineerId }) ?? '#'}
                   onClick={(event) => !linkable && event.preventDefault()}
                   className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-3 py-1 text-sm ring-1 ring-slate-200 hover:bg-slate-100"
                 >

@@ -4,6 +4,7 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { ChevronDown } from 'lucide-react';
 import {
   jobCreateSchema,
   PAYMENT_MODE_LABELS,
@@ -567,6 +568,25 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         <Field label="Total amount (₹)" className="mt-4 max-w-xs" {...err(errors.totalAmount?.message)} hint="Optional — overrides the price-list estimate, e.g. a quote agreed with the customer">
           <input {...register('totalAmount')} inputMode="decimal" className={inputClass} placeholder={pricedTotal > 0 ? String(pricedTotal) : 'To be decided'} />
         </Field>
+        <Field label="Assign engineer" required className="mt-4 max-w-sm" {...err(errors.engineerId?.message)} hint="The job goes to this engineer for diagnosis or repair">
+          <Controller
+            control={control}
+            name="engineerId"
+            render={({ field }) => (
+              <Combobox
+                value={field.value ?? ''}
+                onChange={field.onChange}
+                placeholder="Select engineer"
+                emptyText="No active engineers in this branch"
+                options={(engineers.data ?? []).map((e) => ({
+                  value: e.id,
+                  label: e.name,
+                  hint: `${e.openJobs} open`,
+                }))}
+              />
+            )}
+          />
+        </Field>
         <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50/50 p-4">
           <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
             <input type="checkbox" {...register('skipDiagnosis')} className="size-4 accent-brand-600" />
@@ -598,32 +618,13 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </Field>
       </Card>
 
-      <Card title="Inward, engineer & advance">
+      <Card title="Inward & advance">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Inward by" {...err(errors.inwardById?.message)} hint="Who took the device in (defaults to you)">
             <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
               <option value="">{user?.name} (me)</option>
               {(inwardStaff.data ?? []).filter((u) => u.id !== user?.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
-          </Field>
-          <Field label="Assign engineer" required {...err(errors.engineerId?.message)} hint="The job goes to this engineer for diagnosis or repair">
-            <Controller
-              control={control}
-              name="engineerId"
-              render={({ field }) => (
-                <Combobox
-                  value={field.value ?? ''}
-                  onChange={field.onChange}
-                  placeholder="Select engineer"
-                  emptyText="No active engineers in this branch"
-                  options={(engineers.data ?? []).map((e) => ({
-                    value: e.id,
-                    label: e.name,
-                    hint: `${e.openJobs} open`,
-                  }))}
-                />
-              )}
-            />
           </Field>
           <div>
             <label className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-700">
@@ -856,10 +857,13 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
     }
     return [...m.entries()];
   }, [faults]);
-  const [activeCat, setActiveCat] = useState<string | null>(null);
-  const current = categories.find(([id]) => id === activeCat) ?? categories[0];
-  const selectedIds = new Set(value.map((v) => v.faultId));
   const faultById = new Map(faults.map((f) => [f.id, f]));
+  // One category is open at a time; start on the category of the first fault already chosen (edit form).
+  const [activeCat, setActiveCat] = useState<string | null>(() => {
+    const first = value[0] && faultById.get(value[0].faultId);
+    return first ? (first.category?.id ?? 'other') : null;
+  });
+  const selectedIds = new Set(value.map((v) => v.faultId));
 
   const toggle = (f: FaultDto) => {
     if (selectedIds.has(f.id)) return onChange(value.filter((v) => v.faultId !== f.id));
@@ -892,44 +896,48 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
         <div className="mb-2 text-sm font-medium text-slate-700">
           Problem category <span className="text-red-500">*</span>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="max-w-xl divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
           {categories.map(([id, c]) => {
             const count = c.faults.filter((f) => selectedIds.has(f.id)).length;
+            const open = activeCat === id;
             return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setActiveCat(id)}
-                className={`rounded-md border px-3 py-1.5 text-sm ${current?.[0] === id ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 hover:bg-slate-50'}`}
-              >
-                {c.name}
-                {count > 0 && <span className="ml-1.5 rounded-full bg-white/25 px-1.5 text-xs">{count}</span>}
-              </button>
+              <div key={id}>
+                <button
+                  type="button"
+                  aria-expanded={open}
+                  onClick={() => setActiveCat(open ? null : id)}
+                  className={`flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm font-medium transition ${open ? 'bg-brand-600 text-white' : count > 0 ? 'bg-brand-50/60 text-slate-900 hover:bg-brand-50' : 'text-slate-800 hover:bg-slate-50'}`}
+                >
+                  <span className="min-w-0 truncate">{c.name}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {count > 0 && (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${open ? 'bg-white/25 text-white' : 'bg-brand-600 text-white'}`}>{count} selected</span>
+                    )}
+                    <span className={`text-xs ${open ? 'text-white/80' : 'text-slate-400'}`}>{c.faults.length}</span>
+                    <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : 'text-slate-400'}`} />
+                  </span>
+                </button>
+                {open && (
+                  <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto bg-slate-50/60">
+                    {c.faults.map((f) => {
+                      const checked = selectedIds.has(f.id);
+                      return (
+                        <li key={f.id}>
+                          <label className={`flex cursor-pointer items-center gap-3 py-2 pr-3.5 pl-6 text-sm select-none ${checked ? 'bg-brand-50 font-medium text-brand-800' : 'text-slate-700 hover:bg-white'}`}>
+                            <input type="checkbox" checked={checked} onChange={() => toggle(f)} className="size-4 shrink-0 accent-brand-600" />
+                            <span className="min-w-0 flex-1">{f.name}</span>
+                            {f.requiresIdProof && <span title="Aadhaar / ID proof required">🔒</span>}
+                          </label>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
             );
           })}
         </div>
       </div>
-
-      {current && (
-        <div className="flex flex-wrap gap-2 rounded-md border border-slate-200 p-3">
-          {current[1].faults.map((f) => {
-            const checked = selectedIds.has(f.id);
-            return (
-              <button
-                key={f.id}
-                type="button"
-                aria-pressed={checked}
-                onClick={() => toggle(f)}
-                className={`cursor-pointer rounded-full border px-3 py-1.5 text-sm select-none ${checked ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
-              >
-                {checked ? '✓ ' : ''}
-                {f.name}
-                {f.requiresIdProof && ' 🔒'}
-              </button>
-            );
-          })}
-        </div>
-      )}
 
       {value.length > 0 && (
         <div>

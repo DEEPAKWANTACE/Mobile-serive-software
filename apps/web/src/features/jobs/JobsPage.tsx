@@ -227,6 +227,7 @@ export function ShowJobs() {
     ...(searchParams.get('open') === 'true' && { open: true }),
     ...(searchParams.get('today') === 'true' && { today: true }),
     ...(searchParams.get('completed') === 'true' && { completed: true }),
+    ...(searchParams.get('repeat') === 'true' && { repeat: true }),
     ...viewParams(view),
   };
   const { data, isLoading } = useList<JobListItemDto>('jobs', params);

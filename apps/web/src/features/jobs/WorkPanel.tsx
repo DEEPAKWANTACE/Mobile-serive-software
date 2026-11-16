@@ -313,9 +313,14 @@ export function WorkPanel({ job }: { job: JobDto }) {
           </div>
         )}
         {job.status === 'ASSIGNED' && !job.diagnosedAt && (
-          <p className="text-sm text-slate-500">
-            {isAssignedEngineer ? 'Check the phone and add your diagnosis and estimate.' : 'Waiting for the engineer to diagnose.'}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">
+              {isAssignedEngineer ? 'Check the phone and add your diagnosis and estimate.' : 'Waiting for the engineer to diagnose.'}
+            </p>
+            {canApprove && user?.branch?.id === job.branch.id && (
+              <Button size="sm" variant="secondary" onClick={() => setDeciding(true)}>Record customer approval</Button>
+            )}
+          </div>
         )}
 
         {job.diagnosedAt && (
@@ -596,7 +601,7 @@ function DiagnosisFormInner({ job, findings, findingTypes, subcategories, onDone
             Selected: {findings.filter((f) => selectedFindings.includes(f.id)).map((f) => f.label).join(', ')}
           </p>
         )}
-        <Field label="Notes" className="mt-3" error={errors.notes?.message} hint="2–3 lines are enough">
+        <Field label="Notes (optional)" className="mt-3" error={errors.notes?.message} hint="2–3 lines are enough">
           <textarea {...register('notes')} rows={3} className={inputClass} placeholder="e.g. Phone dead — PMIC IC faulty, display OK" />
         </Field>
       </section>

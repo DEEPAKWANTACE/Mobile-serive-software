@@ -27,7 +27,13 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
   const queryClient = useQueryClient();
   const options = job.estimateOptions ?? [];
   const [mode, setMode] = useState<Mode>('approve');
-  const [rows, setRows] = useState<CostRow[]>(() => rowsFromJob(job));
+  // Pending diagnosis: nothing is costed yet, so start from the intake estimate.
+  const beforeDiagnosis = job.status === 'ASSIGNED';
+  const [rows, setRows] = useState<CostRow[]>(() => {
+    const existing = rowsFromJob(job);
+    if (existing.length || !beforeDiagnosis) return existing;
+    return [{ key: 'intake', description: 'Repair charges', partId: null, partCode: null, partName: null, warranty: '', amount: job.estimatedAmount !== null ? String(job.estimatedAmount) : '' }];
+  });
   const [optionId, setOptionId] = useState<string | null>(null);
   const [note, setNote] = useState('');
   const needsDeadRisk = job.deadRiskRequested && !job.deadRiskApprovedAt;
@@ -93,8 +99,17 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
       <div className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 text-sm ring-1 ring-slate-200 sm:grid-cols-2">
         <div><span className="text-slate-500">Customer:</span> <strong>{job.customer.name}</strong></div>
         <div><span className="text-slate-500">Mobile:</span> <a href={`tel:${job.customer.phone}`} className="font-medium text-brand-600">{job.customer.phone}</a></div>
-        <div className="sm:col-span-2"><span className="text-slate-500">Engineer found:</span> {engineerFound || '—'}</div>
-        <div className="sm:col-span-2"><span className="text-slate-500">Engineer estimate:</span> <strong>{formatCurrency(job.quotedAmount ?? 0)}</strong></div>
+        {beforeDiagnosis ? (
+          <>
+            <div className="sm:col-span-2"><span className="text-slate-500">Intake estimate:</span> <strong>{job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</strong></div>
+            <div className="text-xs text-amber-800 sm:col-span-2">Engineer has not diagnosed yet — approving now sends the job straight to repair at the costing below.</div>
+          </>
+        ) : (
+          <>
+            <div className="sm:col-span-2"><span className="text-slate-500">Engineer found:</span> {engineerFound || '—'}</div>
+            <div className="sm:col-span-2"><span className="text-slate-500">Engineer estimate:</span> <strong>{formatCurrency(job.quotedAmount ?? 0)}</strong></div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1" role="tablist">

@@ -260,9 +260,12 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
   const scope: Prisma.JobWhereInput = branchId ? { branchId } : {};
   const range = query.from || query.to ? businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) : null;
 
-  const [jobs, totalOut, moneyJobs, completedPayments] = await Promise.all([
+  const [totalIn, openJobs, totalOut, moneyJobs, completedPayments] = await Promise.all([
+    prisma.job.count({ where: { ...scope, ...(range && { createdAt: range }) } }),
+    // Pending work is "what is open right now": it must not shrink as the chosen period moves on,
+    // otherwise yesterday's unfinished jobs vanish from a dashboard that opens on "Today".
     prisma.job.findMany({
-      where: { ...scope, ...(range && { createdAt: range }) },
+      where: { ...scope, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
       select: {
         status: true,
         createdAt: true,
@@ -292,7 +295,7 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
       select: { jobId: true, kind: true, mode: true, amount: true },
     }),
   ]);
-  const open = jobs.filter((j) => j.status !== 'DELIVERED' && j.status !== 'CANCELLED');
+  const open = openJobs;
   const perEngineer = new Map<string, { engineerId: string; engineer: string; phone: string | null; pending: number }>();
   for (const j of open) {
     if (!j.assignedEngineer) continue;
@@ -333,8 +336,8 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
     : roundMoney(Object.values(completedReceivedByMode).reduce((sum, amount) => sum + amount, 0));
 
   return {
-    totalJobs: jobs.length,
-    totalIn: jobs.length,
+    totalJobs: totalIn,
+    totalIn,
     totalOut,
     pending: open.length,
     underRepair: open.filter((j) => (ENGINEER_OPEN_STATUSES as readonly string[]).includes(j.status)).length,
