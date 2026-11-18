@@ -1115,8 +1115,8 @@ model ShopSettings {
   invoiceTerms   String?  @map("invoice_terms")
   /// Super Admin column matrix for the job sheet list: { [role]: columnKey[] }. Null = built-in defaults.
   jobListColumns Json?    @map("job_list_columns")
-  /// Job sheet list navigation chosen by Super Admin: PAGED (page buttons) or INFINITE (scroll loading).
-  jobListMode    String   @default("PAGED") @map("job_list_mode")
+  /// Job sheet list navigation chosen by Super Admin: INFINITE (scroll loading, default) or PAGED (page buttons).
+  jobListMode    String   @default("INFINITE") @map("job_list_mode")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("shop_settings")

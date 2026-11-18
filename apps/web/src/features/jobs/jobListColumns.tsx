@@ -11,14 +11,14 @@ export const jobListColumnsQueryKey = ['settings', 'job-list-columns'] as const;
 
 export const jobListModeQueryKey = ['settings', 'job-list-mode'] as const;
 
-/** Paged or infinite-scroll job list, as chosen by Super Admin (paged until the setting loads). */
+/** Paged or infinite-scroll job list, as chosen by Super Admin (infinite scroll until the setting loads). */
 export function useJobListMode(): JobListMode {
   const query = useQuery({
     queryKey: jobListModeQueryKey,
     queryFn: () => api.get<JobListModeDto>('/settings/job-list-mode'),
     staleTime: 5 * 60_000,
   });
-  return query.data?.mode ?? 'PAGED';
+  return query.data?.mode ?? 'INFINITE';
 }
 
 /** Columns Super Admin chose for this role (defaults until the matrix loads or if it fails). */

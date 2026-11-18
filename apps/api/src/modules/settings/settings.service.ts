@@ -246,7 +246,7 @@ export async function jobListColumns(): Promise<JobListColumnsDto> {
 
 export async function jobListMode(): Promise<JobListModeDto> {
   const row = await prisma.shopSettings.findUnique({ where: { id: ID }, select: { jobListMode: true } });
-  return { mode: row?.jobListMode === 'INFINITE' ? 'INFINITE' : 'PAGED' };
+  return { mode: row?.jobListMode === 'PAGED' ? 'PAGED' : 'INFINITE' };
 }
 
 export async function updateJobListMode(data: JobListModeDto, actor: Actor): Promise<JobListModeDto> {
