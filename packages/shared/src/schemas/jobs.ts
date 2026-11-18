@@ -422,6 +422,11 @@ export const jobListQuerySchema = listQuerySchema.extend({
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
+  /** false = skip the COUNT(*) query (infinite scroll already knows the total from its first batch). */
+  withTotal: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
   /** true = everything still open (not delivered or cancelled). */
   open: z
     .enum(['true', 'false'])

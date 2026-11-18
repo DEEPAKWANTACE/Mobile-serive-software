@@ -1,13 +1,25 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { DEFAULT_JOB_LIST_COLUMNS, JOB_LIST_COLUMN_LABELS, ROLES, type JobListColumn, type JobListColumnsDto, type JobListItemDto, type Role } from '@msm/shared';
+import { DEFAULT_JOB_LIST_COLUMNS, JOB_LIST_COLUMN_LABELS, ROLES, type JobListColumn, type JobListColumnsDto, type JobListItemDto, type JobListMode, type JobListModeDto, type Role } from '@msm/shared';
 import type { Column } from '@/components/ui/DataTable';
 import { api } from '@/lib/api-client';
 import { formatCurrency, formatDate, formatJobNumber } from '@/lib/format';
 import { JobStatusBadge } from './JobStatusBadge';
 
 export const jobListColumnsQueryKey = ['settings', 'job-list-columns'] as const;
+
+export const jobListModeQueryKey = ['settings', 'job-list-mode'] as const;
+
+/** Paged or infinite-scroll job list, as chosen by Super Admin (paged until the setting loads). */
+export function useJobListMode(): JobListMode {
+  const query = useQuery({
+    queryKey: jobListModeQueryKey,
+    queryFn: () => api.get<JobListModeDto>('/settings/job-list-mode'),
+    staleTime: 5 * 60_000,
+  });
+  return query.data?.mode ?? 'PAGED';
+}
 
 /** Columns Super Admin chose for this role (defaults until the matrix loads or if it fails). */
 export function useJobListColumns(role: Role | undefined): JobListColumn[] {

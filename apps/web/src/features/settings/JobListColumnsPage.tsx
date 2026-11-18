@@ -11,13 +11,15 @@ import {
   ROLE_VALUES,
   type JobListColumn,
   type JobListColumnsDto,
+  type JobListMode,
+  type JobListModeDto,
   type Role,
 } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { api } from '@/lib/api-client';
-import { jobListColumnsQueryKey } from '@/features/jobs/jobListColumns';
+import { jobListColumnsQueryKey, jobListModeQueryKey } from '@/features/jobs/jobListColumns';
 
 /** Columns beyond this make the list scroll sideways on a normal laptop screen. */
 const COMFORTABLE_COLUMNS = 9;
@@ -54,6 +56,7 @@ export function JobListColumnsPage() {
   return (
     <div className="space-y-5">
       <PageHeader title="Job List Columns" description="Tick the columns each role sees in the job sheet list. Job Sheet ID is always shown." />
+      <JobListModeCard />
       <Card
         title="Column matrix"
         subtitle={`Tip: keep around ${COMFORTABLE_COLUMNS - 1} columns or fewer per role — more columns make the list scroll sideways.`}
@@ -130,5 +133,48 @@ export function JobListColumnsPage() {
         {dirty && <p className="mt-3 text-sm text-orange-700">You have unsaved changes.</p>}
       </Card>
     </div>
+  );
+}
+
+const MODE_OPTIONS: { value: JobListMode; label: string; hint: string }[] = [
+  { value: 'PAGED', label: 'Pages', hint: 'Exactly one screen of jobs with Previous / Next buttons.' },
+  { value: 'INFINITE', label: 'Infinite scroll', hint: 'Loads a small batch at a time and fetches the next batch as you scroll down.' },
+];
+
+/** Super Admin switch between the paged list and infinite scroll for everyone. */
+function JobListModeCard() {
+  const queryClient = useQueryClient();
+  const current = useQuery({ queryKey: jobListModeQueryKey, queryFn: () => api.get<JobListModeDto>('/settings/job-list-mode') });
+  const save = useMutation({
+    mutationFn: (mode: JobListMode) => api.put<JobListModeDto>('/settings/job-list-mode', { mode }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(jobListModeQueryKey, data);
+      toast.success(data.mode === 'INFINITE' ? 'Job list now uses infinite scroll' : 'Job list now uses pages');
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  const mode = save.isPending ? save.variables : current.data?.mode;
+  return (
+    <Card title="Job list loading" subtitle="How everyone moves through the job sheet list. Users see the change on their next page load.">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {MODE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            disabled={!current.data || save.isPending}
+            onClick={() => option.value !== mode && save.mutate(option.value)}
+            className={`rounded-lg border-2 p-3 text-left transition disabled:cursor-wait ${mode === option.value ? 'border-brand-600 bg-brand-50' : 'border-slate-200 hover:border-brand-300'}`}
+          >
+            <div className="flex items-center gap-2 font-medium text-slate-800">
+              <span className={`grid size-4 place-items-center rounded-full border-2 ${mode === option.value ? 'border-brand-600' : 'border-slate-300'}`}>
+                {mode === option.value && <span className="size-2 rounded-full bg-brand-600" />}
+              </span>
+              {option.label}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{option.hint}</p>
+          </button>
+        ))}
+      </div>
+    </Card>
   );
 }

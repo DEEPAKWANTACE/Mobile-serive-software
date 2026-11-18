@@ -163,3 +163,9 @@ export const jobListColumnsSchema = z.object({
   ACCOUNTS: columnList,
 });
 export type JobListColumnsData = z.output<typeof jobListColumnsSchema>;
+
+/** How the job sheet list moves through records: page buttons, or load-more-as-you-scroll. */
+export const JOB_LIST_MODES = ['PAGED', 'INFINITE'] as const;
+export type JobListMode = (typeof JOB_LIST_MODES)[number];
+export const jobListModeSchema = z.object({ mode: z.enum(JOB_LIST_MODES) });
+export type JobListModeDto = z.output<typeof jobListModeSchema>;

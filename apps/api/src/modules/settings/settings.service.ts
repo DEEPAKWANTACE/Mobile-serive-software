@@ -11,6 +11,7 @@ import {
   type JobListColumn,
   type JobListColumnsData,
   type JobListColumnsDto,
+  type JobListModeDto,
   type ShopSettingsData,
   type ShopSettingsDto,
 } from '@msm/shared';
@@ -241,6 +242,23 @@ export async function jobListColumns(): Promise<JobListColumnsDto> {
       return [role, columns];
     }),
   ) as JobListColumnsDto;
+}
+
+export async function jobListMode(): Promise<JobListModeDto> {
+  const row = await prisma.shopSettings.findUnique({ where: { id: ID }, select: { jobListMode: true } });
+  return { mode: row?.jobListMode === 'INFINITE' ? 'INFINITE' : 'PAGED' };
+}
+
+export async function updateJobListMode(data: JobListModeDto, actor: Actor): Promise<JobListModeDto> {
+  await prisma.$transaction(async (tx) => {
+    await tx.shopSettings.upsert({
+      where: { id: ID },
+      create: { id: ID, shopName: DEFAULT_NAME, email: DEFAULT_EMAIL, jobListMode: data.mode },
+      update: { jobListMode: data.mode },
+    });
+    await recordAudit({ actorId: actor.sub, action: 'settings.job_list_mode', entityType: 'settings', entityId: ID, metadata: { mode: data.mode }, ip: actor.ip }, tx);
+  });
+  return jobListMode();
 }
 
 export async function updateJobListColumns(data: JobListColumnsData, actor: Actor): Promise<JobListColumnsDto> {

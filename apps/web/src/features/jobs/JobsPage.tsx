@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, Download, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Download, Loader2, Pencil, Plus, Printer, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import {
   CANCELLABLE_STATUSES,
   JOB_LIST_COLUMN_LABELS,
@@ -15,6 +15,7 @@ import {
   type EngineerWorkloadDto,
   type JobListColumn,
   type JobListItemDto,
+  type Paginated,
   type PaymentMode,
 } from '@msm/shared';
 import { QuickDateRange } from '@/components/ui/QuickDateRange';
@@ -37,7 +38,7 @@ import { JobStatusBadge } from './JobStatusBadge';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 import { ApprovalDecisionDialog } from './ApprovalDecisionDialog';
-import { buildJobColumns, jobCellText, JobRowAction, useJobListColumns } from './jobListColumns';
+import { buildJobColumns, jobCellText, JobRowAction, useJobListColumns, useJobListMode } from './jobListColumns';
 import { DeliverJobDialog } from './DeliverJobDialog';
 
 type Tab = 'show' | 'add' | 'edit' | 'delete';
@@ -167,6 +168,42 @@ function useFittedPageSize(viewport: React.RefObject<HTMLDivElement | null>, mob
   return pageSize;
 }
 
+/** Infinite mode fetches 1.5 screens per batch, so the next batch is already loading before the user reaches the end. */
+const INFINITE_BATCH_FACTOR = 1.5;
+
+/** Running count shown instead of the page buttons in infinite mode. */
+function LoadedCount({ loaded, total, fetching }: { loaded: number; total: number; fetching: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs tabular-nums text-slate-600">
+      {fetching && <Loader2 className="size-3.5 animate-spin text-brand-600" />}
+      {loaded} of {total}
+    </span>
+  );
+}
+
+/**
+ * Job list that loads LIMIT/OFFSET batches as the user scrolls. Only the first batch runs
+ * COUNT(*); later batches send withTotal=false. Rows are de-duplicated by id in case a new
+ * job arrives mid-scroll and shifts the offset.
+ */
+function useJobFeed(filters: Record<string, unknown>, batchSize: number, enabled: boolean) {
+  const query = useInfiniteQuery({
+    queryKey: ['jobs', 'feed', filters, batchSize],
+    enabled,
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      api.get<Paginated<JobListItemDto>>(`/jobs?${toQueryString({ ...filters, page: pageParam, pageSize: batchSize, ...(pageParam > 1 && { withTotal: false }) })}`),
+    getNextPageParam: (last, all) => {
+      const total = all[0]!.total;
+      const loaded = all.reduce((n, p) => n + p.items.length, 0);
+      return last.items.length < batchSize || loaded >= total ? undefined : all.length + 1;
+    },
+  });
+  const seen = new Set<string>();
+  const items = (query.data?.pages ?? []).flatMap((p) => p.items).filter((j) => !seen.has(j.id) && (seen.add(j.id), true));
+  return { ...query, items, total: query.data?.pages[0]?.total ?? 0 };
+}
+
 function CompactPager({ page, pageSize, total, onChange }: { page: number; pageSize: number; total: number; onChange: (page: number) => void }) {
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -230,7 +267,28 @@ export function ShowJobs() {
     ...(searchParams.get('repeat') === 'true' && { repeat: true }),
     ...viewParams(view),
   };
-  const { data, isLoading } = useList<JobListItemDto>('jobs', params);
+  const infinite = useJobListMode() === 'INFINITE';
+  const { page: _page, pageSize: _pageSize, ...filterParams } = params;
+  const paged = useList<JobListItemDto>('jobs', params, { enabled: !infinite });
+  const feed = useJobFeed(filterParams, Math.ceil(pageSize * INFINITE_BATCH_FACTOR), infinite);
+  const data = infinite ? (feed.data ? { items: feed.items } : undefined) : paged.data;
+  const isLoading = infinite ? feed.isLoading : paged.isLoading;
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = feed;
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  // Start the next batch while the end of the list is still ~400px below the visible area.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!infinite || !sentinel || !hasNextPage) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry?.isIntersecting && !isFetchingNextPage) void fetchNextPage(); },
+      { root: listViewportRef.current, rootMargin: '0px 0px 400px 0px' },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [infinite, hasNextPage, isFetchingNextPage, fetchNextPage, feed.items.length]);
+  const counter = infinite
+    ? (feed.data && <LoadedCount loaded={feed.items.length} total={feed.total} fetching={feed.isFetching} />)
+    : (paged.data && <CompactPager page={paged.data.page} pageSize={paged.data.pageSize} total={paged.data.total} onChange={setPage} />);
   const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: isSuperAdmin });
   const engineerBranch = isSuperAdmin ? branchId : user?.branch?.id;
   const engineers = useQuery({
@@ -287,9 +345,7 @@ export function ShowJobs() {
           <SlidersHorizontal className="size-4" /> Filters
           {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
         </button>
-        <div className="ml-auto">
-          {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
-        </div>
+        <div className="ml-auto">{counter}</div>
       </div>
 
       {filtersOpen && (
@@ -344,7 +400,7 @@ export function ShowJobs() {
       )}
 
       <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="hidden h-full md:block">
+        <div className={`hidden md:block ${infinite ? 'min-h-full' : 'h-full'}`}>
           <DataTable
             columns={columns}
             rows={data?.items}
@@ -354,14 +410,14 @@ export function ShowJobs() {
             containerClassName="min-h-full"
             tableClassName="table-fixed"
             minTableWidth={columns.length > 9 ? `${columns.length * 115}px` : undefined}
-            fillHeight={!!data?.items.length && data.items.length === data.pageSize}
+            fillHeight={!infinite && !!paged.data?.items.length && paged.data.items.length === paged.data.pageSize}
             headerCellClassName="px-3! py-2!"
             cellClassName="px-3! py-2!"
             rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
             {...(canBulk && { selected: new Set(selected.keys()), onSelectedChange: changeSelection })}
           />
         </div>
-        <div className="job-list-mobile grid min-h-full content-start gap-2 md:hidden">
+        <div className={`job-list-mobile grid content-start gap-2 md:hidden ${infinite ? '' : 'min-h-full'}`}>
           {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
             <article key={job.id} style={{ height: mobile.height }} className={`overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
               <div className="flex h-7 items-center justify-between gap-2">
@@ -387,6 +443,18 @@ export function ShowJobs() {
             </article>
           ))}
         </div>
+        {infinite && !!feed.items.length && (
+          <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-3 text-xs text-slate-500">
+            {hasNextPage || isFetchingNextPage ? (
+              <>
+                <Loader2 className="size-4 animate-spin text-brand-600" />
+                Loading more… <span className="tabular-nums">{feed.items.length} of {feed.total}</span>
+              </>
+            ) : (
+              <span className="tabular-nums">All {feed.items.length} of {feed.total} jobs loaded</span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="job-mobile-footer theme-panel flex shrink-0 items-center justify-between rounded-lg bg-white px-2 ring-1 ring-slate-200 md:hidden">
@@ -394,7 +462,7 @@ export function ShowJobs() {
           {filtersOpen ? <X className="size-4" /> : <SlidersHorizontal className="size-4" />} Filters
           {activeFilterCount > 0 && <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-[10px] leading-none text-white">{activeFilterCount}</span>}
         </button>
-        {data && <CompactPager page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
+        {counter}
       </div>
       <ApprovalDecisionDialog jobId={approvingId} onClose={() => setApprovingId(null)} />
       <DeliverJobDialog jobId={deliveringId} onClose={() => setDeliveringId(null)} />

@@ -536,15 +536,17 @@ export async function list(query: JobListQuery, actor: Actor) {
     });
   }
   const where: Prisma.JobWhereInput = { AND: and };
-  const [rows, total] = await prisma.$transaction([
-    prisma.job.findMany({
-      where,
-      select: listSelect,
-      orderBy: { createdAt: query.sort === 'oldest' ? 'asc' : 'desc' },
-      ...pageArgs(query),
-    }),
-    prisma.job.count({ where }),
-  ]);
+  const findRows = prisma.job.findMany({
+    where,
+    select: listSelect,
+    // id breaks createdAt ties so LIMIT/OFFSET batches never repeat or skip a row.
+    orderBy: [{ createdAt: query.sort === 'oldest' ? 'asc' : 'desc' }, { id: query.sort === 'oldest' ? 'asc' : 'desc' }],
+    ...pageArgs(query),
+  });
+  // Infinite scroll asks for the total once; later batches are a plain LIMIT/OFFSET with no COUNT(*).
+  const [rows, total] = query.withTotal === false
+    ? [await findRows, -1]
+    : await prisma.$transaction([findRows, prisma.job.count({ where })]);
   const items: JobListItemDto[] = rows.map((j) => ({
     id: j.id,
     jobNumber: publicJobNumber(j.jobNumber),

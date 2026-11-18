@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, jobListModeSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -77,4 +77,10 @@ settingsRoutes.get('/job-list-columns', async (_req, res) => {
 });
 settingsRoutes.put('/job-list-columns', authorize(ROLES.SUPER_ADMIN), validate({ body: jobListColumnsSchema }), async (req, res) => {
   res.json(await service.updateJobListColumns(req.body, actorOf(req)));
+});
+settingsRoutes.get('/job-list-mode', async (_req, res) => {
+  res.json(await service.jobListMode());
+});
+settingsRoutes.put('/job-list-mode', authorize(ROLES.SUPER_ADMIN), validate({ body: jobListModeSchema }), async (req, res) => {
+  res.json(await service.updateJobListMode(req.body, actorOf(req)));
 });
