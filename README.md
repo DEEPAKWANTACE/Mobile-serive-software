@@ -80,7 +80,7 @@ locked during creation so concurrent jobs never collide.
 
 Job workflow: CCO creates and assigns the job, then `ASSIGNED → (engineer diagnosis) → AWAITING_APPROVAL → (CCO records the customer's answer) → IN_REPAIR → REPAIRED → TESTING → READY_FOR_DELIVERY`,
 with `CUSTOMER_REJECTED` when the customer declines, `SPARE_PENDING` while a part is awaited (resumes where it was),
-`DELIVERED` once handed back (invoice `INV-<BRANCH>-<YYMM>-<seq>`, per-branch monthly series). A CCO may skip diagnosis with an estimate: if the customer already approved, it goes directly to repair; otherwise it waits for the CCO's approval record. Engineer-entered estimates always return to the CCO. RWR is `RWR_PENDING` (locked) until the owning Branch Manager finalizes it, and only that manager may deliver it. Engineer-to-engineer
+`DELIVERED` once handed back (invoice `INV-<BRANCH>-<jobNumber>`, matching the job sheet). A CCO may skip diagnosis with an estimate: if the customer already approved, it goes directly to repair; otherwise it waits for the CCO's approval record. Engineer-entered estimates always return to the CCO. RWR is `RWR_PENDING` (locked) until the owning Branch Manager finalizes it, and only that manager may deliver it. Engineer-to-engineer
 transfers (`JobTransfer`) only move the job when the receiver accepts; hold time is recorded. Transitions live in `packages/shared/src/schemas/jobs.ts`
 (`ENGINEER_TRANSITIONS`) and `apps/api/src/modules/jobs/workflow.service.ts`; every move is audited.
 

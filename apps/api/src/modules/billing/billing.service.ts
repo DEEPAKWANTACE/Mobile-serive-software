@@ -13,7 +13,7 @@ import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
-import { period, publicJobNumber } from '../jobs/job-number.ts';
+import { publicJobNumber } from '../jobs/job-number.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
 import { endAssignment, recordStatus } from '../jobs/history.ts';
 
@@ -24,6 +24,7 @@ import { endAssignment, recordStatus } from '../jobs/history.ts';
 
 const billSelect = {
   id: true,
+  jobNumber: true,
   branchId: true,
   status: true,
   jobType: true,
@@ -100,41 +101,13 @@ export async function preview(jobId: string, actor: Actor): Promise<BillPreviewD
 const invalid = (field: string, message: string) => HttpError.badRequest('Invalid request', { [field]: [message] });
 
 /**
- * Allocate an invoice number while holding the branch/month counter row lock.
- *
- * The MAX lookup makes the counter self-healing after a restore, data import, or
- * manual counter edit. Without it, a counter that is behind an existing invoice
- * keeps generating the same duplicate number because the failed transaction also
- * rolls its counter increment back.
+ * Invoice number mirrors the job-sheet number so the bill and the inward slip match
+ * (job 0697 at branch B1 -> INV-B1-0697). Job numbers are globally unique and a job has
+ * at most one invoice, so this is unique. Legacy prefixed job numbers already carry
+ * their branch and period, so they are used whole to avoid colliding with new numbers.
  */
-async function nextInvoiceNumber(tx: Prisma.TransactionClient, branch: { id: string; code: string }, now: Date) {
-  const month = period(now);
-  const counterPeriod = `INV-${month}`;
-  const prefix = `INV-${branch.code}-${month}-`;
-  const [row] = await tx.$queryRaw<{ last_seq: number }[]>`
-    INSERT INTO job_counters (branch_id, period, last_seq)
-    VALUES (
-      ${branch.id}::uuid,
-      ${counterPeriod},
-      COALESCE((
-        SELECT MAX(substring(invoice_number FROM '([0-9]+)$')::integer)
-        FROM invoices
-        WHERE branch_id = ${branch.id}::uuid
-          AND invoice_number LIKE ${prefix + '%'}
-      ), 0) + 1
-    )
-    ON CONFLICT (branch_id, period) DO UPDATE
-    SET last_seq = GREATEST(
-      job_counters.last_seq + 1,
-      COALESCE((
-        SELECT MAX(substring(invoice_number FROM '([0-9]+)$')::integer)
-        FROM invoices
-        WHERE branch_id = ${branch.id}::uuid
-          AND invoice_number LIKE ${prefix + '%'}
-      ), 0) + 1
-    )
-    RETURNING last_seq`;
-  return `${prefix}${String(row!.last_seq).padStart(4, '0')}`;
+function invoiceNumberFor(branch: { code: string }, jobNumber: string) {
+  return /^\d+$/.test(jobNumber) ? `INV-${branch.code}-${jobNumber}` : `INV-${jobNumber}`;
 }
 
 export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
@@ -187,7 +160,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
     await recordStatus(tx, { jobId, from: job.status, to: 'DELIVERED', actorId: actor.sub, remark: `Delivered to ${data.deliveredTo}${data.note ? ` — ${data.note}` : ''}` });
 
     const branch = await tx.branch.findUniqueOrThrow({ where: { id: job.branchId }, select: { id: true, code: true } });
-    const invoiceNumber = await nextInvoiceNumber(tx, branch, now);
+    const invoiceNumber = invoiceNumberFor(branch, job.jobNumber);
 
     const invoice = await tx.invoice.create({
       data: {
