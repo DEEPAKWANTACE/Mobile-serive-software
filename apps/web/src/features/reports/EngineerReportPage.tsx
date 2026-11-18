@@ -74,14 +74,15 @@ const loadPdfColumns = () => {
   } catch { /* storage unavailable */ }
   return PDF_PRESETS[0]!.keys;
 };
-const EMPTY: Filters = { jobNumber: '', from: '', to: '', engineerId: '', status: '', branchId: '' };
+/** Opens on today's jobs; Reset returns here too. */
+const initialFilters = (): Filters => ({ jobNumber: '', from: todayIso(), to: todayIso(), engineerId: '', status: '', branchId: '' });
 
 /** Engineer Report: jobs per engineer (current or past assignment) with status, repair date, amount and payment status. */
 export function EngineerReportPage() {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === ROLES.SUPER_ADMIN;
-  const [draft, setDraft] = useState<Filters>(EMPTY);
-  const [applied, setApplied] = useState<Filters>(EMPTY);
+  const [draft, setDraft] = useState<Filters>(initialFilters);
+  const [applied, setApplied] = useState<Filters>(initialFilters);
   const [page, setPage] = useState(1);
   const set = (k: keyof Filters) => (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [k]: e.target.value, ...(k === 'branchId' && { engineerId: '' }) }));
 
@@ -301,7 +302,7 @@ export function EngineerReportPage() {
         </Field>
         <div className="flex items-end gap-2">
           <Button type="submit"><Search className="size-4" /> Search</Button>
-          <Button variant="secondary" onClick={() => (setDraft(EMPTY), setApplied(EMPTY), setPage(1))}>Reset</Button>
+          <Button variant="secondary" onClick={() => (setDraft(initialFilters()), setApplied(initialFilters()), setPage(1))}>Reset</Button>
         </div>
       </form>
       <div className="flex items-center justify-between">
