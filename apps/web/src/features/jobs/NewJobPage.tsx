@@ -4,7 +4,6 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronDown } from 'lucide-react';
 import {
   jobCreateSchema,
   PAYMENT_MODE_LABELS,
@@ -858,12 +857,13 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
     return [...m.entries()];
   }, [faults]);
   const faultById = new Map(faults.map((f) => [f.id, f]));
-  // One category is open at a time; start on the category of the first fault already chosen (edit form).
+  // Category dropdown; start on the category of the first fault already chosen (edit form).
   const [activeCat, setActiveCat] = useState<string | null>(() => {
     const first = value[0] && faultById.get(value[0].faultId);
     return first ? (first.category?.id ?? 'other') : null;
   });
   const selectedIds = new Set(value.map((v) => v.faultId));
+  const activeFaults = categories.find(([id]) => id === activeCat)?.[1].faults ?? [];
 
   const toggle = (f: FaultDto) => {
     if (selectedIds.has(f.id)) return onChange(value.filter((v) => v.faultId !== f.id));
@@ -892,51 +892,34 @@ export function FaultPicker({ faults, value, onChange, optionsByFault, modelChos
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="mb-2 text-sm font-medium text-slate-700">
-          Problem category <span className="text-red-500">*</span>
-        </div>
-        <div className="max-w-xl divide-y divide-slate-200 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xs">
-          {categories.map(([id, c]) => {
-            const count = c.faults.filter((f) => selectedIds.has(f.id)).length;
-            const open = activeCat === id;
-            return (
-              <div key={id}>
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => setActiveCat(open ? null : id)}
-                  className={`flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm font-medium transition ${open ? 'bg-brand-600 text-white' : count > 0 ? 'bg-brand-50/60 text-slate-900 hover:bg-brand-50' : 'text-slate-800 hover:bg-slate-50'}`}
-                >
-                  <span className="min-w-0 truncate">{c.name}</span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    {count > 0 && (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${open ? 'bg-white/25 text-white' : 'bg-brand-600 text-white'}`}>{count} selected</span>
-                    )}
-                    <span className={`text-xs ${open ? 'text-white/80' : 'text-slate-400'}`}>{c.faults.length}</span>
-                    <ChevronDown className={`size-4 transition-transform ${open ? 'rotate-180' : 'text-slate-400'}`} />
-                  </span>
-                </button>
-                {open && (
-                  <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto bg-slate-50/60">
-                    {c.faults.map((f) => {
-                      const checked = selectedIds.has(f.id);
-                      return (
-                        <li key={f.id}>
-                          <label className={`flex cursor-pointer items-center gap-3 py-2 pr-3.5 pl-6 text-sm select-none ${checked ? 'bg-brand-50 font-medium text-brand-800' : 'text-slate-700 hover:bg-white'}`}>
-                            <input type="checkbox" checked={checked} onChange={() => toggle(f)} className="size-4 shrink-0 accent-brand-600" />
-                            <span className="min-w-0 flex-1">{f.name}</span>
-                            {f.requiresIdProof && <span title="Aadhaar / ID proof required">🔒</span>}
-                          </label>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      <div className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Problem category <span className="text-red-500">*</span></span>
+          <select value={activeCat ?? ''} onChange={(e) => setActiveCat(e.target.value || null)} className={inputClass} aria-label="Problem category">
+            <option value="">Select category…</option>
+            {categories.map(([id, c]) => {
+              const count = c.faults.filter((f) => selectedIds.has(f.id)).length;
+              return <option key={id} value={id}>{c.name}{count ? ` (${count} selected)` : ''}</option>;
+            })}
+          </select>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Problem <span className="text-red-500">*</span></span>
+          <select
+            value=""
+            disabled={!activeFaults.length}
+            onChange={(e) => { const f = faultById.get(e.target.value); if (f) toggle(f); }}
+            className={`${inputClass} disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400`}
+            aria-label="Problem"
+          >
+            <option value="">{activeCat ? 'Select problem to add…' : 'Select a category first'}</option>
+            {activeFaults.map((f) => (
+              <option key={f.id} value={f.id} disabled={selectedIds.has(f.id)}>
+                {f.name}{f.requiresIdProof ? ' 🔒' : ''}{selectedIds.has(f.id) ? ' ✓' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {value.length > 0 && (
