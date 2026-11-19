@@ -26,7 +26,9 @@ export function BrandsPage() {
   const list = useListState({});
   const { user } = useAuth();
   const [scopeBranch, setScopeBranch] = useState('');
-  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  // Branch staff see the Super Admin defaults (read-only) together with their own branch's rows.
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'effective' };
+  const readOnlyRow = (r: { isGlobal: boolean }) => user?.role !== ROLES.SUPER_ADMIN && r.isGlobal;
   const { data, isLoading } = useList<BrandDto>('brands', { ...list.params, ...scope });
   const [editing, setEditing] = useState<BrandDto | 'new' | null>(null);
   const isSuper = user?.role === ROLES.SUPER_ADMIN;
@@ -59,7 +61,7 @@ export function BrandsPage() {
     {
       header: 'Actions',
       className: 'text-right',
-      cell: (b) => (
+      cell: (b) => readOnlyRow(b) ? <span className="text-xs text-slate-400">Default · all branches</span> : (
         <div className="flex justify-end gap-3">
           <Button variant="link" onClick={() => setEditing(b)}>
             Edit

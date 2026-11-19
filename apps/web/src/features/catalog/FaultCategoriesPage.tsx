@@ -30,7 +30,9 @@ export function FaultCategoriesPage() {
   const list = useListState({});
   const { user } = useAuth();
   const [scopeBranch, setScopeBranch] = useState('');
-  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  // Branch staff see the Super Admin defaults (read-only) together with their own branch's rows.
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'effective' };
+  const readOnlyRow = (r: { isGlobal: boolean }) => user?.role !== ROLES.SUPER_ADMIN && r.isGlobal;
   const { data, isLoading } = useList<FaultCategoryDto>('fault-categories', { ...list.params, ...scope });
   const [editing, setEditing] = useState<FaultCategoryDto | 'new' | null>(null);
 
@@ -49,7 +51,7 @@ export function FaultCategoriesPage() {
     {
       header: 'Actions',
       className: 'text-right',
-      cell: (c) => (
+      cell: (c) => readOnlyRow(c) ? <span className="text-xs text-slate-400">Default · all branches</span> : (
         <div className="flex justify-end gap-3">
           <Button variant="link" onClick={() => setEditing(c)}>
             Edit

@@ -25,7 +25,9 @@ export function FaultsPage() {
   const list = useListState({ categoryId: searchParams.get('categoryId') ?? '' });
   const { user } = useAuth();
   const [scopeBranch, setScopeBranch] = useState('');
-  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  // Branch staff see the Super Admin defaults (read-only) together with their own branch's rows.
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'effective' };
+  const readOnlyRow = (r: { isGlobal: boolean }) => user?.role !== ROLES.SUPER_ADMIN && r.isGlobal;
   // A branch-specific fault may use either a global category or one defined by
   // that branch. The fault list itself remains branch-only on this admin page.
   const categoryScope = user?.role === ROLES.SUPER_ADMIN
@@ -53,7 +55,7 @@ export function FaultsPage() {
     {
       header: 'Actions',
       className: 'text-right',
-      cell: (f) => (
+      cell: (f) => readOnlyRow(f) ? <span className="text-xs text-slate-400">Default · all branches</span> : (
         <div className="flex justify-end gap-3">
           <Button variant="link" onClick={() => setEditing(f)}>
             Edit

@@ -22,7 +22,8 @@ export function PricingPage() {
   const [dirty, setDirty] = useState(false);
   const { user } = useAuth();
   const [scopeBranch, setScopeBranch] = useState('');
-  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
+  // Branch staff see the Super Admin defaults (read-only) together with their own branch's rows.
+  const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'effective' };
 
   const { items: brands } = useOptions<BrandDto>('brands', scope);
   const { items: models } = useOptions<ModelDto>('models', { brandId, ...scope }, { enabled: !!brandId });
@@ -82,6 +83,12 @@ export function PricingPage() {
           first.
         </div>
       ) : (
+        <>
+        {user?.role !== ROLES.SUPER_ADMIN && model?.isGlobal && (
+          <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            This is a default model shared by all branches — its prices are managed by the Super Admin.
+          </p>
+        )}
         <PriceGrid
           // Remount (fresh draft) whenever the model or its saved prices change.
           key={`${modelId}:${prices.dataUpdatedAt}`}
@@ -91,6 +98,7 @@ export function PricingPage() {
           prices={prices.data}
           onDirtyChange={setDirty}
         />
+        </>
       )}
     </div>
   );
