@@ -291,6 +291,13 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
   if (query.from && query.to && query.from > query.to) {
     throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
   }
+  // Financial position: only Branch Manager / Super Admin may look at any period; counter staff see today or yesterday.
+  if (actor.role !== ROLES.SUPER_ADMIN && actor.role !== ROLES.BRANCH_MANAGER) {
+    const today = businessToday();
+    const yesterday = businessToday(new Date(Date.now() - 86_400_000));
+    query = { ...query, from: query.from ?? today, to: query.to ?? today };
+    if (query.from! < yesterday || query.to! > today) throw HttpError.forbidden('You can only view today or yesterday');
+  }
   const branchId = actor.branchId ?? query.branchId;
   const scope: Prisma.JobWhereInput = branchId ? { branchId } : {};
   const range = query.from || query.to ? businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) : null;

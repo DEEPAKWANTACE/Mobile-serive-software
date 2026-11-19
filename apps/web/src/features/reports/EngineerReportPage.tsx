@@ -100,10 +100,10 @@ export function EngineerReportPage() {
     enabled: !!engineerBranch,
   });
 
-  const summaryRange = applied.from || applied.to ? { from: applied.from, to: applied.to } : {};
+  // Engineer-wise pending is "open right now", so it needs no date period.
   const summary = useQuery({
-    queryKey: ['reports', 'dashboard-summary', engineerBranch, summaryRange],
-    queryFn: () => api.get<DashboardSummaryDto>(`/reports/dashboard-summary?${toQueryString({ ...summaryRange, branchId: engineerBranch })}`),
+    queryKey: ['reports', 'dashboard-summary', engineerBranch, 'pending'],
+    queryFn: () => api.get<DashboardSummaryDto>(`/reports/dashboard-summary?${toQueryString({ branchId: engineerBranch })}`),
   });
 
   const copyEngineerDetails = (e: { engineer: string; pending: number; phone: string | null }) => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ComponentType } from 'react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -16,11 +16,13 @@ import {
 import {
   PAYMENT_MODE_LABELS,
   PAYMENT_MODES,
+  ROLES,
   type DashboardSummaryDto,
   type PaymentMode,
 } from '@msm/shared';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
+import { useAuth } from '@/features/auth/auth-context';
 import { api } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
 import { formatCurrency, formatDate, todayIso } from '@/lib/format';
@@ -53,11 +55,14 @@ function datePresets(): DatePreset[] {
 
 /** Operational totals plus the four workflow-aware money panels requested for the counter dashboard. */
 export function DashboardSummary({ branchId, linkable = true }: { branchId?: string; /** false for roles without Job Master access. */ linkable?: boolean }) {
+  const { user } = useAuth();
+  // Only Branch Manager / Super Admin may pick any period; everyone else sees today or yesterday.
+  const anyPeriod = user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER;
   const today = todayIso();
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
   const [paymentMode, setPaymentMode] = useState<PaymentMode | ''>('');
-  const presets = datePresets();
+  const presets = datePresets().filter((p) => anyPeriod || p.key === 'today' || p.key === 'yesterday');
   const range = from || to ? { from, to } : {};
   const summary = useQuery({
     queryKey: ['reports', 'dashboard-summary', branchId, from, to, paymentMode],
@@ -69,7 +74,7 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
   // Pending figures are "open right now", so their lists are not narrowed to the chosen period.
   const openJobs = (extra: Record<string, string> = {}) =>
     linkable ? `/jobs?${toQueryString({ branchId, ...extra })}` : undefined;
-  const money = (value?: number) => (value === undefined ? undefined : formatCurrency(value));
+  const money = (value?: number) => (value === undefined ? undefined : `₹${Math.round(value).toLocaleString('en-IN')}`);
   const activePreset = presets.find((preset) => preset.from === from && preset.to === to)?.key;
   const periodLabel = activePreset
     ? presets.find((preset) => preset.key === activePreset)!.label
@@ -108,9 +113,9 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Financial position</h3>
-            <p className="text-xs text-slate-500">Choose a date period; payment mode changes only “Received from completed jobs”.</p>
+            <p className="text-xs text-slate-500">{anyPeriod ? 'Choose a date period; payment mode' : 'Today or yesterday; payment mode'} changes only “Received from completed jobs”.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          {anyPeriod && <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
               From
               <input
@@ -133,7 +138,7 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
                 className={`${inputClass} w-36!`}
               />
             </label>
-          </div>
+          </div>}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2" aria-label="Financial summary date presets">
@@ -156,29 +161,29 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
           ))}
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
+        <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <MoneyTile
             label="Ready to collect"
             value={money(d?.readyToCollectAmount)}
             tone="good"
             icon={PackageCheck}
             hint={d ? `${d.readyToCollectCount} ready job${d.readyToCollectCount === 1 ? '' : 's'} · balance due now` : undefined}
           />
-          <StatCard
+          <MoneyTile
             label="Pending customer approval"
             value={money(d?.pendingApprovalAmount)}
             tone="warning"
             icon={ClockAlert}
             hint={d ? `${d.pendingApprovalCount} estimate${d.pendingApprovalCount === 1 ? '' : 's'} for CCO follow-up` : undefined}
           />
-          <StatCard
+          <MoneyTile
             label="Approved · under repair"
             value={money(d?.approvedUnderRepairAmount)}
             tone="brand"
             icon={BadgeIndianRupee}
             hint={d ? `${d.approvedUnderRepairCount} approved job${d.approvedUnderRepairCount === 1 ? '' : 's'} in repair` : undefined}
           />
-          <StatCard
+          <MoneyTile
             label="Received from completed jobs"
             value={money(d?.completedReceivedAmount)}
             tone="info"
@@ -231,5 +236,26 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
         </div>
       )}
     </Card>
+  );
+}
+
+const tileTones = {
+  good: 'text-emerald-600',
+  warning: 'text-amber-600',
+  brand: 'text-brand-600',
+  info: 'text-sky-600',
+} as const;
+
+/** Compact money tile, same size as the dashboard's small status tiles. */
+function MoneyTile({ label, value, hint, icon: Icon, tone }: { label: string; value?: string; hint?: string; icon: ComponentType<{ className?: string }>; tone: keyof typeof tileTones }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl bg-white px-3.5 py-3 ring-1 ring-slate-200/80">
+      <Icon className={`mt-0.5 size-4 shrink-0 ${tileTones[tone]}`} />
+      <div className="min-w-0">
+        <div className="text-xs leading-tight text-slate-500">{label}</div>
+        <div className="mt-0.5 text-lg leading-tight font-semibold text-slate-900 tabular-nums">{value ?? '–'}</div>
+        {hint && <div className="mt-0.5 text-[11px] leading-tight text-slate-500">{hint}</div>}
+      </div>
+    </div>
   );
 }
