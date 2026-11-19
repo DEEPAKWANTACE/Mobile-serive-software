@@ -28,14 +28,15 @@ export function useFloatingList<T extends HTMLElement>(anchorRef: RefObject<HTML
       const above = a.top - gap - 8;
       const up = below < Math.min(maxHeight, 160) && above > below;
       const h = Math.max(120, Math.min(maxHeight, up ? above : below));
+      // Each side is set explicitly (no `inset` shorthand): a shorthand after `left` would reset it.
       setStyle({
         position: 'fixed',
+        margin: 0,
         left: a.left,
+        right: 'auto',
         width: a.width,
         maxHeight: h,
-        margin: 0,
-        inset: 'auto',
-        ...(up ? { bottom: window.innerHeight - a.top + gap, top: 'auto' } : { top: a.bottom + gap }),
+        ...(up ? { top: 'auto', bottom: window.innerHeight - a.top + gap } : { top: a.bottom + gap, bottom: 'auto' }),
         zIndex: 1000,
       });
     };
