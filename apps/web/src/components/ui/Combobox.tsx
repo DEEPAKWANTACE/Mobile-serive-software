@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { inputClass } from './Field';
+import { useFloatingList } from './floating';
 
 export type ComboOption = { value: string; label: string; hint?: string };
 
@@ -30,6 +31,7 @@ export function Combobox({ value, onChange, options, placeholder, disabled, inva
   const [active, setActive] = useState(0);
   const wrapRef = useRef<HTMLDivElement>(null);
   const selected = options.find((o) => o.value === value);
+  const floating = useFloatingList<HTMLUListElement>(wrapRef, open && !disabled, 256);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -92,7 +94,14 @@ export function Combobox({ value, onChange, options, placeholder, disabled, inva
       />
       <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs text-slate-400">▾</span>
       {open && !disabled && (
-        <ul id={listId} role="listbox" className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-slate-200">
+        <ul
+          ref={floating.listRef}
+          {...floating.popoverProps}
+          style={floating.style}
+          id={listId}
+          role="listbox"
+          className="app-popover overflow-y-auto rounded-md py-1 text-sm shadow-lg ring-1 ring-slate-200"
+        >
           {filtered.length === 0 && <li className="px-3 py-2 text-slate-500">{emptyText}</li>}
           {filtered.map((o, i) => (
             <li

@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useId, useMemo, useRef, useState, type InputHTMLAttributes } from 'react';
 import { inputClass } from './Field';
+import { useFloatingList } from './floating';
 
 type City = [name: string, state: string];
 
@@ -67,9 +68,11 @@ export const CityInput = forwardRef<HTMLInputElement, Props>(function CityInput(
 
   const exact = matches.some((c) => c[0].toLowerCase() === query.trim().toLowerCase());
   const showList = open && matches.length > 0 && !(matches.length === 1 && exact);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const floating = useFloatingList<HTMLUListElement>(wrapRef, showList, 240);
 
   return (
-    <div className="relative">
+    <div ref={wrapRef} className="relative">
       <input
         ref={(el) => {
           inputRef.current = el;
@@ -110,7 +113,14 @@ export const CityInput = forwardRef<HTMLInputElement, Props>(function CityInput(
         className={`${inputClass} ${className ?? ''}`}
       />
       {showList && (
-        <ul id={listId} role="listbox" className="absolute z-30 mt-1 max-h-60 w-full overflow-auto rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-slate-200">
+        <ul
+          ref={floating.listRef}
+          {...floating.popoverProps}
+          style={floating.style}
+          id={listId}
+          role="listbox"
+          className="app-popover overflow-auto rounded-md py-1 text-sm shadow-lg ring-1 ring-slate-200"
+        >
           {matches.map((c, i) => (
             <li
               key={`${c[0]}|${c[1]}`}

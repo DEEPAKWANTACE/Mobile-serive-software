@@ -222,6 +222,21 @@ html[data-glass] .app-sidebar {
   box-shadow: inset 1px 0 1px #ffffff26, 4px 0 24px #00000040;
   backdrop-filter: blur(24px) saturate(200%);
 }
+/* Dropdown lists (Combobox, City): solid so the page behind never shows through. */
+.app-popover {
+  border: 0;
+  padding: 4px 0;
+  color: inherit;
+  background: #ffffff;
+  overflow-y: auto;
+}
+html[data-theme] .app-popover,
+html[data-glass] .app-popover {
+  color: var(--app-text);
+  background: var(--app-surface);
+  backdrop-filter: none;
+  box-shadow: 0 12px 32px #00000059;
+}
 html[data-glass] .theme-dialog {
   border-color: #ffffff4d;
   border-top-color: #ffffff73;
