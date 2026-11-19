@@ -17,7 +17,7 @@ const dateTime = (iso: string) =>
   new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }).replace(',', '');
 const dateOnly = (iso: string) => new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-/** Printable / shareable invoice laid out like the shop's paper bill (A4). */
+/** Printable / shareable invoice laid out like the shop's boxed paper bill (A4). */
 export function InvoicePage() {
   const { id = '' } = useParams();
   const [params] = useSearchParams();
@@ -94,133 +94,143 @@ export function InvoicePage() {
   const address = shop?.address ?? inv.branch.address;
   const phone = shop?.phone ?? inv.branch.phone;
   const terms = shop?.invoiceTerms?.trim() || DEFAULT_TERMS;
-  const cell = 'border border-black px-2.5 py-1.5';
-  const head = `${cell} bg-[#e2e2e2] font-bold`;
+  const blue = 'bg-[#1d5fb8] text-white';
+  /** Item-table cell: only vertical rules, like the paper bill. */
+  const col = 'border-x border-black px-1.5';
+  const lines = inv.lines.length ? inv.lines : [{ description: 'No charge', partCode: null, warranty: null, amount: 0 }];
+  const field = (label: string, value: string, mono = false) => (
+    <tr>
+      <td className="pr-1 align-top whitespace-nowrap">{label}</td>
+      <td className={mono ? 'font-mono text-[12px]' : ''}>: {value}</td>
+    </tr>
+  );
+  const total = (label: string, value: string, bold = false) => (
+    <div className={`flex justify-between gap-2 ${bold ? 'font-bold' : ''}`}><span>{label}</span><span>{value}</span></div>
+  );
 
   const sheet = (copy: 'customer' | 'office', ref?: Ref<HTMLElement>) => (
-    <article ref={ref} className="bg-white p-8 font-[Arial,Helvetica,sans-serif] text-[13px] leading-snug text-black shadow-sm ring-1 ring-slate-200 print:p-0 print:shadow-none print:ring-0">
-      <header className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          {shop?.hasLogo && <AuthImage src={`/settings/shop/logo?v=${shop.logoVersion}`} alt="" className="h-14 w-auto max-w-20 object-contain" />}
-          <div className="min-w-0">
-            <div className="text-[22px] leading-tight font-bold uppercase">{shopName}</div>
-            {address && <div className="text-[11px]">Address : {address}</div>}
-            {phone && <div className="text-[11px]">Phone : {phone}</div>}
-            {shop?.gstin && <div className="text-[11px]">GSTIN : {shop.gstin}</div>}
+    <article ref={ref} className="bg-white p-6 font-[Arial,Helvetica,sans-serif] text-[13px] leading-snug text-black shadow-sm ring-1 ring-slate-200 print:p-0 print:shadow-none print:ring-0">
+      <div className="border-[1.5px] border-black">
+        {/* Title band */}
+        <div className="border-b border-black bg-[#e1eaf8] py-1 text-center">
+          <div className="text-[16px] leading-tight font-bold">INVOICE</div>
+          <div className="text-[11px] font-bold uppercase">{copy === 'office' ? 'Office copy' : 'Customer copy'}</div>
+        </div>
+
+        {/* Shop | customer & device */}
+        <div className="grid grid-cols-2 border-b-2 border-black">
+          <div className="flex items-start gap-2 px-1.5 py-1.5">
+            {shop?.hasLogo && <AuthImage src={`/settings/shop/logo?v=${shop.logoVersion}`} alt="" className="h-12 w-auto max-w-16 object-contain" />}
+            <div className="min-w-0 text-[10px] leading-tight">
+              <div className="text-[17px] leading-tight font-bold uppercase">{shopName}</div>
+              {address && <div>{address}</div>}
+              {phone && <div>Phone : {phone}</div>}
+              {shop?.email && <div className="text-[#1d5fb8]">E-Mail Id : {shop.email}</div>}
+              <div className="mt-1 text-[12px] font-bold">Branch : {inv.branch.name}</div>
+            </div>
+          </div>
+          <div className="flex items-start justify-between gap-2 px-1.5 py-1.5">
+            <table>
+              <tbody>
+                <tr>
+                  <td className="pr-1 align-top text-[15px] whitespace-nowrap">Customer :</td>
+                  <td className="text-[15px] leading-tight font-bold uppercase">{inv.customer.name}</td>
+                </tr>
+                {field('Phone No.', inv.customer.phone)}
+                {inv.customer.address && field('Address', inv.customer.address)}
+                {field('Model', inv.job.device)}
+                {inv.job.imei && field('IMEI', inv.job.imei, true)}
+                {inv.job.serialNumber && field('S/N', inv.job.serialNumber, true)}
+                {field('Problem', inv.job.problems)}
+                {field('Delivery', inv.job.deliveredAt ? dateOnly(inv.job.deliveredAt) : '-')}
+              </tbody>
+            </table>
+            {qr && <img src={qr} alt="Invoice QR code" className="size-16 shrink-0" />}
           </div>
         </div>
-        <div className="shrink-0 text-right">
-          <div className="text-[22px] leading-tight font-bold">INVOICE</div>
-          <div className="text-[11px] font-bold">Invoice No : {inv.invoiceNumber}</div>
-          <div className="text-[11px]">Date : {dateTime(inv.createdAt)}</div>
-          {copy === 'office' && <div className="text-[10px] font-semibold uppercase">Office copy</div>}
-          {qr && <img src={qr} alt="Invoice QR code" className="mt-1 ml-auto size-20" />}
+
+        {/* Job / invoice number / date */}
+        <div className="flex justify-between gap-4 border-b border-black px-1.5 py-0.5 text-[12px] font-bold">
+          <span>Job No. : {inv.job.jobNumber}</span>
+          <span>Invoice No. : {inv.invoiceNumber}</span>
+          <span>Invoice Date : {dateTime(inv.createdAt)}</span>
         </div>
-      </header>
 
-      <hr className="mt-3 border-black" />
-
-      <section className="mt-3">
-        <div className="font-bold">Bill To:</div>
-        <div className="mt-1 flex justify-between gap-4">
-          <span>Name : {inv.customer.name}</span>
-          <span>Phone : {inv.customer.phone}</span>
-        </div>
-      </section>
-
-      <table className="mt-4 w-full border-collapse">
-        <thead>
-          <tr className="text-left">
-            <th className={`${head} w-[36%]`}>Model</th>
-            <th className={`${head} w-[36%]`}>Problems in Device</th>
-            <th className={head}>Delivery Date</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td className={cell}>
-              {inv.job.device}
-              {inv.job.imei && <div className="font-mono text-[11px]">IMEI {inv.job.imei}</div>}
-              {inv.job.serialNumber && <div className="font-mono text-[11px]">S/N {inv.job.serialNumber}</div>}
-            </td>
-            <td className={cell}>{inv.job.problems}</td>
-            <td className={cell}>{inv.job.deliveredAt ? dateOnly(inv.job.deliveredAt) : '-'}</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <table className="mt-4 w-full border-collapse">
-        <thead>
-          <tr className="text-left">
-            <th className={head}>Repairing Cost</th>
-            <th className={`${head} w-32 text-right`}>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          {inv.job.rwrReason && (
-            <tr>
-              <td className={cell} colSpan={2}>Returned without repair — {RWR_REASON_LABELS[inv.job.rwrReason as RwrReason] ?? inv.job.rwrReason}</td>
+        {/* Items */}
+        <table className="w-full border-collapse">
+          <colgroup><col className="w-12" /><col /><col className="w-28" /><col className="w-32" /></colgroup>
+          <thead>
+            <tr className={blue}>
+              <th className="px-1.5 py-1 text-left">S.no.</th>
+              <th className="px-1.5 py-1 text-left">Repairing Cost</th>
+              <th className="px-1.5 py-1 text-right">Warranty</th>
+              <th className="px-1.5 py-1 text-right">Amount</th>
             </tr>
-          )}
-          {inv.lines.length ? (
-            inv.lines.map((l, i) => (
+          </thead>
+          <tbody className="align-top">
+            {inv.job.rwrReason && (
+              <tr>
+                <td className={`${col} border-l-0`} />
+                <td className={`${col} pt-1`} colSpan={2}>Returned without repair — {RWR_REASON_LABELS[inv.job.rwrReason as RwrReason] ?? inv.job.rwrReason}</td>
+                <td className={`${col} border-r-0`} />
+              </tr>
+            )}
+            {lines.map((l, i) => (
               <tr key={i}>
-                <td className={cell}>
+                <td className={`${col} border-l-0 pt-1 text-right`}>{i + 1}</td>
+                <td className={`${col} pt-1`}>
                   {l.description}
                   {l.partCode && <span className="ml-1 font-mono text-[11px]">({l.partCode})</span>}
-                  {l.warranty && <span className="ml-1 text-[11px]">· Warranty {l.warranty}</span>}
                 </td>
-                <td className={`${cell} text-right`}>{money(l.amount)}</td>
+                <td className={`${col} pt-1 text-right`}>{l.warranty ?? ''}</td>
+                <td className={`${col} border-r-0 pt-1 text-right`}>{money(l.amount)}</td>
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td className={cell}>No charge</td>
-              <td className={`${cell} text-right`}>{money(0)}</td>
+            ))}
+            {/* Filler keeps the column rules running down like the paper bill. */}
+            <tr className="h-24">
+              <td className={`${col} border-l-0`} /><td className={col} /><td className={col} /><td className={`${col} border-r-0`} />
             </tr>
-          )}
-          {inv.discount > 0 && (
-            <tr>
-              <td className={cell}>Discount{inv.discountReason && ` (${inv.discountReason})`}</td>
-              <td className={`${cell} text-right`}>− {money(inv.discount)}</td>
+            <tr className="border-t border-black font-bold text-[#1d5fb8]">
+              <td colSpan={2} />
+              <td className="border-l border-black px-1.5 py-0.5">Sub Total</td>
+              <td className="px-1.5 py-0.5 text-right">{money(inv.subtotal)}</td>
             </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div className="mt-4 flex justify-end">
-        <table className="w-[38%] min-w-56 border-collapse">
-          <tbody>
-            <tr><td className={cell}>Total</td><td className={`${cell} font-bold`}>{money(inv.total)}</td></tr>
-            <tr><td className={cell}>Amount Paid</td><td className={`${cell} font-bold`}>{money(inv.paid)}</td></tr>
-            <tr><td className={cell}>Due Payment</td><td className={`${cell} font-bold`}>{money(inv.due)}</td></tr>
           </tbody>
         </table>
+
+        {/* Words, terms, signatures | totals */}
+        <div className="flex border-t border-black">
+          <div className="flex min-w-0 flex-1 flex-col px-1.5 py-1">
+            <div className="font-bold">Total Amount in Words : <span className="font-normal">{amountInWords(inv.total)}</span></div>
+            {(inv.job.warrantyPeriod || inv.job.warrantyTerms) && (
+              <div className="mt-1.5 text-[11px]">
+                <span className="font-bold italic underline">Repair Warranty:</span>{' '}
+                {inv.job.warrantyPeriod ?? 'As stated'}{inv.job.warrantyTerms && ` — ${inv.job.warrantyTerms}`}
+              </div>
+            )}
+            <div className="mt-1.5 text-[11px] font-bold italic underline">Terms &amp; Conditions:</div>
+            <div className="text-[10px] whitespace-pre-line italic">{terms}</div>
+            <div className="mt-2 text-right text-[12px] font-bold">For {shopName}</div>
+            <div className="mt-10 flex items-end justify-between gap-4 text-[12px] font-bold">
+              <span>Customer Signature</span>
+              <span>Authorised Signatory</span>
+            </div>
+          </div>
+          <div className="flex w-60 shrink-0 flex-col border-l border-black">
+            <div className="flex-1 space-y-0.5 px-1.5 py-1 text-[12px]">
+              {total(`Discount${inv.discountReason ? ` (${inv.discountReason})` : ''}`, money(inv.discount))}
+              {total('Amount Paid', money(inv.paid))}
+              {total('Due Payment', money(inv.due), inv.due > 0)}
+            </div>
+            <div className={`${blue} flex items-center justify-between gap-2 border-t border-black px-1.5 py-1.5`}>
+              <span className="font-bold">Grand Total</span>
+              <span className="text-[17px] font-bold">{money(inv.total)}</span>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <section className="mt-4">
-        <div className="font-bold">Total Amount in Words</div>
-        <div>{amountInWords(inv.total)}</div>
-      </section>
-
-      {(inv.job.warrantyPeriod || inv.job.warrantyTerms) && (
-        <section className="mt-3">
-          <div className="font-bold">Repair Warranty</div>
-          <div>{inv.job.warrantyPeriod ?? 'As stated'}{inv.job.warrantyTerms && ` — ${inv.job.warrantyTerms}`}</div>
-        </section>
-      )}
-
-      <section className="mt-3">
-        <div className="font-bold">Terms &amp; Conditions</div>
-        <div className="whitespace-pre-line">{terms}</div>
-      </section>
-
-      <footer className="mt-14 flex justify-between gap-8 text-[11px] font-bold">
-        <div className="w-44 border-t border-black pt-2 text-center">Customer Signature</div>
-        <div className="w-44 border-t border-black pt-2 text-center">Authorized Signature</div>
-      </footer>
-      <div className="mt-6 text-[10px] text-slate-600">
-        Job {inv.job.jobNumber}{inv.job.deliveredTo && ` · Delivered to ${inv.job.deliveredTo}`} · Billed by {inv.createdBy.name}
+      <div className="mt-1 text-[10px] text-slate-600">
+        {inv.job.deliveredTo && `Delivered to ${inv.job.deliveredTo} · `}Billed by {inv.createdBy.name}
       </div>
     </article>
   );
