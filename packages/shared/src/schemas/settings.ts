@@ -38,6 +38,26 @@ export const branchWarrantySchema = z.object({
 });
 export type BranchWarrantyData = z.output<typeof branchWarrantySchema>;
 
+/** Per-branch job sheet / delivery switches. Branch Manager edits own branch; Super Admin any branch. */
+export const branchOptionsSchema = z.object({
+  branchId: z.uuid().nullish(),
+  /** Allow typing brand & model when the phone is not in the catalogue. */
+  allowManualDevice: z.boolean().optional(),
+  /** Allow "IMEI N/A" at delivery. */
+  allowImeiNa: z.boolean().optional(),
+  /** IMEI is compulsory when delivering a repaired phone (never for RWR / cancellation). */
+  requireImeiAtDelivery: z.boolean().optional(),
+});
+export type BranchOptionsData = z.output<typeof branchOptionsSchema>;
+export type BranchOptionsDto = {
+  branchId: string;
+  allowManualDevice: boolean;
+  allowImeiNa: boolean;
+  requireImeiAtDelivery: boolean;
+  warrantyPeriod: string | null;
+  warrantyTerms: string | null;
+};
+
 export const accessoryOptionSchema = z.object({
   name: z.string().trim().min(1, 'Enter a name').max(100),
   sortOrder: z.coerce.number().int().min(0).max(999).default(0),

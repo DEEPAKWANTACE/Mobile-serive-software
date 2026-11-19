@@ -27,6 +27,10 @@ import { api, ApiError } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
 import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/format';
 import { BranchScopePicker } from './BranchScopePicker';
+import { ArrowDownLeft, ReceiptText, Scale, Undo2, Wallet } from 'lucide-react';
+
+const rupeeFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const rupees = (n: number) => rupeeFmt.format(Math.round(n));
 
 export function DayBookPage() {
   const { user } = useAuth();
@@ -139,12 +143,13 @@ export function DayBookPage() {
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {data && (
         <>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            <StatCard label="Received" value={formatCurrency(data.received.total)} tone="info" />
-            <StatCard label="Refunds" value={formatCurrency(data.refunds.total)} />
-            <StatCard label="Expenses" value={formatCurrency(data.expenses.total)} />
-            <StatCard label="Net" value={formatCurrency(data.net)} tone="info" />
-            <StatCard label="Cash in hand" value={formatCurrency(data.cashInHand)} tone="warning" />
+          {/* Same compact cards as the dashboard: whole rupees, icon badge, 2 / 3 / 4 per row. */}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+            <StatCard label="Received" value={rupees(data.received.total)} tone="good" icon={ArrowDownLeft} />
+            <StatCard label="Refunds" value={rupees(data.refunds.total)} tone="warning" icon={Undo2} />
+            <StatCard label="Expenses" value={rupees(data.expenses.total)} icon={ReceiptText} />
+            <StatCard label="Net" value={rupees(data.net)} tone="brand" icon={Scale} />
+            <StatCard label="Cash in hand" value={rupees(data.cashInHand)} tone="info" icon={Wallet} hint={`${data.deliveredCount} delivered`} />
           </div>
 
           <Card title={`By payment mode · ${data.deliveredCount} phone${data.deliveredCount === 1 ? '' : 's'} delivered (invoiced ${formatCurrency(data.invoicedTotal)})`}>

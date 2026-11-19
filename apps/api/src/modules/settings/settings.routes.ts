@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, jobListModeSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchOptionsSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, jobListModeSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -30,6 +30,14 @@ settingsRoutes.get('/branch-warranty', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO
 });
 settingsRoutes.put('/branch-warranty', authorize(ROLES.BRANCH_MANAGER), validate({ body: branchWarrantySchema }), async (req, res) => {
   res.json(await service.updateBranchWarranty(req.body, actorOf(req)));
+});
+
+// Any signed-in user of the branch reads them (job sheet / delivery forms); Super Admin passes ?branchId.
+settingsRoutes.get('/branch-options', async (req, res) => {
+  res.json(await service.branchOptions(actorOf(req), typeof req.query.branchId === 'string' ? req.query.branchId : null));
+});
+settingsRoutes.put('/branch-options', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: branchOptionsSchema }), async (req, res) => {
+  res.json(await service.updateBranchOptions(req.body, actorOf(req)));
 });
 
 settingsRoutes.get('/accessories', validate({ query: accessoryOptionsQuerySchema }), async (req, res) => {

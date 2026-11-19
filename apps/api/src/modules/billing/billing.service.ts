@@ -45,6 +45,9 @@ const billSelect = {
     orderBy: { sortOrder: 'asc' },
   },
   payments: { select: { kind: true, amount: true } },
+  warrantyPeriod: true,
+  warrantyTerms: true,
+  branch: { select: { allowImeiNa: true, requireImeiAtDelivery: true, defaultWarrantyPeriod: true, defaultWarrantyTerms: true } },
 } satisfies Prisma.JobSelect;
 
 type BillJob = Prisma.JobGetPayload<{ select: typeof billSelect }>;
@@ -86,7 +89,12 @@ function buildPreview(job: BillJob): BillPreviewDto {
     lines,
     subtotal: roundMoney(lines.reduce((s, l) => s + l.amount, 0)),
     paid: netPaid(job.payments),
-    imeiRequired: job.jobType === 'MOBILE',
+    // Branch setting; never required for a phone returned without repair (or a cancelled job).
+    imeiRequired: job.jobType === 'MOBILE' && !isRwr && job.branch.requireImeiAtDelivery,
+    imeiAsked: job.jobType === 'MOBILE',
+    allowImeiNa: job.branch.allowImeiNa || isRwr,
+    warrantyPeriod: job.warrantyPeriod ?? job.branch.defaultWarrantyPeriod,
+    warrantyTerms: job.warrantyTerms ?? job.branch.defaultWarrantyTerms,
     serialNumberRequired: !isRwr && job.jobType === 'ACCESSORY',
     accessories: [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])],
   };
@@ -116,8 +124,11 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   const bill = buildPreview(job);
 
   const deliveryImei = job.jobType === 'MOBILE' ? (data.imei ?? job.imei) : null;
-  if (bill.imeiRequired && !deliveryImei) {
-    throw invalid('imei', 'Enter the IMEI or explicitly select N/A before delivery');
+  if (deliveryImei === 'N/A' && data.imei === 'N/A' && !bill.allowImeiNa) {
+    throw invalid('imei', 'IMEI N/A is turned off for this branch — enter the IMEI');
+  }
+  if (bill.imeiRequired && (!deliveryImei || (deliveryImei === 'N/A' && !bill.allowImeiNa))) {
+    throw invalid('imei', bill.allowImeiNa ? 'Enter the IMEI or explicitly select N/A before delivery' : 'Enter the IMEI before delivery');
   }
   if (bill.serialNumberRequired && !job.serialNumber) {
     throw invalid('serialNumber', 'Add the serial number before delivering a repaired accessory');
@@ -153,6 +164,9 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
         deliveredTo: data.deliveredTo,
         deliveryNote: data.note ?? null,
         ...(deliveryImei && { imei: deliveryImei }),
+        // Repair warranty is decided at delivery (branch default pre-filled).
+        ...(data.warrantyPeriod !== undefined && { warrantyPeriod: data.warrantyPeriod }),
+        ...(data.warrantyTerms !== undefined && { warrantyTerms: data.warrantyTerms }),
       },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
@@ -252,6 +266,13 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
           status: true,
           rwrReason: true,
           deliveredTo: true,
+          deliveredAt: true,
+          warrantyPeriod: true,
+          warrantyTerms: true,
+          manualFault: true,
+          customerComplaint: true,
+          faults: { select: { fault: { select: { name: true } } } },
+          devices: { select: { manualFault: true, faults: { select: { fault: { select: { name: true } } } } }, orderBy: { sortOrder: 'asc' } },
           brand: { select: { name: true } },
           deviceModel: { select: { name: true } },
           manualBrand: true,
@@ -269,6 +290,12 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
   });
   if (!inv) throw HttpError.notFound('No invoice for this job yet');
   const { job } = inv;
+  const paid = roundMoney(job.payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
+  const total = inv.total.toNumber();
+  const reported = job.devices.length
+    ? job.devices.flatMap((d) => [...d.faults.map((f) => f.fault.name), ...(d.manualFault ? [d.manualFault] : [])])
+    : [...job.faults.map((f) => f.fault.name), ...(job.manualFault ? [job.manualFault] : [])];
+  const problems = [...new Set(reported)].join(', ') || job.customerComplaint || '—';
   return {
     id: inv.id,
     invoiceNumber: inv.invoiceNumber,
@@ -294,7 +321,13 @@ export async function getInvoice(jobId: string, actor: Actor): Promise<InvoiceDt
       status: job.status,
       rwrReason: job.rwrReason,
       deliveredTo: job.deliveredTo,
+      deliveredAt: job.deliveredAt?.toISOString() ?? null,
+      problems,
+      warrantyPeriod: job.warrantyPeriod,
+      warrantyTerms: job.warrantyTerms,
     },
+    paid,
+    due: Math.max(0, roundMoney(total - paid)),
     customer: job.customer,
     branch: inv.branch,
   };

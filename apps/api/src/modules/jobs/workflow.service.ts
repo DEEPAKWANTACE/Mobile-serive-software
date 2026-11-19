@@ -82,7 +82,11 @@ export async function diagnose(id: string, data: DiagnosisData, actor: Actor) {
   return prisma.$transaction(async (tx) => {
     // Parts already taken from stock stay on the bill; the engineer's amount replaces the other items.
     const parts = (await currentLines(tx, id)).filter((l) => l.partId);
-    const lines: CostLine[] = [...parts, { description: 'Repair charges', partId: null, warranty: null, amount: data.amount }];
+    // Name the repair line after what the engineer selected (e.g. "Mic change") so it carries through
+    // to the CCO's approval, delivery and the invoice. Cost line descriptions are capped at 200 chars.
+    const labels = data.findingIds.map((fid) => findings.find((f) => f.id === fid)!.label.trim()).join(', ');
+    const description = labels ? (labels.length > 200 ? `${labels.slice(0, 199)}…` : labels) : 'Repair charges';
+    const lines: CostLine[] = [...parts, { description, partId: null, warranty: null, amount: data.amount }];
     const total = await writeLines(tx, access, lines, actor);
     // Updating notes during repair without changing the agreed amount keeps the customer's approval.
     const keepApproval = access.status === 'IN_REPAIR' && job.approvedAt !== null && job.approvedAmount?.toNumber() === total

@@ -190,8 +190,13 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
   // Branch staff create jobs for their own branch; Super Admin picks the branch.
   const branchId = actor.branchId ?? data.branchId;
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select the branch'] });
-  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true } });
+  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true, allowManualDevice: true } });
   if (!branch || !branch.isActive) throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
+  // Branch setting: the main phone must come from the brand / model catalogue.
+  const first = data.devices?.[0] ?? data;
+  if (!branch.allowManualDevice && first.jobType === 'MOBILE' && (first.manualBrand || first.manualModel)) {
+    throw HttpError.badRequest('Invalid request', { brandId: ['Manual brand / model entry is turned off for this branch — select from the list'] });
+  }
 
   const legacyDevice: JobDeviceData = {
     jobType: data.jobType,
@@ -966,6 +971,9 @@ export async function history(id: string, actor: Actor): Promise<JobHistoryEntry
 export async function addPhotos(jobId: string, kind: PhotoKind, files: Express.Multer.File[], actor: Actor) {
   const job = await loadForAccess(jobId, actor);
   if (!files.length) throw HttpError.badRequest('No photos uploaded');
+  if (actor.role === ROLES.ENGINEER && !ENGINEER_VISIBLE_PHOTO_KINDS.includes(kind)) {
+    throw HttpError.forbidden('Engineers can add phone and physical condition photos only');
+  }
   const prepared = preparePhotos({ [kind]: files });
 
   return withStoredPhotos(prepared, () =>

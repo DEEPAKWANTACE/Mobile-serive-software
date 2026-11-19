@@ -20,6 +20,10 @@ reportRoutes.get('/', authorize(...REPORT_ROLES), validate({ query: reportQueryS
   res.json(await service.build(res.locals.query as ReportQuery, actorOf(req)));
 });
 
+reportRoutes.get('/city-stats', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ query: reportQuerySchema }), async (req, res) => {
+  res.json(await service.cityStats(res.locals.query as ReportQuery, actorOf(req)));
+});
+
 reportRoutes.get('/engineer-jobs', authorize(...REPORT_ROLES), validate({ query: engineerReportQuerySchema }), async (req, res) => {
   res.json(await service.engineerReport(res.locals.query as EngineerReportQuery, actorOf(req)));
 });

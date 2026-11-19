@@ -8,6 +8,7 @@ import { Field, inputClass } from '@/components/ui/Field';
 import { api, ApiError } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/format';
 import { showDeliveredPrintToast } from './DeliveredPrintToast';
+import { ImeiInput } from '@/features/jobs/ImeiInput';
 
 type PayRow = { mode: PaymentMode; amount: string; reference: string };
 
@@ -28,7 +29,9 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
   const [deliveredTo, setDeliveredTo] = useState(job.customer.name);
   const [accessoriesReturned, setAccessoriesReturned] = useState(false);
   const [note, setNote] = useState('');
-  const [imeiChoice, setImeiChoice] = useState<'IMEI' | 'NA'>(job.imei === 'N/A' ? 'NA' : 'IMEI');
+  const [imeiChoice, setImeiChoice] = useState<'IMEI' | 'NA'>(job.imei === 'N/A' && bill.allowImeiNa ? 'NA' : 'IMEI');
+  const [warrantyPeriod, setWarrantyPeriod] = useState(bill.warrantyPeriod ?? '');
+  const [warrantyTerms, setWarrantyTerms] = useState(bill.warrantyTerms ?? '');
   const [imei, setImei] = useState(job.imei && job.imei !== 'N/A' ? job.imei : '');
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
@@ -44,7 +47,8 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
     if (!touched) setPayments((rows) => (rows.length === 1 ? [{ ...rows[0]!, amount: due > 0 ? String(due) : '' }] : rows));
   }, [due, touched]);
   const collected = roundMoney(payments.reduce((s, p) => s + (Number(p.amount) || 0), 0));
-  const missingImei = bill.imeiRequired && imeiChoice === 'IMEI' && !isValidImei(imei.trim());
+  // Required: a valid IMEI (or N/A when the branch allows it). Optional (e.g. RWR): blank is fine, but not a wrong number.
+  const missingImei = bill.imeiAsked && imeiChoice === 'IMEI' && (bill.imeiRequired ? !isValidImei(imei.trim()) : imei.trim() !== '' && !isValidImei(imei.trim()));
   const missingSerialNumber = bill.serialNumberRequired && !job.serialNumber;
   const missingIdentification = missingImei || missingSerialNumber;
 
@@ -59,7 +63,8 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         deliveredTo,
         accessoriesReturned,
         note: note || null,
-        ...(bill.imeiRequired && { imei: imeiChoice === 'NA' ? 'N/A' : imei.trim() }),
+        ...(bill.imeiAsked && (imeiChoice === 'NA' ? { imei: 'N/A' } : imei.trim() ? { imei: imei.trim() } : {})),
+        ...(bill.kind === 'REPAIR' && { warrantyPeriod: warrantyPeriod.trim() || null, warrantyTerms: warrantyTerms.trim() || null }),
       }),
     onSuccess: (r) => {
       showDeliveredPrintToast(job.id, job.jobNumber, r.invoiceNumber);
@@ -96,30 +101,29 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         </div>
       )}
 
-      {bill.imeiRequired && (
+      {bill.imeiAsked && (
         <fieldset className="rounded-md border border-slate-200 p-3">
-          <legend className="px-1 text-sm font-medium text-slate-700">IMEI <span className="text-red-600">*</span></legend>
-          <div className="flex flex-wrap gap-5 text-sm">
-            <label className="flex items-center gap-2">
-              <input type="radio" name="imeiChoice" checked={imeiChoice === 'IMEI'} onChange={() => setImeiChoice('IMEI')} className="accent-brand-600" />
-              Enter IMEI
-            </label>
-            <label className="flex items-center gap-2">
-              <input type="radio" name="imeiChoice" checked={imeiChoice === 'NA'} onChange={() => setImeiChoice('NA')} className="accent-brand-600" />
-              N/A (not available)
-            </label>
-          </div>
-          {imeiChoice === 'IMEI' && (
-            <input
-              value={imei}
-              onChange={(e) => setImei(e.target.value.replace(/\D/g, '').slice(0, 15))}
-              inputMode="numeric"
-              maxLength={15}
-              className={`${inputClass} mt-3 font-mono`}
-              placeholder="15-digit IMEI"
-            />
+          <legend className="px-1 text-sm font-medium text-slate-700">
+            IMEI {bill.imeiRequired ? <span className="text-red-600">*</span> : <span className="font-normal text-slate-400">(optional)</span>}
+          </legend>
+          {bill.allowImeiNa && (
+            <div className="mb-3 flex flex-wrap gap-5 text-sm">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="imeiChoice" checked={imeiChoice === 'IMEI'} onChange={() => setImeiChoice('IMEI')} className="accent-brand-600" />
+                Enter IMEI
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="imeiChoice" checked={imeiChoice === 'NA'} onChange={() => setImeiChoice('NA')} className="accent-brand-600" />
+                N/A (not available)
+              </label>
+            </div>
           )}
-          {missingImei && <p className="mt-1 text-xs text-red-600">Enter a valid 15-digit IMEI or select N/A.</p>}
+          {imeiChoice === 'IMEI' && <ImeiInput value={imei} onChange={(e) => setImei(e.target.value)} invalid={missingImei} />}
+          {missingImei && (
+            <p className="mt-1 text-xs text-red-600">
+              {bill.allowImeiNa && bill.imeiRequired ? 'Enter a valid 15-digit IMEI or select N/A.' : 'Enter a valid 15-digit IMEI.'}
+            </p>
+          )}
           {errors.imei && <p className="mt-1 text-xs text-red-600">{errors.imei}</p>}
         </fieldset>
       )}
@@ -226,6 +230,17 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
             ))}
           </select>
         </Field>
+      )}
+
+      {bill.kind === 'REPAIR' && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Repair warranty" hint="Printed on the invoice">
+            <input value={warrantyPeriod} onChange={(e) => setWarrantyPeriod(e.target.value)} maxLength={60} className={inputClass} placeholder="e.g. 30 days" />
+          </Field>
+          <Field label="Warranty terms" className="sm:col-span-2">
+            <input value={warrantyTerms} onChange={(e) => setWarrantyTerms(e.target.value)} maxLength={1000} className={inputClass} placeholder="e.g. On repaired part only, not on physical / water damage" />
+          </Field>
+        </div>
       )}
 
       {/* Hand-over */}

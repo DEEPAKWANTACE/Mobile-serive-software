@@ -14,6 +14,22 @@ export const reportQuerySchema = z.object({
 });
 export type ReportQuery = z.output<typeof reportQuerySchema>;
 
+/** Job sheets received in the period, per customer city. */
+export type CityStatRow = {
+  city: string;
+  total: number;
+  mobile: number;
+  accessory: number;
+  walkIn: number;
+  retailer: number;
+  open: number;
+  delivered: number;
+  rwr: number;
+  cancelled: number;
+  /** Sum of invoices of these jobs. */
+  revenue: number;
+};
+
 type Counts = {
   /** Jobs received in the period. */
   received: number;

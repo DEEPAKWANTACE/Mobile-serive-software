@@ -43,6 +43,7 @@ import {
   bulkJobActionSchema,
   jobLinesSchema,
   repeatRepairSchema,
+  jobAmountsSchema,
   stockPartAddSchema,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
@@ -147,7 +148,8 @@ jobRoutes.patch(
 jobRoutes.get('/:id/history', authorize(...viewers), validate({ params: idParamSchema }), controller.history);
 jobRoutes.post(
   '/:id/photos',
-  authorize(...creators),
+  // Photos can be added at any status by the counter, the manager and the engineer on the job.
+  authorize(ROLES.CCO, ROLES.BRANCH_MANAGER, ROLES.ENGINEER),
   validate({ params: idParamSchema }),
   upload.array('photos', PHOTO_MAX_PER_UPLOAD),
   validate({ body: photoUploadSchema }),
@@ -216,6 +218,9 @@ jobRoutes.post(
 );
 jobRoutes.post('/:id/rwr/finalize', authorize(ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema }), controller.finalizeRwr);
 // Costing: CCO edits items; engineer / CCO use parts from stock (stock changes immediately).
+jobRoutes.put('/:id/amounts', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobAmountsSchema }), async (req, res) => {
+  res.json(await costing.setAmounts(req.params.id as string, req.body, actorOf(req)));
+});
 jobRoutes.put('/:id/lines', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: jobLinesSchema }), async (req, res) => {
   res.json(await costing.setLines(req.params.id as string, req.body, actorOf(req)));
 });

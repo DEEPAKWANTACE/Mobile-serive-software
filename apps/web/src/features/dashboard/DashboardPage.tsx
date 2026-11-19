@@ -285,7 +285,6 @@ function EngineerDashboard() {
           to="/jobs?status=ASSIGNED"
         />
         {card('Awaiting CCO', 'AWAITING_APPROVAL', Clock)}
-        <StatCard label="Delivered successfully" value={by?.DELIVERED} tone="good" icon={PackageCheck} hint="Handed back to the customer today" to="/jobs?status=DELIVERED&today=true" />
         <StatCard
           label="RR · Repeat repair"
           value={stats.data?.repeatRepairs}

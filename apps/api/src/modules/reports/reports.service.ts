@@ -13,6 +13,7 @@ import {
   type ReportDto,
   type ReportEngineerRow,
   type ReportQuery,
+  type CityStatRow,
 } from '@msm/shared';
 import { businessRange, businessToday } from '../../lib/business-date.ts';
 import { HttpError } from '../../lib/http-error.ts';
@@ -43,6 +44,40 @@ async function resolveBranches(query: ReportQuery, actor: Actor) {
     select: { id: true, code: true, name: true, city: { select: { name: true, state: { select: { name: true } } } } },
     orderBy: { name: 'asc' },
   });
+}
+
+/** "khamgaon " / "KHAMGAON" → "Khamgaon"; blank → "Not entered". */
+const cityKey = (c: string | null) => {
+  const t = (c ?? '').trim().replace(/\s+/g, ' ');
+  return t ? t.toLowerCase().replace(/\b\p{L}/gu, (m) => m.toUpperCase()) : 'Not entered';
+};
+
+/** Branch Manager / Super Admin: how many job sheets of each type came from each city. */
+export async function cityStats(query: ReportQuery, actor: Actor): Promise<CityStatRow[]> {
+  if (query.from > query.to) throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
+  const branches = await resolveBranches(query, actor);
+  const r = businessRange(query.from, query.to);
+  const jobs = await prisma.job.findMany({
+    where: { branchId: { in: branches.map((b) => b.id) }, createdAt: r },
+    select: { jobType: true, customerType: true, status: true, customer: { select: { city: true } }, invoice: { select: { total: true } } },
+  });
+  const rows = new Map<string, CityStatRow>();
+  for (const j of jobs) {
+    const city = cityKey(j.customer.city);
+    const row = rows.get(city) ?? { city, total: 0, mobile: 0, accessory: 0, walkIn: 0, retailer: 0, open: 0, delivered: 0, rwr: 0, cancelled: 0, revenue: 0 };
+    row.total += 1;
+    if (j.jobType === 'ACCESSORY') row.accessory += 1;
+    else row.mobile += 1;
+    if (j.customerType === 'RETAILER') row.retailer += 1;
+    else row.walkIn += 1;
+    if (j.status === 'DELIVERED') row.delivered += 1;
+    else if (j.status === 'CANCELLED') row.cancelled += 1;
+    else row.open += 1;
+    if (j.status === 'RWR' || j.status === 'RWR_PENDING') row.rwr += 1;
+    if (j.invoice) row.revenue = roundMoney(row.revenue + j.invoice.total.toNumber());
+    rows.set(city, row);
+  }
+  return [...rows.values()].sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
 }
 
 const inRange = (d: Date | null, r: { gte: Date; lt: Date }) => !!d && d >= r.gte && d < r.lt;

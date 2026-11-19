@@ -12,7 +12,27 @@ export function handleFormError<T extends FieldValues>(err: unknown, setError: U
         mapped = true;
       }
     }
-    if (mapped) return;
+    if (mapped) {
+      scrollToFirstError();
+      return;
+    }
   }
   toast.error(err instanceof Error ? err.message : 'Something went wrong');
+}
+
+/**
+ * After a failed submit, scroll to the first field showing an error (top of the page first) and focus it.
+ * Runs after the next paint so freshly rendered error messages are found.
+ */
+export function scrollToFirstError(root: ParentNode = document) {
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      const el = root.querySelector<HTMLElement>('[data-field-error], [aria-invalid="true"]');
+      if (!el) return;
+      const field = el.closest('label, fieldset, section, [data-field]') ?? el;
+      field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const input = (el.matches('input, select, textarea') ? el : field.querySelector<HTMLElement>('input:not([type=hidden]), select, textarea'));
+      input?.focus({ preventScroll: true });
+    }),
+  );
 }

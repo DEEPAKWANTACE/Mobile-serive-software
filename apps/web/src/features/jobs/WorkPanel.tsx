@@ -326,7 +326,14 @@ export function WorkPanel({ job }: { job: JobDto }) {
         {job.diagnosedAt && (
           <div>
             <div className="text-xs text-slate-500">Engineer's findings · {formatDateTime(job.diagnosedAt)}</div>
-            <p className="mt-0.5 text-sm whitespace-pre-line">{job.diagnosisNotes}</p>
+            {job.diagnosisFindings.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {job.diagnosisFindings.map((f) => (
+                  <span key={f.id} className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-brand-100">{f.label}</span>
+                ))}
+              </div>
+            )}
+            {job.diagnosisNotes && <p className="mt-1 text-sm whitespace-pre-line">{job.diagnosisNotes}</p>}
             <ul className="mt-3 divide-y divide-slate-100 rounded-md border border-slate-200 text-sm">
               {job.estimateLines.map((l) => (
                 <li key={l.id} className="flex justify-between gap-3 px-3 py-1.5">

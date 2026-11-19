@@ -22,7 +22,7 @@ import {
   type ModelPriceDto,
   type PhotoKind,
   type AccessoryOptionDto,
-  type BranchWarrantyData,
+  type BranchOptionsDto,
   jobDeviceSchema,
 } from '@msm/shared';
 import { StickyActions } from '@/components/ui/StickyActions';
@@ -33,13 +33,16 @@ import { Field, inputClass } from '@/components/ui/Field';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { api, ApiError } from '@/lib/api-client';
 import { useOptions } from '@/lib/crud';
-import { handleFormError } from '@/lib/form-errors';
+import { handleFormError, scrollToFirstError } from '@/lib/form-errors';
+import { Banknote, IndianRupee } from 'lucide-react';
+import { ImeiInput } from './ImeiInput';
 import { formatCurrency } from '@/lib/format';
 import { compressImage } from '@/lib/image';
 import { ImeiWarning } from './ImeiWarning';
 import { PhotoPicker } from './PhotoPicker';
 import { useAuth } from '@/features/auth/auth-context';
 import { DeadlinePicker } from './DeadlinePicker';
+import { CityInput } from '@/components/ui/CityInput';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
 const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [], PHYSICAL_CONDITION: [] });
@@ -59,7 +62,6 @@ type ExtraDeviceDraft = {
   accessories: string[];
   accessoriesOther: string;
   conditionNotes: string;
-  physicalConditionRemark: string;
   faults: [];
 };
 
@@ -78,7 +80,6 @@ const extraDevice = (): ExtraDeviceDraft => ({
   accessories: [],
   accessoriesOther: '',
   conditionNotes: '',
-  physicalConditionRemark: '',
   faults: [],
 });
 
@@ -90,7 +91,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [photos, setPhotos] = useState(emptyPhotos);
   const [idProofError, setIdProofError] = useState<string>();
   const [returning, setReturning] = useState<CustomerDto | null>(null);
-  const [takeAdvance, setTakeAdvance] = useState(false);
+  const [advance, setAdvance] = useState({ amount: '', mode: 'CASH' as (typeof PAYMENT_MODES)[number], reference: '' });
+  const [advanceError, setAdvanceError] = useState<string>();
   const [manualDevice, setManualDevice] = useState(false);
   const [manualProblem, setManualProblem] = useState(false);
   const [extraDevices, setExtraDevices] = useState<ExtraDeviceDraft[]>([]);
@@ -125,9 +127,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       accessories: [],
       accessoriesOther: '',
       conditionNotes: '',
-      physicalConditionRemark: '',
-      warrantyPeriod: '',
-      warrantyTerms: '',
       skipDiagnosis: false,
       customerAlreadyApproved: false,
       dueAt: null,
@@ -160,11 +159,12 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     queryFn: () => api.get<AccessoryOptionDto[]>(`/settings/accessories${branchQs}`),
     enabled: !isSuperAdmin || !!formBranch,
   });
-  const warrantyDefaults = useQuery({
-    queryKey: ['settings', 'branch-warranty', formBranch || 'own'],
-    queryFn: () => api.get<BranchWarrantyData>('/settings/branch-warranty'),
-    enabled: user?.role === ROLES.CCO,
+  const intakeOptions = useQuery({
+    queryKey: ['settings', 'branch-options', formBranch || 'own'],
+    queryFn: () => api.get<BranchOptionsDto>(`/settings/branch-options${branchQs}`),
+    enabled: !isSuperAdmin || !!formBranch,
   });
+  const allowManualDevice = intakeOptions.data?.allowManualDevice ?? true;
   const engineers = useQuery({
     queryKey: ['engineers', formBranch || 'own'],
     queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers${branchQs}`),
@@ -176,11 +176,13 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     enabled: !isSuperAdmin || !!formBranch,
   });
 
+  // Branch turned manual brand/model entry off: go back to the catalogue pickers.
   useEffect(() => {
-    if (!warrantyDefaults.data) return;
-    setValue('warrantyPeriod', warrantyDefaults.data.warrantyPeriod ?? '');
-    setValue('warrantyTerms', warrantyDefaults.data.warrantyTerms ?? '');
-  }, [warrantyDefaults.data, setValue]);
+    if (allowManualDevice || !manualDevice) return;
+    setManualDevice(false);
+    setValue('manualBrand', '');
+    setValue('manualModel', '');
+  }, [allowManualDevice, manualDevice, setValue]);
 
   // Returning customer: prefill details once a valid mobile number is entered.
   useEffect(() => {
@@ -247,7 +249,18 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     },
   });
 
+  const advanceAmount = advance.amount.trim() === '' ? 0 : Number(advance.amount);
+  const checkAdvance = () => {
+    const bad = !Number.isFinite(advanceAmount) || advanceAmount < 0 || Math.round(advanceAmount * 100) !== advanceAmount * 100;
+    setAdvanceError(bad ? 'Enter a valid advance amount' : undefined);
+    return !bad;
+  };
+
   const onSubmit = handleSubmit((data) => {
+    if (!checkAdvance()) {
+      scrollToFirstError();
+      return;
+    }
     if (needsIdProof.length && !photos.ID_PROOF.length) {
       setIdProofError(`Aadhaar photo is compulsory for: ${needsIdProof.map((f) => f!.name).join(', ')}`);
       document.getElementById('photos')?.scrollIntoView({ behavior: 'smooth' });
@@ -280,13 +293,15 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       accessories: data.accessories,
       accessoriesOther: data.accessoriesOther,
       conditionNotes: data.conditionNotes,
-      physicalConditionRemark: data.physicalConditionRemark,
     };
     submit.mutate({
       ...data,
       devices: parsedExtras.length ? [primaryDevice, ...parsedExtras] : undefined,
-      advance: takeAdvance ? data.advance : null,
+      advance: advanceAmount > 0 ? { amount: advanceAmount, mode: advance.mode, reference: advance.reference.trim() || null } : null,
     });
+  }, () => {
+    checkAdvance();
+    scrollToFirstError();
   });
 
   const err = (msg?: string) => (msg ? { error: msg } : {});
@@ -334,7 +349,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             <input {...register('customer.name')} className={inputClass} />
           </Field>
           <Field label="City" {...err(errors.customer?.city?.message)}>
-            <input {...register('customer.city')} className={inputClass} />
+            <CityInput {...register('customer.city')} />
           </Field>
           {customerType === 'RETAILER' && (
             <Field label="Retailer / shop name" required {...err(errors.retailer?.message)} hint="Dealer or shop that brought the devices">
@@ -363,7 +378,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               <input {...register('accessoryName')} className={inputClass} placeholder="e.g. Bluetooth speaker, smartwatch, charger" />
             </Field>
           )}
-          {jobType === 'MOBILE' && (
+          {jobType === 'MOBILE' && allowManualDevice && (
             <div className="sm:col-span-2 -mt-2 mb-1 flex items-center justify-between">
               <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer">
                 <input
@@ -442,11 +457,11 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               </Field>
             </>
           )}
-          <Field label="IMEI 1" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06#">
-            <input {...register('imei')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
+          <Field label="IMEI 1 (optional)" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei?.message)} hint="15 digits. Dial *#06# or tap scan">
+            <ImeiInput {...register('imei')} invalid={!!errors.imei} />
           </Field>
-          <Field label="IMEI 2" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei2?.message)}>
-            <input {...register('imei2')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
+          <Field label="IMEI 2 (optional)" className={jobType === 'MOBILE' ? '' : 'hidden'} {...err(errors.imei2?.message)}>
+            <ImeiInput {...register('imei2')} invalid={!!errors.imei2} />
           </Field>
           <div className={`${jobType === 'MOBILE' ? '' : 'hidden'} sm:col-span-2 -mt-2 empty:hidden`}>
             <ImeiWarning imei={watch('imei')} />
@@ -553,8 +568,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             )}
           />
         )}
-        {errors.faults && <p className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
-        {errors.manualFault && <p className="mt-1 text-xs text-red-600">{errors.manualFault.message}</p>}
+        {errors.faults && <p data-field-error className="mt-1 text-xs text-red-600">{errors.faults.message ?? errors.faults.root?.message}</p>}
+        {errors.manualFault && <p data-field-error className="mt-1 text-xs text-red-600">{errors.manualFault.message}</p>}
 
         {selectedFaults.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-slate-50 px-4 py-3">
@@ -564,9 +579,41 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
             <span className="text-lg font-semibold">{pricedTotal > 0 ? formatCurrency(pricedTotal) : 'To be decided'}</span>
           </div>
         )}
-        <Field label="Total amount (₹)" className="mt-4 max-w-xs" {...err(errors.totalAmount?.message)} hint="Optional — overrides the price-list estimate, e.g. a quote agreed with the customer">
-          <input {...register('totalAmount')} inputMode="decimal" className={inputClass} placeholder={pricedTotal > 0 ? String(pricedTotal) : 'To be decided'} />
-        </Field>
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4">
+          <Field label="Total Amount" {...err(errors.totalAmount?.message)} hint="Optional — CCO can change it later">
+            <div className="relative">
+              <IndianRupee className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+              <input {...register('totalAmount')} inputMode="decimal" aria-invalid={!!errors.totalAmount || undefined} className={`${inputClass} py-2.5! pl-9!`} placeholder={pricedTotal > 0 ? String(pricedTotal) : 'Amount'} />
+            </div>
+          </Field>
+          <Field label="Advance Amount" {...err(advanceError)} hint="Optional — received now">
+            <div className="relative">
+              <Banknote className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+              <input
+                value={advance.amount}
+                onChange={(e) => (setAdvance((a) => ({ ...a, amount: e.target.value })), setAdvanceError(undefined))}
+                inputMode="decimal"
+                aria-invalid={!!advanceError || undefined}
+                className={`${inputClass} py-2.5! pl-9!`}
+                placeholder="Advance"
+              />
+            </div>
+          </Field>
+          {advanceAmount > 0 && (
+            <>
+              <Field label="Advance paid by">
+                <select value={advance.mode} onChange={(e) => setAdvance((a) => ({ ...a, mode: e.target.value as typeof a.mode }))} className={inputClass}>
+                  {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAYMENT_MODE_LABELS[m]}</option>)}
+                </select>
+              </Field>
+              {advance.mode !== 'CASH' && (
+                <Field label="UPI / card ref." {...err(errors.advance?.reference?.message)}>
+                  <input value={advance.reference} onChange={(e) => setAdvance((a) => ({ ...a, reference: e.target.value }))} maxLength={60} className={inputClass} />
+                </Field>
+              )}
+            </>
+          )}
+        </div>
         <Field label="Assign engineer" required className="mt-4 max-w-sm" {...err(errors.engineerId?.message)} hint="The job goes to this engineer for diagnosis or repair">
           <Controller
             control={control}
@@ -599,14 +646,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           )}
           {skipDiagnosis && <p className="mt-2 text-xs text-slate-600">If unchecked, the job waits for the CCO to call and record the customer's decision.</p>}
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Repair warranty period" {...err(errors.warrantyPeriod?.message)} hint="Branch default; CCO may change it for this repair">
-            <input {...register('warrantyPeriod')} className={inputClass} placeholder="e.g. 30 days" />
-          </Field>
-          <Field label="Repair warranty terms" {...err(errors.warrantyTerms?.message)}>
-            <textarea {...register('warrantyTerms')} rows={2} className={inputClass} />
-          </Field>
-        </div>
         {needsIdProof.length > 0 && (
           <div className="mt-3 rounded-md bg-red-50 px-4 py-2.5 text-sm text-red-700">
             🔒 Aadhaar photo is compulsory for {needsIdProof.map((f) => f!.name).join(', ')}.
@@ -617,7 +656,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         </Field>
       </Card>
 
-      <Card title="Inward & advance">
+      <Card title="Inward">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Inward by" {...err(errors.inwardById?.message)} hint="Who took the device in (defaults to you)">
             <select {...register('inwardById', { setValueAs: (v: string | null) => v || null })} className={inputClass}>
@@ -625,31 +664,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
               {(inwardStaff.data ?? []).filter((u) => u.id !== user?.id).map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           </Field>
-          <div>
-            <label className="mb-1 flex items-center gap-2 text-sm font-medium text-slate-700">
-              <input type="checkbox" checked={takeAdvance} onChange={(e) => setTakeAdvance(e.target.checked)} className="size-4 accent-brand-600" />
-              Advance payment received
-            </label>
-            {takeAdvance && (
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Amount (₹)" required {...err(errors.advance?.amount?.message ?? errors.advance?.message)}>
-                  <input {...register('advance.amount')} inputMode="decimal" className={inputClass} />
-                </Field>
-                <Field label="Mode" required>
-                  <select {...register('advance.mode')} className={inputClass} defaultValue="CASH">
-                    {PAYMENT_MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {PAYMENT_MODE_LABELS[m]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="UPI / card ref." className="col-span-2" {...err(errors.advance?.reference?.message)}>
-                  <input {...register('advance.reference')} className={inputClass} />
-                </Field>
-              </div>
-            )}
-          </div>
         </div>
       </Card>
 
@@ -683,9 +697,6 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           </Field>
           <Field label="Physical condition" hint="Scratches, dents, cracks, missing screws…" {...err(errors.conditionNotes?.message)}>
             <input {...register('conditionNotes')} className={inputClass} />
-          </Field>
-          <Field label="Physical condition remark" className="sm:col-span-2" {...err(errors.physicalConditionRemark?.message)}>
-            <textarea {...register('physicalConditionRemark')} rows={2} className={inputClass} placeholder="Detailed remark about condition at inward" />
           </Field>
         </div>
       </Card>
@@ -776,11 +787,11 @@ function ExtraDeviceEditor({
             <Field label="Model" required>
               <input value={device.manualModel} onChange={(e) => set('manualModel', e.target.value)} className={inputClass} placeholder="e.g. Galaxy A52" />
             </Field>
-            <Field label="IMEI 1" hint="15 digits">
-              <input value={device.imei} onChange={(e) => set('imei', e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" className={`${inputClass} font-mono`} />
+            <Field label="IMEI 1 (optional)" hint="15 digits">
+              <ImeiInput value={device.imei} onChange={(e) => set('imei', e.target.value)} />
             </Field>
-            <Field label="IMEI 2">
-              <input value={device.imei2} onChange={(e) => set('imei2', e.target.value.replace(/\D/g, '').slice(0, 15))} inputMode="numeric" className={`${inputClass} font-mono`} />
+            <Field label="IMEI 2 (optional)">
+              <ImeiInput value={device.imei2} onChange={(e) => set('imei2', e.target.value)} />
             </Field>
           </>
         ) : (
@@ -803,11 +814,8 @@ function ExtraDeviceEditor({
         <Field label="Customer complaint" className="sm:col-span-2">
           <textarea value={device.customerComplaint} onChange={(e) => set('customerComplaint', e.target.value)} rows={2} className={inputClass} />
         </Field>
-        <Field label="Physical condition">
+        <Field label="Physical condition" className="sm:col-span-2">
           <input value={device.conditionNotes} onChange={(e) => set('conditionNotes', e.target.value)} className={inputClass} placeholder="Scratches, dents, cracks…" />
-        </Field>
-        <Field label="Condition remark">
-          <input value={device.physicalConditionRemark} onChange={(e) => set('physicalConditionRemark', e.target.value)} className={inputClass} />
         </Field>
       </div>
 

@@ -16,6 +16,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
 import { useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
+import { CityInput } from '@/components/ui/CityInput';
 
 export function CitiesPage() {
   const list = useListState({ stateId: '' });
@@ -100,7 +101,7 @@ function CityForm({ city, states, onDone }: { city?: CityDto; states: StateDto[]
         </select>
       </Field>
       <Field label="City name" required error={errors.name?.message}>
-        <input {...register('name')} className={inputClass} aria-invalid={!!errors.name} />
+        <CityInput {...register('name')} invalid={!!errors.name} />
       </Field>
       <FormActions onCancel={onDone} loading={save.isPending} />
     </form>

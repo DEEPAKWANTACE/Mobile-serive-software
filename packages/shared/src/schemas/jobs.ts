@@ -703,6 +703,22 @@ export const jobPaymentSchema = z.object({
 });
 export type JobPaymentData = z.output<typeof jobPaymentSchema>;
 
+/**
+ * CCO / Branch Manager sets the job's total and the advance at any time before delivery.
+ * Total: before diagnosis the intake estimate; after it, the repair (non-part) line is adjusted.
+ * Advance: the net amount received so far — raising it records an advance, lowering it records a refund.
+ */
+export const jobAmountsSchema = z
+  .object({
+    totalAmount: z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').nullish(),
+    advance: z.coerce.number('Enter a valid amount').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places').optional(),
+    mode: z.enum(PAYMENT_MODES).default('CASH'),
+    reference: optionalText(60),
+  })
+  .refine((v) => v.totalAmount !== undefined || v.advance !== undefined, 'Nothing to update');
+export type JobAmountsInput = z.input<typeof jobAmountsSchema>;
+export type JobAmountsData = z.output<typeof jobAmountsSchema>;
+
 /** Engineer's repair / testing notes. Testing date is set when a testing remark is first saved. */
 export const repairNotesSchema = z
   .object({ repairRemark: optionalText(1000), testingRemark: optionalText(1000) })
@@ -713,7 +729,8 @@ export const unassignSchema = z.object({ note: optionalText(300) });
 
 /** Start a job sheet again ("repeat repair"): a new linked job that goes straight to the engineer's diagnosis. */
 export const repeatRepairSchema = z.object({
-  engineerId: z.uuid('Assign an engineer'),
+  /** Omitted → the same engineer who worked on the earlier job. */
+  engineerId: z.uuid('Assign an engineer').nullish(),
   note: optionalText(500),
 });
 export type RepeatRepairData = z.output<typeof repeatRepairSchema>;

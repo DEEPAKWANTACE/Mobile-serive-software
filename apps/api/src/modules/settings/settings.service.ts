@@ -3,7 +3,10 @@ import {
   DEFAULT_JOB_LIST_COLUMNS,
   JOB_LIST_COLUMNS,
   ROLE_VALUES,
+  ROLES,
   type AccessoryOptionDto,
+  type BranchOptionsData,
+  type BranchOptionsDto,
   type BranchWarrantyData,
   type DiagnosisFindingDto,
   type DiagnosisFindingSubcategoryDto,
@@ -92,6 +95,40 @@ export async function updateBranchWarranty(data: BranchWarrantyData, actor: Acto
     data: { defaultWarrantyPeriod: data.warrantyPeriod, defaultWarrantyTerms: data.warrantyTerms },
   });
   return branchWarranty(actor);
+}
+
+const branchOptionsSelect = {
+  id: true,
+  allowManualDevice: true,
+  allowImeiNa: true,
+  requireImeiAtDelivery: true,
+  defaultWarrantyPeriod: true,
+  defaultWarrantyTerms: true,
+} as const;
+
+export async function branchOptions(actor: Actor, requested?: string | null): Promise<BranchOptionsDto> {
+  const branchId = actor.branchId ?? requested;
+  if (!branchId) throw HttpError.badRequest('Select a branch');
+  const b = await prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: branchOptionsSelect });
+  return {
+    branchId: b.id,
+    allowManualDevice: b.allowManualDevice,
+    allowImeiNa: b.allowImeiNa,
+    requireImeiAtDelivery: b.requireImeiAtDelivery,
+    warrantyPeriod: b.defaultWarrantyPeriod,
+    warrantyTerms: b.defaultWarrantyTerms,
+  };
+}
+
+export async function updateBranchOptions(data: BranchOptionsData, actor: Actor) {
+  const branchId = actor.role === ROLES.SUPER_ADMIN ? data.branchId : actor.branchId;
+  if (!branchId) throw HttpError.badRequest('Select a branch');
+  const { branchId: _b, ...changes } = data;
+  await prisma.$transaction(async (tx) => {
+    await tx.branch.update({ where: { id: branchId }, data: changes });
+    await recordAudit({ actorId: actor.sub, action: 'branch.options_updated', entityType: 'branch', entityId: branchId, branchId, metadata: changes, ip: actor.ip }, tx);
+  });
+  return branchOptions(actor, branchId);
 }
 
 const accessorySelect = { id: true, name: true, sortOrder: true, isActive: true, branchId: true } as const;

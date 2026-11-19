@@ -3,6 +3,8 @@ import { Link } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/lib/api-client';
 import { brandCreateSchema, ROLES, type BrandCreateData, type BrandCreateInput, type BrandDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +29,21 @@ export function BrandsPage() {
   const scope = user?.role === ROLES.SUPER_ADMIN ? scopeParams(scopeBranch) : { scope: 'branch' };
   const { data, isLoading } = useList<BrandDto>('brands', { ...list.params, ...scope });
   const [editing, setEditing] = useState<BrandDto | 'new' | null>(null);
+  const isSuper = user?.role === ROLES.SUPER_ADMIN;
+  const queryClient = useQueryClient();
+  // Super Admin: branch-only brands (e.g. an import done in one branch) become defaults for every branch.
+  const makeGlobal = useMutation({
+    mutationFn: (target: { brandId?: string; branchId?: string }) =>
+      target.brandId
+        ? api.post<{ brands: number; models: number }>(`/brands/${target.brandId}/make-global`, {})
+        : api.post<{ brands: number; models: number }>('/brands/make-global', { branchId: target.branchId }),
+    onSuccess: (r) => {
+      toast.success(`${r.brands} brand${r.brands === 1 ? '' : 's'} and ${r.models} models are now global defaults for all branches`);
+      void queryClient.invalidateQueries({ queryKey: ['brands'] });
+      void queryClient.invalidateQueries({ queryKey: ['models'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const columns: Column<BrandDto>[] = [
     { header: 'Brand', cell: (b) => <span className="font-medium">{b.name}</span> },
@@ -47,6 +64,15 @@ export function BrandsPage() {
           <Button variant="link" onClick={() => setEditing(b)}>
             Edit
           </Button>
+          {isSuper && !b.isGlobal && (
+            <Button
+              variant="link"
+              disabled={makeGlobal.isPending}
+              onClick={() => window.confirm(`Make ${b.name} and its ${b.modelCount} models available to all branches?`) && makeGlobal.mutate({ brandId: b.id })}
+            >
+              Make global
+            </Button>
+          )}
           <StatusToggle resource="brands" id={b.id} name={b.name} isActive={b.isActive} />
         </div>
       ),
@@ -55,7 +81,24 @@ export function BrandsPage() {
 
   return (
     <div>
-      <PageHeader title="Brands" description="Mobile phone brands" actions={<Button onClick={() => setEditing('new')}>Add brand</Button>} />
+      <PageHeader
+        title="Brands"
+        description="Mobile phone brands"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {isSuper && scopeBranch && (
+              <Button
+                variant="secondary"
+                loading={makeGlobal.isPending}
+                onClick={() => window.confirm('Move every brand and model of this branch into the global defaults, so all branches get them?') && makeGlobal.mutate({ branchId: scopeBranch })}
+              >
+                Move all to global defaults
+              </Button>
+            )}
+            <Button onClick={() => setEditing('new')}>Add brand</Button>
+          </div>
+        }
+      />
       <FilterBar>
         <CatalogScopePicker value={scopeBranch} onChange={setScopeBranch} />
         <SearchInput onSearch={list.setSearch} placeholder="Search brand" />

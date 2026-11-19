@@ -1,6 +1,7 @@
 import {
   ROLES,
   roundMoney,
+  type JobAmountsData,
   type JobLinesData,
   type JobStatus,
   type PartStockOptionDto,
@@ -171,6 +172,67 @@ export async function setLines(id: string, data: JobLinesData, actor: Actor) {
   return { total };
 }
 
+/** CCO / manager changes the total and / or the advance received, at any stage before delivery. */
+export async function setAmounts(id: string, data: JobAmountsData, actor: Actor) {
+  const job = await loadForCosting(id, actor, { engineerAllowed: false });
+  if (actor.branchId && actor.branchId !== job.branchId) throw HttpError.forbidden('Only the branch that took in the phone can change its amounts');
+  return prisma.$transaction(async (tx) => {
+    const metadata: Record<string, unknown> = {};
+    if (data.totalAmount !== undefined) {
+      const lines = await currentLines(tx, id);
+      if (!lines.length) {
+        // Not diagnosed / costed yet: this is the intake estimate.
+        const cur = await tx.job.findUniqueOrThrow({ where: { id }, select: { estimatedAmount: true, approvedAt: true } });
+        await tx.job.update({
+          where: { id },
+          data: { estimatedAmount: data.totalAmount, ...(cur.approvedAt && data.totalAmount !== null && { approvedAmount: data.totalAmount }) },
+        });
+        metadata.total = { from: cur.estimatedAmount?.toNumber() ?? null, to: data.totalAmount };
+      } else {
+        if (data.totalAmount === null) throw HttpError.badRequest('Invalid request', { totalAmount: ['Enter the total amount'] });
+        const before = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
+        const delta = roundMoney(data.totalAmount - before);
+        if (delta !== 0) {
+          // Parts keep their price; the difference goes on the (last) repair / service line.
+          const idx = lines.map((l) => !l.partId).lastIndexOf(true);
+          if (idx >= 0) {
+            const next = roundMoney(lines[idx]!.amount + delta);
+            if (next < 0) throw HttpError.badRequest('Invalid request', { totalAmount: ['Total cannot be less than the parts on this job'] });
+            lines[idx] = { ...lines[idx]!, amount: next };
+          } else {
+            if (delta < 0) throw HttpError.badRequest('Invalid request', { totalAmount: ['Total cannot be less than the parts on this job'] });
+            lines.push({ id: '', description: 'Repair charges', partId: null, warranty: null, amount: delta });
+          }
+          const total = await writeLines(tx, job, lines.map(({ id: _id, ...l }) => l), actor);
+          await setJobTotal(tx, id, total);
+        }
+        metadata.total = { from: before, to: data.totalAmount };
+      }
+    }
+    if (data.advance !== undefined) {
+      const payments = await tx.payment.findMany({ where: { jobId: id, invoiceId: null }, select: { kind: true, amount: true } });
+      const paid = roundMoney(payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
+      const delta = roundMoney(data.advance - paid);
+      if (delta !== 0) {
+        await tx.payment.create({
+          data: {
+            jobId: id,
+            branchId: job.branchId,
+            kind: delta > 0 ? 'ADVANCE' : 'REFUND',
+            mode: data.mode,
+            amount: Math.abs(delta),
+            reference: data.reference ?? null,
+            receivedById: actor.sub,
+          },
+        });
+      }
+      metadata.advance = { from: paid, to: data.advance };
+    }
+    await recordAudit({ actorId: actor.sub, action: 'job.amounts_updated', entityType: 'job', entityId: id, branchId: job.branchId, metadata: metadata as Prisma.InputJsonValue, ip: actor.ip }, tx);
+    return { ok: true };
+  });
+}
+
 /** Use a part from branch stock on the job (engineer or counter). It is billed at the part's selling price. */
 export async function addStockPart(id: string, { partId, warranty }: StockPartAddData, actor: Actor) {
   const job = await loadForCosting(id, actor, { engineerAllowed: true });
@@ -220,6 +282,18 @@ export async function partsInStock(query: { search?: string; branchId?: string }
 
 const faultCopy = { select: { faultId: true, priceLabel: true, price: true } } as const;
 
+/** First of the earlier engineers who is still an active engineer of this branch. */
+async function previousEngineer(branchId: string, ids: (string | null)[]) {
+  const candidates = [...new Set(ids.filter((v): v is string => !!v))];
+  const active = await prisma.user.findMany({
+    where: { id: { in: candidates }, role: ROLES.ENGINEER, isActive: true, branchId },
+    select: { id: true, name: true },
+  });
+  const engineer = candidates.map((cid) => active.find((u) => u.id === cid)).find(Boolean);
+  if (!engineer) throw HttpError.badRequest('Invalid request', { engineerId: ['The earlier engineer is no longer active here — select an engineer'] });
+  return engineer;
+}
+
 /** CCO starts a job sheet again: a new linked job for the same customer and device, straight to diagnosis. */
 export async function repeatRepair(id: string, data: RepeatRepairData, actor: Actor) {
   if (actor.role !== ROLES.CCO) throw HttpError.forbidden('Only a CCO can start a repeat repair');
@@ -232,6 +306,8 @@ export async function repeatRepair(id: string, data: RepeatRepairData, actor: Ac
       brandId: true, deviceModelId: true, manualBrand: true, manualModel: true, manualFault: true, imei: true, imei2: true,
       serialNumber: true, color: true, customerComplaint: true, accessories: true, accessoriesOther: true, conditionNotes: true,
       physicalConditionRemark: true, phoneDamaged: true, warranty: true, devicePasswordEnc: true, warrantyPeriod: true, warrantyTerms: true,
+      assignedEngineerId: true,
+      assignments: { select: { engineerId: true }, orderBy: { assignedAt: 'desc' } },
       faults: faultCopy,
       devices: {
         select: {
@@ -244,10 +320,13 @@ export async function repeatRepair(id: string, data: RepeatRepairData, actor: Ac
     },
   });
   const branch = await prisma.branch.findUniqueOrThrow({ where: { id: old.branchId }, select: { id: true, code: true } });
-  const engineer = await findBranchEngineer(branch.id, data.engineerId);
+  // Same engineer who worked on the earlier job, unless the CCO picked someone else.
+  const engineer = data.engineerId
+    ? await findBranchEngineer(branch.id, data.engineerId)
+    : await previousEngineer(branch.id, [old.assignedEngineerId, ...old.assignments.map((a) => a.engineerId)]);
   const oldNumber = publicJobNumber(old.jobNumber);
   const complaint = [`Repeat repair of ${oldNumber}`, data.note, old.customerComplaint].filter(Boolean).join(' — ').slice(0, 1000);
-  const { faults, devices, jobNumber: _n, ...fields } = old;
+  const { faults, devices, jobNumber: _n, assignedEngineerId: _a, assignments: _as, ...fields } = old;
 
   return prisma.$transaction(async (tx) => {
     const now = new Date();

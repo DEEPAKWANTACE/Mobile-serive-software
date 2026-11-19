@@ -79,6 +79,12 @@ model Branch {
   updatedAt             DateTime        @updatedAt @map("updated_at")
   defaultWarrantyPeriod String?         @map("default_warranty_period")
   defaultWarrantyTerms  String?         @map("default_warranty_terms")
+  /// Job sheet may use a typed brand/model instead of the catalogue.
+  allowManualDevice     Boolean         @default(true) @map("allow_manual_device")
+  /// Counter may record the IMEI as "N/A" at delivery.
+  allowImeiNa           Boolean         @default(true) @map("allow_imei_na")
+  /// IMEI must be entered before a repaired phone is delivered (not for RWR / cancellation).
+  requireImeiAtDelivery Boolean         @default(true) @map("require_imei_at_delivery")
 
   city             City              @relation(fields: [cityId], references: [id])
   users            User[]

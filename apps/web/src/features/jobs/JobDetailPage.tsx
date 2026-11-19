@@ -39,7 +39,8 @@ import { Field, inputClass } from '@/components/ui/Field';
 import { FormActions } from '@/components/ui/FormActions';
 import { Modal } from '@/components/ui/Modal';
 import { useAuth } from '@/features/auth/auth-context';
-import { api } from '@/lib/api-client';
+import { api, ApiError } from '@/lib/api-client';
+import { Banknote, IndianRupee } from 'lucide-react';
 import { handleFormError } from '@/lib/form-errors';
 import { formatCurrency, formatDateTime, formatJobNumber } from '@/lib/format';
 import { AssignEngineerDialog } from './AssignEngineerDialog';
@@ -54,6 +55,7 @@ import { JobCallsCard } from '@/features/calling/JobCallsCard';
 import { WorkPanel } from './WorkPanel';
 import { EditJobForm } from './EditJobForm';
 import { ImeiWarning } from './ImeiWarning';
+import { ImeiInput } from './ImeiInput';
 import { L4Panel, MovementsCard } from '@/features/l4/L4Actions';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 import { DeadlinePicker } from './DeadlinePicker';
@@ -359,7 +361,9 @@ const ACTION_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 
 function RepeatRepairForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [engineerId, setEngineerId] = useState(job.assignedEngineer?.id ?? job.assignments.at(-1)?.engineer.id ?? '');
+  const previousEngineer = job.assignedEngineer ?? job.assignments.at(-1)?.engineer ?? null;
+  const [engineerId, setEngineerId] = useState(previousEngineer?.id ?? '');
+  const [changing, setChanging] = useState(!previousEngineer);
   const [note, setNote] = useState('');
   const [error, setError] = useState<string>();
   const engineers = useQuery({
@@ -367,7 +371,7 @@ function RepeatRepairForm({ job, onDone }: { job: JobDto; onDone: () => void }) 
     queryFn: () => api.get<EngineerWorkloadDto[]>(`/jobs/engineers?branchId=${job.branch.id}`),
   });
   const save = useMutation({
-    mutationFn: () => api.post<{ id: string; jobNumber: string }>(`/jobs/${job.id}/repeat`, { engineerId, note: note.trim() || null }),
+    mutationFn: () => api.post<{ id: string; jobNumber: string }>(`/jobs/${job.id}/repeat`, { engineerId: changing ? engineerId || null : null, note: note.trim() || null }),
     onSuccess: (created) => {
       toast.success(`Repeat job sheet ${formatJobNumber(created.jobNumber)} created — sent for diagnosis`, {
         duration: 10000,
@@ -380,19 +384,26 @@ function RepeatRepairForm({ job, onDone }: { job: JobDto; onDone: () => void }) 
     onError: (err) => setError(err.message),
   });
   return (
-    <form onSubmit={(e) => (e.preventDefault(), engineerId ? save.mutate() : setError('Select an engineer'))} className="space-y-4">
+    <form onSubmit={(e) => (e.preventDefault(), engineerId || previousEngineer ? save.mutate() : setError('Select an engineer'))} className="space-y-4">
       <p className="text-sm text-slate-600">
         A new job sheet is created for the same customer and device, linked to {formatJobNumber(job.jobNumber)}. It goes straight to the engineer for diagnosis.
       </p>
-      <Field label="Engineer" required>
-        <Combobox
-          value={engineerId}
-          onChange={setEngineerId}
-          placeholder="Select engineer"
-          emptyText="No active engineers in this branch"
-          options={(engineers.data ?? []).map((e) => ({ value: e.id, label: e.name, hint: `${e.openJobs} open` }))}
-        />
-      </Field>
+      {!changing && previousEngineer ? (
+        <div className="flex items-center justify-between gap-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900 ring-1 ring-emerald-200">
+          <span>Assigned automatically to the same engineer: <strong>{previousEngineer.name}</strong></span>
+          <button type="button" onClick={() => setChanging(true)} className="text-xs font-medium text-brand-700 hover:underline">Change</button>
+        </div>
+      ) : (
+        <Field label="Engineer" required={!previousEngineer} hint={previousEngineer ? `Leave as is to keep ${previousEngineer.name}` : undefined}>
+          <Combobox
+            value={engineerId}
+            onChange={setEngineerId}
+            placeholder="Select engineer"
+            emptyText="No active engineers in this branch"
+            options={(engineers.data ?? []).map((e) => ({ value: e.id, label: e.name, hint: `${e.openJobs} open` }))}
+          />
+        </Field>
+      )}
       <Field label="What is the problem now?" hint="Optional">
         <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Same display issue came back after 5 days" />
       </Field>
@@ -519,12 +530,22 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
 function Estimate({ job, readOnly = false }: { job: JobDto; readOnly?: boolean }) {
   const { user } = useAuth();
   const [receiving, setReceiving] = useState(false);
+  const [editingAmounts, setEditingAmounts] = useState(false);
   const canReceive =
     !readOnly && user?.role !== ROLES.ENGINEER && !CLOSED_STATUSES.includes(job.status) && job.balance > 0 && (!user?.branch || user.branch.id === job.branch.id);
+  // CCO / manager may change the total and the advance at any stage until the phone is delivered.
+  const canEditAmounts =
+    !readOnly && (user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER) && !CLOSED_STATUSES.includes(job.status) && job.status !== 'RWR' &&
+    !job.invoice && (!user?.branch || user.branch.id === job.branch.id);
   return (
     <Card
       title="Amount & payments"
-      actions={canReceive && <Button size="sm" onClick={() => setReceiving(true)}>Receive payment</Button>}
+      actions={(canReceive || canEditAmounts) && (
+        <div className="flex gap-2">
+          {canEditAmounts && <Button size="sm" variant="secondary" onClick={() => setEditingAmounts(true)}>Edit amounts</Button>}
+          {canReceive && <Button size="sm" onClick={() => setReceiving(true)}>Receive payment</Button>}
+        </div>
+      )}
     >
       <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Row label={job.quotedAmount !== null ? 'Total (approved)' : 'Total (estimate)'}>
@@ -557,7 +578,77 @@ function Estimate({ job, readOnly = false }: { job: JobDto; readOnly?: boolean }
       <Modal open={receiving} onClose={() => setReceiving(false)} title={`Receive payment — ${job.jobNumber}`} size="sm">
         {receiving && <PaymentForm job={job} onDone={() => setReceiving(false)} />}
       </Modal>
+      <Modal open={editingAmounts} onClose={() => setEditingAmounts(false)} title="Total & advance amount" size="sm">
+        {editingAmounts && <AmountsForm job={job} onDone={() => setEditingAmounts(false)} />}
+      </Modal>
     </Card>
+  );
+}
+
+function AmountsForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const hasTotal = job.totalAmount > 0 || job.estimatedAmount !== null || job.quotedAmount !== null;
+  const [total, setTotal] = useState(hasTotal ? String(job.totalAmount) : '');
+  const [advance, setAdvance] = useState(String(job.paidAmount));
+  const [mode, setMode] = useState<(typeof PAYMENT_MODES)[number]>('CASH');
+  const [reference, setReference] = useState('');
+  const [errors, setErrors] = useState<Record<string, string | undefined>>({});
+  const advanceDelta = (Number(advance) || 0) - job.paidAmount;
+  const save = useMutation({
+    mutationFn: () => api.put(`/jobs/${job.id}/amounts`, {
+      totalAmount: total.trim() === '' ? null : Number(total),
+      advance: Number(advance) || 0,
+      mode,
+      reference: reference.trim() || null,
+    }),
+    onSuccess: () => {
+      toast.success('Amounts updated');
+      void queryClient.invalidateQueries({ queryKey: ['jobs', job.id] });
+      onDone();
+    },
+    onError: (err) => {
+      const d = err instanceof ApiError ? (err.details as Record<string, string[]> | undefined) : undefined;
+      if (d) setErrors(Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v?.[0]])));
+      else toast.error(err.message);
+    },
+  });
+  return (
+    <form onSubmit={(e) => (e.preventDefault(), setErrors({}), save.mutate())} className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Total Amount" error={errors.totalAmount} hint={job.diagnosedAt ? 'Parts stay; repair charge is adjusted' : 'Estimate before diagnosis'}>
+          <div className="relative">
+            <IndianRupee className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input value={total} onChange={(e) => setTotal(e.target.value)} inputMode="decimal" autoFocus className={`${inputClass} py-2.5! pl-9!`} placeholder="Amount" />
+          </div>
+        </Field>
+        <Field label="Advance Amount" error={errors.advance} hint="Total received so far">
+          <div className="relative">
+            <Banknote className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input value={advance} onChange={(e) => setAdvance(e.target.value)} inputMode="decimal" className={`${inputClass} py-2.5! pl-9!`} placeholder="Advance" />
+          </div>
+        </Field>
+      </div>
+      {advanceDelta !== 0 && Number.isFinite(advanceDelta) && (
+        <div className="space-y-3 rounded-md bg-slate-50 p-3 text-sm">
+          <p className={advanceDelta > 0 ? 'text-emerald-800' : 'text-orange-800'}>
+            {advanceDelta > 0 ? `${formatCurrency(advanceDelta)} more advance will be recorded as received.` : `${formatCurrency(-advanceDelta)} will be recorded as refunded to the customer.`}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label={advanceDelta > 0 ? 'Received by' : 'Refunded by'}>
+              <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} className={inputClass}>
+                {PAYMENT_MODES.map((m) => <option key={m} value={m}>{PAYMENT_MODE_LABELS[m]}</option>)}
+              </select>
+            </Field>
+            {mode !== 'CASH' && (
+              <Field label="Reference">
+                <input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={60} className={inputClass} />
+              </Field>
+            )}
+          </div>
+        </div>
+      )}
+      <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Save amounts" />
+    </form>
   );
 }
 
@@ -720,11 +811,11 @@ function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
     <form onSubmit={handleSubmit((d) => save.mutate(d))} className="space-y-4">
       {job.jobType === 'MOBILE' ? <>
         <Field label="IMEI 1" error={errors.imei?.message} hint="15 digits — dial *#06#">
-          <input {...register('imei')} inputMode="numeric" maxLength={15} autoFocus className={`${inputClass} font-mono`} />
+          <ImeiInput {...register('imei')} autoFocus />
         </Field>
         <ImeiWarning imei={watch('imei')} excludeJobId={job.id} />
         <Field label="IMEI 2" error={errors.imei2?.message} hint="15 digits — dial *#06#">
-          <input {...register('imei2')} inputMode="numeric" maxLength={15} className={`${inputClass} font-mono`} />
+          <ImeiInput {...register('imei2')} />
         </Field>
         <ImeiWarning imei={watch('imei2')} excludeJobId={job.id} />
       </> : (
@@ -739,12 +830,14 @@ function DeviceForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
 
 function Photos({ job }: { job: JobDto }) {
   const { user } = useAuth();
-  const canUpload = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
+  const canManage = user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER;
+  // Photos can be added at every status; engineers add phone / condition photos.
+  const canUpload = canManage || user?.role === ROLES.ENGINEER;
   // Engineers only get device photos from the API, so don't show empty customer/ID sections.
   const kinds = user?.role === ROLES.ENGINEER ? ENGINEER_VISIBLE_PHOTO_KINDS : PHOTO_KINDS;
   const [viewing, setViewing] = useState<JobPhotoDto | null>(null);
   const [removing, setRemoving] = useState<JobPhotoDto | null>(null);
-  const canRemove = canUpload && job.status !== 'DELIVERED' && (!user?.branch || user.branch.id === job.branch.id);
+  const canRemove = canManage && job.status !== 'DELIVERED' && (!user?.branch || user.branch.id === job.branch.id);
   const [adding, setAdding] = useState<PhotoKind | null>(null);
   const src = (p: JobPhotoDto) => `/jobs/${job.id}/photos/${p.id}`;
 
@@ -853,7 +946,7 @@ function AddPhotos({ jobId, kind, onDone }: { jobId: string; kind: PhotoKind; on
 
   return (
     <div className="space-y-4">
-      <PhotoPicker label="Photos" files={files} onChange={setFiles} multiple />
+      <PhotoPicker label={PHOTO_KIND_LABELS[kind]} files={files} onChange={setFiles} multiple />
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onDone}>
           Cancel

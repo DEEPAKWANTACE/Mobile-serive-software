@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { branchWarrantySchema, shopSettingsSchema, type AccessoryOptionDto, type BranchDto, type BranchWarrantyData, type ShopSettingsData, type ShopSettingsDto, type ShopSettingsInput } from '@msm/shared';
+import { branchWarrantySchema, shopSettingsSchema, type AccessoryOptionDto, type BranchDto, type BranchOptionsDto, type BranchWarrantyData, type ShopSettingsData, type ShopSettingsDto, type ShopSettingsInput } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Field, inputClass } from '@/components/ui/Field';
@@ -101,6 +101,7 @@ function SettingsForm({ settings }: { settings: ShopSettingsDto }) {
           </div>
         </form>
       </Card>
+      <BranchOptionsCard />
       <AccessoryOptionsCard />
     </div>
   );
@@ -113,6 +114,7 @@ function BranchJobDefaults() {
   return <div className="mx-auto max-w-3xl space-y-5">
     <PageHeader title="Job Defaults" description="Defaults used by CCOs for this branch" />
     <WarrantyDefaultsForm initial={defaults.data} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['settings', 'branch-warranty'] })} />
+    <BranchOptionsCard />
     <AccessoryOptionsCard />
   </div>;
 }
@@ -130,6 +132,72 @@ function WarrantyDefaultsForm({ initial, onSaved }: { initial: BranchWarrantyDat
       <Field label="Default warranty terms" error={errors.warrantyTerms?.message}><textarea {...register('warrantyTerms')} rows={3} className={inputClass} /></Field>
       <div className="flex justify-end"><Button type="submit" loading={save.isPending}>Save defaults</Button></div>
     </form>
+  </Card>;
+}
+
+const BRANCH_SWITCHES: { key: 'allowManualDevice' | 'allowImeiNa' | 'requireImeiAtDelivery'; label: string; hint: string }[] = [
+  { key: 'allowManualDevice', label: 'Allow manual brand / model entry', hint: 'Off: the job sheet must use the brand and model list.' },
+  { key: 'allowImeiNa', label: 'Allow "IMEI N/A" at delivery', hint: 'Off: the counter must enter the IMEI (RWR returns excepted).' },
+  { key: 'requireImeiAtDelivery', label: 'IMEI compulsory at delivery', hint: 'For repaired phones. Never asked for RWR returns or cancelled jobs.' },
+];
+
+/** Per-branch switches for the job sheet and delivery. Branch Manager: own branch; Super Admin: any branch. */
+function BranchOptionsCard() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isSuper = user?.role === 'SUPER_ADMIN';
+  const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: isSuper });
+  const [branchId, setBranchId] = useState('');
+  const qs = isSuper ? `?branchId=${branchId}` : '';
+  const options = useQuery({
+    queryKey: ['settings', 'branch-options', isSuper ? branchId : 'own'],
+    queryFn: () => api.get<BranchOptionsDto>(`/settings/branch-options${qs}`),
+    enabled: !isSuper || !!branchId,
+  });
+  const save = useMutation({
+    mutationFn: (patch: Partial<BranchOptionsDto>) => api.put('/settings/branch-options', { ...patch, branchId: isSuper ? branchId : null }),
+    onSuccess: () => {
+      toast.success('Branch option saved');
+      void queryClient.invalidateQueries({ queryKey: ['settings', 'branch-options'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return <Card title="Job sheet & delivery options" subtitle={isSuper ? 'Per branch' : 'For your branch'}>
+    {isSuper && (
+      <Field label="Branch">
+        <select value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputClass}>
+          <option value="">Select branch</option>
+          {branches.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+        </select>
+      </Field>
+    )}
+    {options.data && (
+      <ul className="mt-2 divide-y divide-slate-100">
+        {BRANCH_SWITCHES.map((sw) => {
+          const on = options.data[sw.key];
+          return (
+            <li key={sw.key} className="flex items-center justify-between gap-4 py-3">
+              <div>
+                <div className="text-sm font-medium text-slate-800">{sw.label}</div>
+                <div className="text-xs text-slate-500">{sw.hint}</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={sw.label}
+                disabled={save.isPending}
+                onClick={() => save.mutate({ [sw.key]: !on })}
+                className={`relative h-6 w-11 shrink-0 rounded-full transition ${on ? 'bg-brand-600' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${on ? 'left-5.5' : 'left-0.5'}`} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    )}
+    {isSuper && !branchId && <p className="mt-2 text-sm text-slate-500">Select a branch to change its options.</p>}
   </Card>;
 }
 

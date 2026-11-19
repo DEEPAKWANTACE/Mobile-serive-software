@@ -22,6 +22,7 @@ import { api } from '@/lib/api-client';
 import { useOptions } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { FaultPicker } from './NewJobPage';
+import { CityInput } from '@/components/ui/CityInput';
 
 /** Correct a saved job sheet. Device & faults only before diagnosis; every change is logged in the history. */
 export function EditJobForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
@@ -81,8 +82,6 @@ function Inner({
       inwardById: job.inwardBy?.id ?? null,
       phoneDamaged: job.phoneDamaged,
       warranty: job.warranty ?? 'OUT_OF_WARRANTY',
-      warrantyPeriod: job.warrantyPeriod ?? '',
-      warrantyTerms: job.warrantyTerms ?? '',
       totalAmount: (job.estimatedAmount ?? '') as unknown as number,
       dueAt: job.dueAt
         ? new Date(new Date(job.dueAt).getTime() - new Date(job.dueAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
@@ -150,7 +149,7 @@ function Inner({
           <input {...register('customer.email')} className={inputClass} />
         </Field>
         <Field label="City" {...err(errors.customer?.city?.message)}>
-          <input {...register('customer.city')} className={inputClass} />
+          <CityInput {...register('customer.city')} />
         </Field>
         <Field label="Address">
           <input {...register('customer.address')} className={inputClass} />
@@ -245,12 +244,6 @@ function Inner({
             <option value="OUT_OF_WARRANTY">Out of warranty</option>
             <option value="IN_WARRANTY">In warranty</option>
           </select>
-        </Field>
-        <Field label="Repair warranty period" {...err(errors.warrantyPeriod?.message)}>
-          <input {...register('warrantyPeriod')} className={inputClass} placeholder="e.g. 30 days" />
-        </Field>
-        <Field label="Repair warranty terms" {...err(errors.warrantyTerms?.message)} className="sm:col-span-2">
-          <textarea {...register('warrantyTerms')} rows={2} className={inputClass} />
         </Field>
         <label className="flex items-center gap-2 pt-6 text-sm">
           <input type="checkbox" {...register('phoneDamaged')} className="size-4 accent-brand-600" />

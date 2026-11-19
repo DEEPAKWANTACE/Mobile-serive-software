@@ -22,7 +22,7 @@ export function Field({ label, error, required, hint, className = '', children }
       </span>
       {children}
       {error ? (
-        <span className="mt-1 block text-xs text-red-600">{error}</span>
+        <span data-field-error className="mt-1 block text-xs text-red-600">{error}</span>
       ) : (
         hint && <span className="mt-1 block text-xs text-slate-500">{hint}</span>
       )}

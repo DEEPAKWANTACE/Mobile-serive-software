@@ -167,7 +167,11 @@ The script creates four `TSTFIX-` jobs for every job status and five `[FIXTURE]`
 | GET  | /api/v1/jobs/stats | job viewers — counts by status in caller's scope |
 | GET  | /api/v1/jobs/engineers?branchId= | Super Admin (branchId required), Branch Manager, CCO — active engineers + open workload |
 | POST | /api/v1/jobs/:id/assign | Super Admin, Branch Manager, CCO — `{ engineerId }`; allowed while RECEIVED/ASSIGNED |
-| POST | /api/v1/jobs/:id/photos | Branch Manager, CCO — multipart `kind` + `photos[]` (JPEG/PNG/WebP, ≤ 8 MB, ≤ 10 per request) |
+| POST | /api/v1/jobs/:id/photos | Branch Manager, CCO, Engineer (phone / condition photos) — any status; multipart `kind` + `photos[]` (JPEG/PNG/WebP, ≤ 8 MB, ≤ 10 per request) |
+| PUT  | /api/v1/jobs/:id/amounts | Branch Manager, CCO — `{ totalAmount?, advance?, mode, reference? }` before delivery; advance changes are recorded as advance / refund payments |
+| GET/PUT | /api/v1/settings/branch-options | read: branch users · change: Branch Manager (own) / Super Admin (`branchId`) — manual brand/model, IMEI N/A, IMEI required at delivery |
+| GET  | /api/v1/reports/city-stats?from=&to=&branchId= | Super Admin, Branch Manager — job sheets per customer city by type |
+| POST | /api/v1/brands/:id/make-global · /brands/make-global `{ branchId }` | Super Admin — move branch brands + models into the global defaults |
 | GET  | /api/v1/jobs/:id/photos/:photoId | same as job view |
 | PUT  | /api/v1/models/:id/prices | Super Admin — `{ prices: [{ faultId, options: [{ label, price }] }] }`; empty `options` removes, unlisted faults untouched; audited old → new |
 
