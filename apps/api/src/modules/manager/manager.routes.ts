@@ -3,10 +3,8 @@ import { z } from 'zod';
 import { HttpError } from '../../lib/http-error.ts';
 import { managerPermissions } from '../../lib/permissions.ts';
 import { prisma } from '../../lib/prisma.ts';
-import { assertCan } from '../../lib/permissions.ts';
-import { ingest } from '../calling/call-verify.service.ts';
 import * as returnNotes from '../jobs/return-note.service.ts';
-import { callRecordsSchema, dayClosingQuerySchema, dayClosingSchema, permissionUpdateSchema, returnNoteDecisionSchema, returnNoteListQuerySchema, type ReturnNoteListQuery, ROLES, idParamSchema, MANAGER_ROLES, managerRangeQuerySchema, managerRemarkSchema, pendingJobsQuerySchema, poCreateSchema, poListQuerySchema, type ManagerRangeQuery, type PendingJobsQuery } from '@msm/shared';
+import { dayClosingQuerySchema, dayClosingSchema, permissionUpdateSchema, returnNoteDecisionSchema, returnNoteListQuerySchema, type ReturnNoteListQuery, ROLES, idParamSchema, MANAGER_ROLES, managerRangeQuerySchema, managerRemarkSchema, pendingJobsQuerySchema, poCreateSchema, poListQuerySchema, type ManagerRangeQuery, type PendingJobsQuery } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -78,13 +76,6 @@ managerRoutes.get('/day-closing', validate({ query: dayClosingQuerySchema }), as
 managerRoutes.post('/day-closing', validate({ body: dayClosingSchema }), async (req, res) => {
   await ops.closeDay(req.body, actorOf(req));
   res.status(204).end();
-});
-
-// Call-log import for verification
-managerRoutes.post('/call-records', validate({ body: callRecordsSchema }), async (req, res) => {
-  const actor = actorOf(req);
-  await assertCan(actor, 'import_calls');
-  res.json(await ingest(req.body, 'IMPORT', actor.branchId ?? req.body.branchId ?? null));
 });
 
 // Permission switches: Branch Manager reads what applies to them, Super Admin edits.

@@ -134,7 +134,6 @@ export async function callingReport(query: ManagerRangeQuery, actor: Actor): Pro
       avgSatisfaction: rated.length ? Math.round((rated.reduce((s, r) => s + (r.satisfaction ?? 0), 0) / rated.length) * 10) / 10 : null,
       followUpDue: waiting.filter((j) => { const f = j.callLogs[0]?.nextFollowUpAt; return f && f.getTime() < end; }).length,
       pending: pending.length,
-      verified: rows.filter((r) => r.source === 'VERIFIED').length,
     },
     rows,
     pending,

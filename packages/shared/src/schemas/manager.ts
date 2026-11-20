@@ -128,7 +128,7 @@ export type CallingReportRowDto = {
 export type CallingPendingRowDto = { jobId: string; jobNumber: string; customer: string; phone: string; status: string; daysWaiting: number; branchCode: string };
 
 export type CallingReportDto = {
-  summary: { assigned: number; attempted: number; connected: number; notConnected: number; avgSatisfaction: number | null; followUpDue: number; pending: number; verified: number };
+  summary: { assigned: number; attempted: number; connected: number; notConnected: number; avgSatisfaction: number | null; followUpDue: number; pending: number };
   rows: CallingReportRowDto[];
   pending: CallingPendingRowDto[];
 };
@@ -175,7 +175,6 @@ export const MANAGER_PERMISSIONS = [
   { key: 'close_day', label: 'Close the day (Day Book)' },
   { key: 'manager_remarks', label: 'Add diagnosis remarks' },
   { key: 'view_pnl', label: 'See Profit & Loss' },
-  { key: 'import_calls', label: 'Import call logs for verification' },
 ] as const;
 export type ManagerPermissionKey = (typeof MANAGER_PERMISSIONS)[number]['key'];
 export const MANAGER_PERMISSION_KEYS = MANAGER_PERMISSIONS.map((p) => p.key) as [ManagerPermissionKey, ...ManagerPermissionKey[]];
@@ -217,27 +216,6 @@ export const dayClosingSchema = z.object({
 export const dayClosingQuerySchema = z.object({ branchId: z.uuid().optional(), date: businessDate.optional() });
 export type DayClosingDto = { date: string; expectedCash: number; countedCash: number | null; variance: number | null; note: string | null; closedBy: string; closedAt: string };
 export type DayClosingStatusDto = { date: string; expectedCash: number; closing: DayClosingDto | null };
-
-// ─── Call-record verification ───────────────────────────────────────────────
-
-export const callRecordsSchema = z.object({
-  records: z
-    .array(
-      z.object({
-        phone: z.string().trim().min(5).max(30),
-        calledAt: z.iso.datetime({ offset: true }),
-        durationSec: z.coerce.number().int().min(0).max(86_400).default(0),
-        connected: z.boolean().optional(),
-        externalId: z.string().trim().max(100).optional(),
-        agent: z.string().trim().max(100).optional(),
-      }),
-    )
-    .min(1)
-    .max(5000),
-  branchId: z.uuid().optional(),
-});
-export type CallRecordsInput = z.output<typeof callRecordsSchema>;
-export type CallRecordsResult = { received: number; inserted: number; verified: number };
 
 // ─── Part categories ────────────────────────────────────────────────────────
 

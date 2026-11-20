@@ -10,7 +10,6 @@ import {
   type CallOutcome,
   type CallPurpose,
   type CallingReportDto,
-  type CallRecordsResult,
   type ReturnNoteDto,
   type DiagnosisPendingRowDto,
   type JobStatus,
@@ -318,67 +317,10 @@ function DiagnosisTab({ branchId }: { branchId: string }) {
   );
 }
 
-/** Loose CSV reader for carrier call logs: finds the phone, date/time and duration columns by their headings. */
-function parseCallLog(text: string): { phone: string; calledAt: string; durationSec: number }[] {
-  const split = (line: string) => {
-    const out: string[] = [];
-    let cur = '';
-    let quoted = false;
-    for (const ch of line) {
-      if (ch === '"') quoted = !quoted;
-      else if (ch === ',' && !quoted) (out.push(cur.trim()), (cur = ''));
-      else cur += ch;
-    }
-    out.push(cur.trim());
-    return out;
-  };
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) return [];
-  const head = split(lines[0]!).map((h) => h.toLowerCase());
-  const col = (re: RegExp) => head.findIndex((h) => re.test(h));
-  const iPhone = col(/phone|number|mobile|customer|called/);
-  const iTime = col(/time|date|start/);
-  const iDur = col(/dur|sec/);
-  if (iPhone < 0 || iTime < 0) throw new Error('The file needs a phone/number column and a date/time column');
-  const toIso = (v: string) => {
-    const m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
-    let d: Date;
-    if (m) {
-      let h = Number(m[4]);
-      if (m[7]) h = (h % 12) + (m[7].toLowerCase() === 'pm' ? 12 : 0);
-      d = new Date(`${m[3]}-${m[2]!.padStart(2, '0')}-${m[1]!.padStart(2, '0')}T${String(h).padStart(2, '0')}:${m[5]}:${m[6] ?? '00'}+05:30`);
-    } else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(v) && !/(z|[+-]\d{2}:?\d{2})$/i.test(v)) {
-      d = new Date(`${v.replace(' ', 'T')}${v.length === 16 ? ':00' : ''}+05:30`);
-    } else d = new Date(v);
-    return Number.isNaN(d.getTime()) ? null : d.toISOString();
-  };
-  const rows: { phone: string; calledAt: string; durationSec: number }[] = [];
-  for (const line of lines.slice(1)) {
-    const c = split(line);
-    const calledAt = toIso(c[iTime] ?? '');
-    const phone = (c[iPhone] ?? '').replace(/\D/g, '');
-    if (!calledAt || phone.length < 5) continue;
-    rows.push({ phone, calledAt, durationSec: iDur >= 0 ? Math.max(0, Math.round(Number((c[iDur] ?? '0').replace(/[^\d.]/g, '')) || 0)) : 0 });
-  }
-  return rows;
-}
-
 function CallingTab({ branchId }: { branchId: string }) {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<Range>({ from: todayIso(), to: todayIso() });
   const [cco, setCco] = useState('');
-  const importLog = useMutation({
-    mutationFn: async (file: File) => {
-      const records = parseCallLog(await file.text());
-      if (!records.length) throw new Error('No usable rows found in that file');
-      return api.post<CallRecordsResult>('/manager/call-records', { records: records.slice(0, 5000), branchId: branchId || undefined });
-    },
-    onSuccess: (r) => {
-      toast.success(`${r.inserted} call records added · ${r.verified} logged calls verified`);
-      void queryClient.invalidateQueries({ queryKey: ['manager', 'calling'] });
-    },
-    onError: (e) => toast.error(e.message),
-  });
   const q = useQuery({
     queryKey: ['manager', 'calling', range, branchId],
     queryFn: () => api.get<CallingReportDto>(`/manager/calling-report?${toQueryString({ ...range, branchId })}`),
@@ -400,15 +342,6 @@ function CallingTab({ branchId }: { branchId: string }) {
     { header: 'Feedback', cell: (r) => <span className="block max-w-48">{r.feedback ?? '—'}</span> },
     { header: 'Satisfaction', className: 'text-center', cell: (r) => (r.satisfaction ? `${r.satisfaction}/5` : '—') },
     { header: 'Next follow-up', cell: (r) => (r.nextFollowUpAt ? formatDateTime(r.nextFollowUpAt) : '—') },
-    {
-      header: 'Record',
-      cell: (r) =>
-        r.source === 'VERIFIED' ? (
-          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold text-emerald-800">Verified</span>
-        ) : (
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600" title="Entered by staff; not matched to a telephone call record">Manual</span>
-        ),
-    },
   ];
   const pendingCols: Column<CallingReportDto['pending'][number]>[] = [
     { header: 'Job', cell: (r) => jobLink(r.jobId, r.jobNumber) },
@@ -429,7 +362,6 @@ function CallingTab({ branchId }: { branchId: string }) {
           {tile('Calling pending (never called)', String(d.summary.pending), d.summary.pending ? 'text-amber-700' : '')}
           {tile('Follow-ups due', String(d.summary.followUpDue))}
           {tile('Avg satisfaction', d.summary.avgSatisfaction != null ? `${d.summary.avgSatisfaction}/5` : '—')}
-          {tile('Verified by call record', String(d.summary.verified))}
         </div>
       )}
       <Card
@@ -438,8 +370,8 @@ function CallingTab({ branchId }: { branchId: string }) {
           <ExportButtons
             title="Customer calling report"
             subtitle={`${formatDate(range.from)} to ${formatDate(range.to)}${cco ? ` · ${cco}` : ''}`}
-            headers={['Date', 'Job', 'Customer', 'Phone', 'CCO', 'Purpose', 'Status', 'Discussion', 'Feedback', 'Satisfaction', 'Next follow-up', 'Record']}
-            rows={rows.map((r) => [formatDateTime(r.at), r.jobNumber, r.customer, r.phone, r.cco, CALL_PURPOSE_LABELS[r.purpose as CallPurpose] ?? r.purpose, CALL_OUTCOME_LABELS[r.outcome as CallOutcome] ?? r.outcome, r.discussion, r.feedback, r.satisfaction, r.nextFollowUpAt ? formatDateTime(r.nextFollowUpAt) : '', r.source === 'VERIFIED' ? 'Verified' : 'Manual'])}
+            headers={['Date', 'Job', 'Customer', 'Phone', 'CCO', 'Purpose', 'Status', 'Discussion', 'Feedback', 'Satisfaction', 'Next follow-up']}
+            rows={rows.map((r) => [formatDateTime(r.at), r.jobNumber, r.customer, r.phone, r.cco, CALL_PURPOSE_LABELS[r.purpose as CallPurpose] ?? r.purpose, CALL_OUTCOME_LABELS[r.outcome as CallOutcome] ?? r.outcome, r.discussion, r.feedback, r.satisfaction, r.nextFollowUpAt ? formatDateTime(r.nextFollowUpAt) : ''])}
           />
         }
       >
@@ -450,11 +382,6 @@ function CallingTab({ branchId }: { branchId: string }) {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
-            {importLog.isPending ? 'Importing…' : 'Import call log (CSV)'}
-            <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) importLog.mutate(f); e.target.value = ''; }} />
-          </label>
-          <span className="text-xs text-slate-500">“Manual” = typed in by staff. Import the carrier / telephone call log (columns: phone number, date-time, duration) and matching calls turn “Verified”.</span>
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} isLoading={q.isLoading} emptyMessage="No calls logged in this period" minTableWidth="1200px" />
       </Card>

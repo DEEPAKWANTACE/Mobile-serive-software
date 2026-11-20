@@ -17,8 +17,6 @@ const envSchema = z.object({
   APP_TIMEZONE: z.string().default('Asia/Kolkata'),
   /** Key for encrypting stored secrets (device unlock codes). Any long random string; keep it stable. */
   DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
-  /** Shared secret for the telephony call-record webhook (POST /api/v1/calls/webhook). Unset = webhook disabled. */
-  CALL_WEBHOOK_KEY: z.string().min(16).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 
