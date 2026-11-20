@@ -15,6 +15,7 @@ import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from '../jobs/jobs.service.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
+import { verifyOne } from './call-verify.service.ts';
 
 /** Jobs that are waiting on the customer (for calling and pending collection). */
 const OPEN_FOR_CALLS: JobStatus[] = ['READY_FOR_DELIVERY', 'RWR', 'AWAITING_APPROVAL', 'CUSTOMER_REJECTED'];
@@ -173,5 +174,8 @@ export async function logCall(jobId: string, data: CallLogCreateData, actor: Act
       tx,
     );
     return toCallDto(row);
+  }).then(async (dto) => {
+    await verifyOne(dto.id).catch(() => undefined);
+    return dto;
   });
 }

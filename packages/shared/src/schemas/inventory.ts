@@ -178,6 +178,10 @@ export type JobPartDto = {
   requestedAt: string;
   handledBy: { id: string; name: string } | null;
   handledAt: string | null;
+  /** Return Note state: NONE until the engineer confirms what was used. */
+  noteStatus: 'NONE' | 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  usedQuantity: number | null;
+  noteRemark: string | null;
 };
 
 /** Store queue row: a job part with its job context and current stock. */

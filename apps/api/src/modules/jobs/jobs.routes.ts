@@ -13,6 +13,7 @@ import {
   movementListQuerySchemaL4,
   movementNoteSchema,
   l4RequestListQuerySchema,
+  returnNoteSubmitSchema,
   L4_APPROVER_ROLES,
   type L4RequestListQuery,
   sendToL4Schema,
@@ -59,6 +60,7 @@ import * as inventory from '../inventory/inventory.controller.ts';
 import * as controller from './jobs.controller.ts';
 import * as service from './jobs.service.ts';
 import * as l4 from './l4.service.ts';
+import * as returnNote from './return-note.service.ts';
 import * as editing from './edit.service.ts';
 import * as bulk from './bulk.service.ts';
 import * as costing from './costing.service.ts';
@@ -262,6 +264,11 @@ jobRoutes.get('/:id/calls', authorize(...assigners), validate({ params: idParamS
 });
 jobRoutes.post('/:id/calls', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: callLogCreateSchema }), async (req, res) => {
   res.status(201).json(await calling.logCall(req.params.id as string, req.body, actorOf(req)));
+});
+
+jobRoutes.post('/:id/return-note', authorize(ROLES.ENGINEER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema, body: returnNoteSubmitSchema }), async (req, res) => {
+  await returnNote.submit(req.params.id as string, req.body.lines, actorOf(req));
+  res.status(204).end();
 });
 
 // ─── L4 / main office ───────────────────────────────────────────────────────

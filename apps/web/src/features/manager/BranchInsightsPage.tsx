@@ -10,6 +10,8 @@ import {
   type CallOutcome,
   type CallPurpose,
   type CallingReportDto,
+  type CallRecordsResult,
+  type ReturnNoteDto,
   type DiagnosisPendingRowDto,
   type JobStatus,
   type ManagerAlertDto,
@@ -36,12 +38,13 @@ import { openPrintWindow, writeTable } from '@/lib/print-table';
 import { downloadXlsx } from '@/lib/xlsx';
 
 type Cell = string | number | null | undefined;
-type Tab = 'overview' | 'pending' | 'diagnosis' | 'calling' | 'po' | 'stock' | 'pnl';
+type Tab = 'overview' | 'pending' | 'diagnosis' | 'calling' | 'returnNotes' | 'po' | 'stock' | 'pnl';
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'pending', label: 'Pending 15+ days' },
   { key: 'diagnosis', label: 'Diagnosis pending' },
   { key: 'calling', label: 'Calling & Happy Calling' },
+  { key: 'returnNotes', label: 'Return Notes' },
   { key: 'po', label: 'Purchase Order' },
   { key: 'stock', label: 'Stock' },
   { key: 'pnl', label: 'Profit & Loss' },
@@ -315,9 +318,67 @@ function DiagnosisTab({ branchId }: { branchId: string }) {
   );
 }
 
+/** Loose CSV reader for carrier call logs: finds the phone, date/time and duration columns by their headings. */
+function parseCallLog(text: string): { phone: string; calledAt: string; durationSec: number }[] {
+  const split = (line: string) => {
+    const out: string[] = [];
+    let cur = '';
+    let quoted = false;
+    for (const ch of line) {
+      if (ch === '"') quoted = !quoted;
+      else if (ch === ',' && !quoted) (out.push(cur.trim()), (cur = ''));
+      else cur += ch;
+    }
+    out.push(cur.trim());
+    return out;
+  };
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+  const head = split(lines[0]!).map((h) => h.toLowerCase());
+  const col = (re: RegExp) => head.findIndex((h) => re.test(h));
+  const iPhone = col(/phone|number|mobile|customer|called/);
+  const iTime = col(/time|date|start/);
+  const iDur = col(/dur|sec/);
+  if (iPhone < 0 || iTime < 0) throw new Error('The file needs a phone/number column and a date/time column');
+  const toIso = (v: string) => {
+    const m = v.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
+    let d: Date;
+    if (m) {
+      let h = Number(m[4]);
+      if (m[7]) h = (h % 12) + (m[7].toLowerCase() === 'pm' ? 12 : 0);
+      d = new Date(`${m[3]}-${m[2]!.padStart(2, '0')}-${m[1]!.padStart(2, '0')}T${String(h).padStart(2, '0')}:${m[5]}:${m[6] ?? '00'}+05:30`);
+    } else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(v) && !/(z|[+-]\d{2}:?\d{2})$/i.test(v)) {
+      d = new Date(`${v.replace(' ', 'T')}${v.length === 16 ? ':00' : ''}+05:30`);
+    } else d = new Date(v);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  };
+  const rows: { phone: string; calledAt: string; durationSec: number }[] = [];
+  for (const line of lines.slice(1)) {
+    const c = split(line);
+    const calledAt = toIso(c[iTime] ?? '');
+    const phone = (c[iPhone] ?? '').replace(/\D/g, '');
+    if (!calledAt || phone.length < 5) continue;
+    rows.push({ phone, calledAt, durationSec: iDur >= 0 ? Math.max(0, Math.round(Number((c[iDur] ?? '0').replace(/[^\d.]/g, '')) || 0)) : 0 });
+  }
+  return rows;
+}
+
 function CallingTab({ branchId }: { branchId: string }) {
+  const queryClient = useQueryClient();
   const [range, setRange] = useState<Range>({ from: todayIso(), to: todayIso() });
   const [cco, setCco] = useState('');
+  const importLog = useMutation({
+    mutationFn: async (file: File) => {
+      const records = parseCallLog(await file.text());
+      if (!records.length) throw new Error('No usable rows found in that file');
+      return api.post<CallRecordsResult>('/manager/call-records', { records: records.slice(0, 5000), branchId: branchId || undefined });
+    },
+    onSuccess: (r) => {
+      toast.success(`${r.inserted} call records added · ${r.verified} logged calls verified`);
+      void queryClient.invalidateQueries({ queryKey: ['manager', 'calling'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const q = useQuery({
     queryKey: ['manager', 'calling', range, branchId],
     queryFn: () => api.get<CallingReportDto>(`/manager/calling-report?${toQueryString({ ...range, branchId })}`),
@@ -389,7 +450,11 @@ function CallingTab({ branchId }: { branchId: string }) {
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">“Manual” = typed in by staff. No telephone integration is connected yet, so nothing shows as Verified.</span>
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50">
+            {importLog.isPending ? 'Importing…' : 'Import call log (CSV)'}
+            <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) importLog.mutate(f); e.target.value = ''; }} />
+          </label>
+          <span className="text-xs text-slate-500">“Manual” = typed in by staff. Import the carrier / telephone call log (columns: phone number, date-time, duration) and matching calls turn “Verified”.</span>
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.id} isLoading={q.isLoading} emptyMessage="No calls logged in this period" minTableWidth="1200px" />
       </Card>
@@ -606,6 +671,63 @@ function PnlTab({ branchId }: { branchId: string }) {
   );
 }
 
+function ReturnNotesTab({ branchId }: { branchId: string }) {
+  const queryClient = useQueryClient();
+  const [status, setStatus] = useState<'SUBMITTED' | 'APPROVED' | 'REJECTED'>('SUBMITTED');
+  const q = useQuery({
+    queryKey: ['manager', 'return-notes', status, branchId],
+    queryFn: () => api.get<ReturnNoteDto[]>(`/manager/return-notes?${toQueryString({ status, branchId })}`),
+  });
+  const decide = useMutation({
+    mutationFn: (v: { jobId: string; action: 'approve' | 'reject'; remark?: string }) => api.post(`/manager/return-notes/${v.jobId}/${v.action}`, { remark: v.remark }),
+    onSuccess: (_d, v) => {
+      toast.success(v.action === 'approve' ? 'Approved — unused parts returned to stock' : 'Sent back to the engineer');
+      void queryClient.invalidateQueries({ queryKey: ['manager'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const columns: Column<ReturnNoteDto>[] = [
+    { header: 'Job', cell: (r) => <span>{jobLink(r.jobId, r.jobNumber)}<div className="text-xs text-slate-500">{r.device} · {r.customer}</div></span> },
+    { header: 'Engineer', cell: (r) => r.engineer ?? '—' },
+    {
+      header: 'Parts (issued → used)',
+      cell: (r) => (
+        <ul className="text-sm">
+          {r.lines.map((l) => (
+            <li key={l.jobPartId}><span className="font-mono">{l.code}</span> {l.name}{l.color ? ` · ${l.color}` : ''}: {l.quantity} → <b>{l.usedQuantity ?? l.quantity}</b></li>
+          ))}
+        </ul>
+      ),
+    },
+    { header: 'Filed', cell: (r) => (r.submittedAt ? formatDateTime(r.submittedAt) : '—') },
+    { header: 'Remark', cell: (r) => r.remark ?? '—' },
+    {
+      header: '',
+      className: 'text-right',
+      cell: (r) =>
+        status === 'SUBMITTED' && (
+          <span className="flex justify-end gap-2">
+            <Button size="sm" loading={decide.isPending} onClick={() => decide.mutate({ jobId: r.jobId, action: 'approve' })}>Approve</Button>
+            <Button size="sm" variant="secondary" loading={decide.isPending} onClick={() => { const remark = window.prompt('Why is it being sent back?'); if (remark !== null) decide.mutate({ jobId: r.jobId, action: 'reject', remark: remark.trim() || undefined }); }}>Reject</Button>
+          </span>
+        ),
+    },
+  ];
+  return (
+    <Card title={`Return Notes (${q.data?.length ?? 0})`}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {(['SUBMITTED', 'APPROVED', 'REJECTED'] as const).map((s) => (
+          <Button key={s} type="button" size="sm" variant={status === s ? 'primary' : 'secondary'} onClick={() => setStatus(s)}>
+            {s === 'SUBMITTED' ? 'Waiting for approval' : s === 'APPROVED' ? 'Approved' : 'Rejected'}
+          </Button>
+        ))}
+        <span className="text-xs text-slate-500">Only approved Return Notes count as consumption for purchase orders and profit.</span>
+      </div>
+      <DataTable columns={columns} rows={q.data} rowKey={(r) => r.jobId} isLoading={q.isLoading} emptyMessage="No Return Notes here" />
+    </Card>
+  );
+}
+
 /** Branch Manager insights: overview, old pending jobs, diagnosis follow-up, calling, auto PO, stock and profit & loss. */
 export function BranchInsightsPage() {
   const [params, setParams] = useSearchParams();
@@ -625,6 +747,7 @@ export function BranchInsightsPage() {
       {tab === 'pending' && <PendingTab branchId={branchId} />}
       {tab === 'diagnosis' && <DiagnosisTab branchId={branchId} />}
       {tab === 'calling' && <CallingTab branchId={branchId} />}
+      {tab === 'returnNotes' && <ReturnNotesTab branchId={branchId} />}
       {tab === 'po' && <PoTab branchId={branchId} />}
       {tab === 'stock' && <StockTab branchId={branchId} />}
       {tab === 'pnl' && <PnlTab branchId={branchId} />}

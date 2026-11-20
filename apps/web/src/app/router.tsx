@@ -7,6 +7,8 @@ import { CallingPage } from '@/features/calling/CallingPage';
 import { L4TransfersPage } from '@/features/l4/L4TransfersPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { BranchInsightsPage } from '@/features/manager/BranchInsightsPage';
+import { ManagerPermissionsPage } from '@/features/manager/ManagerPermissionsPage';
+import { PartCategoriesPage } from '@/features/catalog/PartCategoriesPage';
 import { EngineerReportPage } from '@/features/reports/EngineerReportPage';
 import { EntriesPage } from '@/features/entries/EntriesPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
@@ -119,6 +121,7 @@ export const router = createBrowserRouter([
               { path: 'settings/shop', element: <ShopSettingsPage /> },
               { path: 'settings/diagnosis-findings', element: <DiagnosisFindingsPage /> },
               { path: 'settings/job-list-columns', element: <JobListColumnsPage /> },
+              { path: 'settings/manager-permissions', element: <ManagerPermissionsPage /> },
             ],
           },
           {
@@ -130,6 +133,7 @@ export const router = createBrowserRouter([
             element: <RequireAuth roles={[ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN]} />,
             children: [
               { path: 'requests', element: <PartRequestsPage /> },
+              { path: 'categories', element: <PartCategoriesPage /> },
               { path: 'stock', element: <StockPage /> },
               { path: 'ledger', element: <StockLedgerPage /> },
               { path: 'transfers', element: <StockTransfersPage /> },

@@ -64,6 +64,8 @@ model Branch {
   l4RequestsTo          L4Request[]     @relation("L4RequestTo")
   purchaseOrders        PurchaseOrder[]
   managerRemarks        ManagerRemark[]
+  dayClosings           DayClosing[]
+  callRecords           CallRecord[]
   expenses              Expense[]
   callLogs              CallLog[]
   reminders             Reminder[]
@@ -107,48 +109,50 @@ model Branch {
 // ─── Users & authentication ─────────────────────────────────────────────────
 
 model User {
-  passwordChangedAt      DateTime?          @map("password_changed_at")
-  jobsInwarded           Job[]              @relation("JobInwardBy")
-  statusChanges          JobStatusHistory[] @relation("StatusChangedBy")
-  statusAsEngineer       JobStatusHistory[] @relation("StatusEngineer")
-  assignmentsHeld        JobAssignment[]    @relation("AssignmentEngineer")
-  assignmentsMade        JobAssignment[]    @relation("AssignmentBy")
-  stockTransfersSent     StockTransfer[]    @relation("StockTransferSentBy")
-  stockTransfersReceived StockTransfer[]    @relation("StockTransferReceivedBy")
-  movementsSent          JobMovement[]      @relation("MovementSentBy")
-  l4Requested            L4Request[]        @relation("L4RequestedBy")
-  expensesApproved       Expense[]          @relation("ExpenseApprovedBy")
-  purchaseOrders         PurchaseOrder[]    @relation("PurchaseOrderCreatedBy")
-  managerRemarks         ManagerRemark[]    @relation("ManagerRemarkBy")
-  l4Decided              L4Request[]        @relation("L4DecidedBy")
-  movementsReceived      JobMovement[]      @relation("MovementReceivedBy")
-  expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
-  expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
+  passwordChangedAt      DateTime?            @map("password_changed_at")
+  jobsInwarded           Job[]                @relation("JobInwardBy")
+  statusChanges          JobStatusHistory[]   @relation("StatusChangedBy")
+  statusAsEngineer       JobStatusHistory[]   @relation("StatusEngineer")
+  assignmentsHeld        JobAssignment[]      @relation("AssignmentEngineer")
+  assignmentsMade        JobAssignment[]      @relation("AssignmentBy")
+  stockTransfersSent     StockTransfer[]      @relation("StockTransferSentBy")
+  stockTransfersReceived StockTransfer[]      @relation("StockTransferReceivedBy")
+  movementsSent          JobMovement[]        @relation("MovementSentBy")
+  l4Requested            L4Request[]          @relation("L4RequestedBy")
+  expensesApproved       Expense[]            @relation("ExpenseApprovedBy")
+  purchaseOrders         PurchaseOrder[]      @relation("PurchaseOrderCreatedBy")
+  managerRemarks         ManagerRemark[]      @relation("ManagerRemarkBy")
+  dayClosings            DayClosing[]         @relation("DayClosingBy")
+  permissionEdits        PermissionOverride[] @relation("PermissionEditedBy")
+  l4Decided              L4Request[]          @relation("L4DecidedBy")
+  movementsReceived      JobMovement[]        @relation("MovementReceivedBy")
+  expensesCreated        Expense[]            @relation("ExpenseCreatedBy")
+  expensesVoided         Expense[]            @relation("ExpenseVoidedBy")
   callLogs               CallLog[]
-  remindersCreated       Reminder[]         @relation("ReminderCreatedBy")
-  remindersAssigned      Reminder[]         @relation("ReminderAssignedTo")
-  jobsDelivered          Job[]              @relation("JobDeliveredBy")
+  remindersCreated       Reminder[]           @relation("ReminderCreatedBy")
+  remindersAssigned      Reminder[]           @relation("ReminderAssignedTo")
+  jobsDelivered          Job[]                @relation("JobDeliveredBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
-  partsRequested         JobPart[]          @relation("JobPartRequestedBy")
-  partsHandled           JobPart[]          @relation("JobPartHandledBy")
-  id                     String             @id @default(uuid(7)) @db.Uuid
+  partsRequested         JobPart[]            @relation("JobPartRequestedBy")
+  partsHandled           JobPart[]            @relation("JobPartHandledBy")
+  id                     String               @id @default(uuid(7)) @db.Uuid
   name                   String
-  username               String             @unique
-  phone                  String?            @unique
-  email                  String?            @unique
-  passwordHash           String             @map("password_hash")
+  username               String               @unique
+  phone                  String?              @unique
+  email                  String?              @unique
+  passwordHash           String               @map("password_hash")
   role                   Role
   address                String?
   /// 12-digit Aadhaar (staff KYC). Shown masked except to managers.
-  aadhaarNumber          String?            @map("aadhaar_number")
-  aadhaarPhotoKey        String?            @map("aadhaar_photo_key")
+  aadhaarNumber          String?              @map("aadhaar_number")
+  aadhaarPhotoKey        String?              @map("aadhaar_photo_key")
   /// Null only for global roles (SUPER_ADMIN).
-  branchId               String?            @map("branch_id") @db.Uuid
-  isActive               Boolean            @default(true) @map("is_active")
-  lastLoginAt            DateTime?          @map("last_login_at")
-  createdAt              DateTime           @default(now()) @map("created_at")
-  updatedAt              DateTime           @updatedAt @map("updated_at")
+  branchId               String?              @map("branch_id") @db.Uuid
+  isActive               Boolean              @default(true) @map("is_active")
+  lastLoginAt            DateTime?            @map("last_login_at")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
 
   branch            Branch?       @relation(fields: [branchId], references: [id])
   sessions          Session[]
@@ -925,21 +929,29 @@ enum JobPartStatus {
 
 /// A part requested for / used on a job.
 model JobPart {
-  id            String         @id @default(uuid(7)) @db.Uuid
-  jobId         String         @map("job_id") @db.Uuid
-  partId        String         @map("part_id") @db.Uuid
-  quantity      Int
+  id                String           @id @default(uuid(7)) @db.Uuid
+  jobId             String           @map("job_id") @db.Uuid
+  partId            String           @map("part_id") @db.Uuid
+  quantity          Int
   /// Selling price at the time of request.
-  unitPrice     Decimal        @map("unit_price") @db.Decimal(10, 2)
-  status        JobPartStatus  @default(REQUESTED)
-  note          String?
-  requestedById String         @map("requested_by_id") @db.Uuid
-  requestedAt   DateTime       @default(now()) @map("requested_at")
-  handledById   String?        @map("handled_by_id") @db.Uuid
-  handledAt     DateTime?      @map("handled_at")
+  unitPrice         Decimal          @map("unit_price") @db.Decimal(10, 2)
+  status            JobPartStatus    @default(REQUESTED)
+  note              String?
+  requestedById     String           @map("requested_by_id") @db.Uuid
+  requestedAt       DateTime         @default(now()) @map("requested_at")
+  handledById       String?          @map("handled_by_id") @db.Uuid
+  handledAt         DateTime?        @map("handled_at")
   /// Purchase order this consumption was already counted in (so it is never ordered twice).
-  poId          String?        @map("po_id") @db.Uuid
-  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
+  poId              String?          @map("po_id") @db.Uuid
+  /// Return Note: the engineer states how many were really used; consumption counts once a manager approves it.
+  noteStatus        ReturnNoteStatus @default(NONE) @map("note_status")
+  usedQuantity      Int?             @map("used_quantity")
+  noteRemark        String?          @map("note_remark")
+  noteSubmittedAt   DateTime?        @map("note_submitted_at")
+  noteSubmittedById String?          @map("note_submitted_by_id") @db.Uuid
+  noteDecidedAt     DateTime?        @map("note_decided_at")
+  noteDecidedById   String?          @map("note_decided_by_id") @db.Uuid
+  purchaseOrder     PurchaseOrder?   @relation(fields: [poId], references: [id])
 
   job         Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   part        Part  @relation(fields: [partId], references: [id])
@@ -1040,22 +1052,24 @@ enum CallOutcome {
 }
 
 model CallLog {
-  id             String      @id @default(uuid(7)) @db.Uuid
-  jobId          String      @map("job_id") @db.Uuid
-  branchId       String      @map("branch_id") @db.Uuid
-  purpose        CallPurpose
-  outcome        CallOutcome
-  note           String?
+  id               String      @id @default(uuid(7)) @db.Uuid
+  jobId            String      @map("job_id") @db.Uuid
+  branchId         String      @map("branch_id") @db.Uuid
+  purpose          CallPurpose
+  outcome          CallOutcome
+  note             String?
   /// When to call again / when the customer promised to come.
-  nextFollowUpAt DateTime?   @map("next_follow_up_at")
+  nextFollowUpAt   DateTime?   @map("next_follow_up_at")
   /// What the customer said.
-  feedback       String?
+  feedback         String?
   /// Customer satisfaction 1 (unhappy) to 5 (happy).
-  satisfaction   Int?
+  satisfaction     Int?
   /// MANUAL = typed in by staff; VERIFIED = matched to a telephony call record (not integrated yet).
-  source         String      @default("MANUAL")
-  createdById    String      @map("created_by_id") @db.Uuid
-  createdAt      DateTime    @default(now()) @map("created_at")
+  source           String      @default("MANUAL")
+  /// Telephony record this call was matched to (set when source = VERIFIED).
+  verifiedRecordId String?     @map("verified_record_id") @db.Uuid
+  createdById      String      @map("created_by_id") @db.Uuid
+  createdAt        DateTime    @default(now()) @map("created_at")
 
   job       Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
   branch    Branch @relation(fields: [branchId], references: [id])
@@ -1273,4 +1287,77 @@ model ManagerRemark {
 
   @@index([jobId, kind, createdAt])
   @@map("manager_remarks")
+}
+
+enum ReturnNoteStatus {
+  NONE // part issued; no return note yet (or legacy)
+  SUBMITTED // engineer filed the return note; waiting for the manager
+  APPROVED // consumption confirmed — counts for purchase orders and profit
+  REJECTED // manager sent it back; the engineer can file it again
+}
+
+/// Branch Manager closes the business day: expected vs counted cash.
+model DayClosing {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  branchId     String   @map("branch_id") @db.Uuid
+  date         String
+  expectedCash Decimal  @map("expected_cash") @db.Decimal(12, 2)
+  countedCash  Decimal? @map("counted_cash") @db.Decimal(12, 2)
+  note         String?
+  closedById   String   @map("closed_by_id") @db.Uuid
+  closedAt     DateTime @default(now()) @map("closed_at")
+
+  branch   Branch @relation(fields: [branchId], references: [id])
+  closedBy User   @relation("DayClosingBy", fields: [closedById], references: [id])
+
+  @@unique([branchId, date])
+  @@map("day_closings")
+}
+
+/// One call from the telephony system / carrier log. Used to verify the calls CCOs report.
+model CallRecord {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  branchId    String?  @map("branch_id") @db.Uuid
+  /// Last 10 digits of the customer number.
+  phone       String
+  calledAt    DateTime @map("called_at")
+  durationSec Int      @default(0) @map("duration_sec")
+  connected   Boolean  @default(false)
+  externalId  String?  @unique @map("external_id")
+  agent       String?
+  origin      String   @default("IMPORT") // WEBHOOK | IMPORT
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  branch Branch? @relation(fields: [branchId], references: [id])
+
+  @@index([phone, calledAt])
+  @@map("call_records")
+}
+
+/// Super Admin switches for individual Branch Manager actions (no row = allowed).
+model PermissionOverride {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  role        Role
+  key         String
+  allowed     Boolean
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  updatedBy User? @relation("PermissionEditedBy", fields: [updatedById], references: [id])
+
+  @@unique([role, key])
+  @@map("permission_overrides")
+}
+
+/// Master list of part categories and subcategories (parts keep the names as text).
+model PartCategory {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
+  /// Set for a subcategory: the id of its category.
+  parentId  String?  @map("parent_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([branchId, parentId])
+  @@map("part_categories")
 }

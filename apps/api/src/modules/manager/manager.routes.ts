@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { idParamSchema, MANAGER_ROLES, managerRangeQuerySchema, managerRemarkSchema, pendingJobsQuerySchema, poCreateSchema, poListQuerySchema, type ManagerRangeQuery, type PendingJobsQuery } from '@msm/shared';
+import { HttpError } from '../../lib/http-error.ts';
+import { managerPermissions } from '../../lib/permissions.ts';
+import { prisma } from '../../lib/prisma.ts';
+import { assertCan } from '../../lib/permissions.ts';
+import { ingest } from '../calling/call-verify.service.ts';
+import * as returnNotes from '../jobs/return-note.service.ts';
+import { callRecordsSchema, dayClosingQuerySchema, dayClosingSchema, permissionUpdateSchema, returnNoteDecisionSchema, returnNoteListQuerySchema, type ReturnNoteListQuery, ROLES, idParamSchema, MANAGER_ROLES, managerRangeQuerySchema, managerRemarkSchema, pendingJobsQuerySchema, poCreateSchema, poListQuerySchema, type ManagerRangeQuery, type PendingJobsQuery } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -49,4 +55,49 @@ managerRoutes.post('/purchase-orders/:id/forward', validate({ params: idParamSch
 managerRoutes.post('/remarks', validate({ body: managerRemarkSchema }), async (req, res) => {
   await ops.addDiagnosisRemark(req.body.jobId, req.body.remark, actorOf(req));
   res.status(204).end();
+});
+
+// Return Notes
+managerRoutes.get('/return-notes', validate({ query: returnNoteListQuerySchema }), async (req, res) => {
+  res.json(await returnNotes.list(res.locals.query as ReturnNoteListQuery, actorOf(req)));
+});
+managerRoutes.post('/return-notes/:id/approve', validate({ params: idParamSchema, body: returnNoteDecisionSchema }), async (req, res) => {
+  await returnNotes.decide(req.params.id as string, true, req.body.remark, actorOf(req));
+  res.status(204).end();
+});
+managerRoutes.post('/return-notes/:id/reject', validate({ params: idParamSchema, body: returnNoteDecisionSchema }), async (req, res) => {
+  await returnNotes.decide(req.params.id as string, false, req.body.remark, actorOf(req));
+  res.status(204).end();
+});
+
+// Day closing
+managerRoutes.get('/day-closing', validate({ query: dayClosingQuerySchema }), async (req, res) => {
+  const q = res.locals.query as { date?: string; branchId?: string };
+  res.json(await ops.dayClosingStatus(q.date, actorOf(req), q.branchId));
+});
+managerRoutes.post('/day-closing', validate({ body: dayClosingSchema }), async (req, res) => {
+  await ops.closeDay(req.body, actorOf(req));
+  res.status(204).end();
+});
+
+// Call-log import for verification
+managerRoutes.post('/call-records', validate({ body: callRecordsSchema }), async (req, res) => {
+  const actor = actorOf(req);
+  await assertCan(actor, 'import_calls');
+  res.json(await ingest(req.body, 'IMPORT', actor.branchId ?? req.body.branchId ?? null));
+});
+
+// Permission switches: Branch Manager reads what applies to them, Super Admin edits.
+managerRoutes.get('/permissions', async (_req, res) => {
+  res.json(await managerPermissions());
+});
+managerRoutes.put('/permissions', validate({ body: permissionUpdateSchema }), async (req, res) => {
+  const actor = actorOf(req);
+  if (actor.role !== ROLES.SUPER_ADMIN) throw HttpError.forbidden('Only the Super Admin can change permissions');
+  await prisma.permissionOverride.upsert({
+    where: { role_key: { role: ROLES.BRANCH_MANAGER, key: req.body.key } },
+    create: { role: ROLES.BRANCH_MANAGER, key: req.body.key, allowed: req.body.allowed, updatedById: actor.sub },
+    update: { allowed: req.body.allowed, updatedById: actor.sub },
+  });
+  res.json(await managerPermissions());
 });

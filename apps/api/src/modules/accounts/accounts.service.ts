@@ -15,6 +15,7 @@ import { businessRange, businessToday } from '../../lib/business-date.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
+import { assertCan } from '../../lib/permissions.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
 import { summary as callingSummary } from '../calling/calling.service.ts';
@@ -89,6 +90,7 @@ export async function createExpense(data: ExpenseCreateData, actor: Actor) {
 /** Branch Manager / Super Admin sign off an expense (kept on record, not required to count it). */
 export async function approveExpense(id: string, actor: Actor) {
   if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'BRANCH_MANAGER') throw HttpError.forbidden();
+  await assertCan(actor, 'approve_expense');
   const exp = await prisma.expense.findUnique({ where: { id }, select: { branchId: true, voidedAt: true, approvedAt: true, amount: true } });
   if (!exp) throw HttpError.notFound('Expense not found');
   assertBranchAccess(actor, exp.branchId);
@@ -102,6 +104,7 @@ export async function approveExpense(id: string, actor: Actor) {
 
 export async function voidExpense(id: string, reason: string, actor: Actor) {
   if (!EXPENSE_VOID_ROLES.includes(actor.role)) throw HttpError.forbidden();
+  await assertCan(actor, 'void_expense');
   const exp = await prisma.expense.findUnique({ where: { id }, select: { branchId: true, voidedAt: true, amount: true } });
   if (!exp) throw HttpError.notFound('Expense not found');
   assertBranchAccess(actor, exp.branchId);

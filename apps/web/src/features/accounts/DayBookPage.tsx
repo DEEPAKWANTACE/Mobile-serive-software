@@ -29,6 +29,7 @@ import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/form
 import { BranchScopePicker } from './BranchScopePicker';
 import { ArrowDownLeft, Banknote, Download, FileText, Landmark, ReceiptText, Scale, Undo2, Wallet } from 'lucide-react';
 import { downloadXlsx } from '@/lib/xlsx';
+import type { DayClosingStatusDto } from '@msm/shared';
 import { openPrintWindow, writeTable } from '@/lib/print-table';
 
 const rupeeFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
@@ -183,6 +184,7 @@ export function DayBookPage() {
         )}
       </FilterBar>
 
+      {(user?.role === ROLES.BRANCH_MANAGER || (user?.role === ROLES.SUPER_ADMIN && !!branchId)) && from === to && <DayClosingCard date={from} branchId={branchId} />}
       {error && <p className="text-sm text-red-600">{error.message}</p>}
       {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {data && (
@@ -353,5 +355,49 @@ function VoidForm({ expense, onDone }: { expense: ExpenseDto; onDone: () => void
         <Button type="submit" variant="danger" disabled={reason.trim().length < 3} loading={save.isPending}>Void expense</Button>
       </div>
     </form>
+  );
+}
+
+/** Close the business day: compare the cash the system expects with the cash actually counted. */
+function DayClosingCard({ date, branchId }: { date: string; branchId: string }) {
+  const queryClient = useQueryClient();
+  const [counted, setCounted] = useState('');
+  const [note, setNote] = useState('');
+  const q = useQuery({
+    queryKey: ['manager', 'day-closing', date, branchId],
+    queryFn: () => api.get<DayClosingStatusDto>(`/manager/day-closing?${toQueryString({ date, branchId })}`),
+  });
+  const close = useMutation({
+    mutationFn: () => api.post('/manager/day-closing', { date, branchId: branchId || undefined, countedCash: counted === '' ? null : Number(counted), note: note.trim() || undefined }),
+    onSuccess: () => {
+      toast.success('Day closed');
+      void queryClient.invalidateQueries({ queryKey: ['manager'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const d = q.data;
+  if (!d) return null;
+  if (d.closing) {
+    const c = d.closing;
+    return (
+      <Card title={`Day closed — ${formatDate(date)}`}>
+        <p className="text-sm">
+          Expected cash {formatCurrency(c.expectedCash)}
+          {c.countedCash != null && <> · counted {formatCurrency(c.countedCash)} · <b className={c.variance ? 'text-red-600' : 'text-emerald-700'}>{c.variance ? `difference ${formatCurrency(c.variance)}` : 'matches'}</b></>}
+          {c.note && <> · “{c.note}”</>}
+          <span className="block text-xs text-slate-500">Closed by {c.closedBy} on {formatDateTime(c.closedAt)}</span>
+        </p>
+      </Card>
+    );
+  }
+  return (
+    <Card title={`Close the day — ${formatDate(date)}`}>
+      <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => (e.preventDefault(), close.mutate())}>
+        <div className="text-sm">Expected cash in drawer<div className="text-lg font-semibold">{formatCurrency(d.expectedCash)}</div></div>
+        <label className="text-sm">Counted cash (₹)<input value={counted} onChange={(e) => setCounted(e.target.value)} inputMode="decimal" className={`${inputClass} mt-1 w-36!`} /></label>
+        <label className="text-sm">Note<input value={note} onChange={(e) => setNote(e.target.value)} className={`${inputClass} mt-1 w-64!`} placeholder="optional" /></label>
+        <Button type="submit" loading={close.isPending}>Close day</Button>
+      </form>
+    </Card>
   );
 }

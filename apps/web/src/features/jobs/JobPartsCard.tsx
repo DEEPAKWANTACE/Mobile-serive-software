@@ -27,6 +27,7 @@ export function JobPartsCard({ job }: { job: JobDto }) {
   const [found, setFound] = useState<PartLookupDto | null>(null);
   const [qty, setQty] = useState('1');
   const [inputKey, setInputKey] = useState(0);
+  const canNote = (isEngineer || user?.role === ROLES.BRANCH_MANAGER || user?.role === ROLES.SUPER_ADMIN) && job.parts.some((p) => p.status === 'ISSUED' && (p.noteStatus === 'NONE' || p.noteStatus === 'REJECTED'));
 
   const request = useMutation({
     mutationFn: () => api.post(`/jobs/${job.id}/parts`, { code: found!.code, quantity: Number(qty) || 1 }),
@@ -49,6 +50,7 @@ export function JobPartsCard({ job }: { job: JobDto }) {
   });
 
   if (!job.parts.length && !canRequest) return null;
+  const toNote = job.parts.filter((p) => p.status === 'ISSUED' && (p.noteStatus === 'NONE' || p.noteStatus === 'REJECTED'));
   const issuedValue = job.parts.filter((p) => p.status === 'ISSUED').reduce((s, p) => s + p.unitPrice * p.quantity, 0);
 
   return (
@@ -81,6 +83,11 @@ export function JobPartsCard({ job }: { job: JobDto }) {
               </span>
               <span className="flex items-center gap-2">
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusStyle[p.status]}`}>{JOB_PART_STATUS_LABELS[p.status]}</span>
+                {p.status === 'ISSUED' && p.noteStatus !== 'NONE' && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${p.noteStatus === 'APPROVED' ? 'bg-emerald-50 text-emerald-700' : p.noteStatus === 'REJECTED' ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-800'}`} title={p.noteRemark ?? undefined}>
+                    Return note: {p.noteStatus === 'SUBMITTED' ? 'awaiting approval' : p.noteStatus.toLowerCase()}{p.usedQuantity != null ? ` · used ${p.usedQuantity}` : ''}
+                  </span>
+                )}
                 {isEngineer && (p.status === 'REQUESTED' || p.status === 'NOT_AVAILABLE') && (
                   <Button size="sm" variant="ghost" loading={cancel.isPending} onClick={() => cancel.mutate(p.id)}>
                     Cancel
@@ -93,7 +100,47 @@ export function JobPartsCard({ job }: { job: JobDto }) {
       ) : (
         <p className="text-sm text-slate-500">No parts requested yet.</p>
       )}
+      {canNote && <ReturnNoteForm jobId={job.id} parts={toNote} />}
       {issuedValue > 0 && <p className="mt-3 text-sm text-slate-600">Parts issued: {formatCurrency(issuedValue)}</p>}
     </Card>
+  );
+}
+
+/** Engineer states how many of each issued part were really used; the Branch Manager then approves it. */
+function ReturnNoteForm({ jobId, parts }: { jobId: string; parts: JobDto['parts'] }) {
+  const queryClient = useQueryClient();
+  const [used, setUsed] = useState<Record<string, string>>(() => Object.fromEntries(parts.map((p) => [p.id, String(p.usedQuantity ?? p.quantity)])));
+  const save = useMutation({
+    mutationFn: () => api.post(`/jobs/${jobId}/return-note`, { lines: parts.map((p) => ({ jobPartId: p.id, usedQuantity: Number(used[p.id] ?? p.quantity) })) }),
+    onSuccess: () => {
+      toast.success('Return Note sent to the Branch Manager');
+      void queryClient.invalidateQueries({ queryKey: ['jobs', jobId] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const rejected = parts.find((p) => p.noteStatus === 'REJECTED');
+  return (
+    <form
+      className="mt-4 space-y-2 rounded-md border border-amber-200 bg-amber-50/60 p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        for (const p of parts) {
+          const n = Number(used[p.id]);
+          if (!Number.isInteger(n) || n < 0 || n > p.quantity) return toast.error(`${p.part.code}: enter 0 to ${p.quantity}`);
+        }
+        save.mutate();
+      }}
+    >
+      <div className="text-sm font-medium text-amber-900">Return Note — how many of each part did you actually use?</div>
+      {rejected?.noteRemark && <p className="text-xs text-red-700">Rejected: {rejected.noteRemark}</p>}
+      {parts.map((p) => (
+        <label key={p.id} className="flex items-center justify-between gap-3 text-sm">
+          <span><span className="font-mono font-semibold">{p.part.code}</span> · {p.part.name} <span className="text-slate-500">(issued {p.quantity})</span></span>
+          <input value={used[p.id] ?? ''} onChange={(e) => setUsed((u) => ({ ...u, [p.id]: e.target.value }))} inputMode="numeric" className={`${inputClass} w-16!`} aria-label={`Used ${p.part.code}`} />
+        </label>
+      ))}
+      <p className="text-xs text-slate-600">Unused pieces go back to stock when the Branch Manager approves.</p>
+      <Button type="submit" size="sm" loading={save.isPending}>Submit Return Note</Button>
+    </form>
   );
 }

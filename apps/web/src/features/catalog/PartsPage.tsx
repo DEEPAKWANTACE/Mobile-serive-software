@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
-import { partCreateSchema, ROLES, type BrandDto, type ModelDto, type PartCreateData, type PartCreateInput, type PartDto } from '@msm/shared';
+import { partCreateSchema, ROLES, type BrandDto, type ModelDto, type PartCreateData, type PartCreateInput, type PartCategoryDto, type PartDto } from '@msm/shared';
 import { StatusToggle } from '@/components/StatusToggle';
 import { Button } from '@/components/ui/Button';
 import { DataTable, type Column } from '@/components/ui/DataTable';
@@ -14,7 +15,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Pagination } from '@/components/ui/Pagination';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useListState } from '@/hooks/use-list-state';
-import { useList, useOptions, useSave } from '@/lib/crud';
+import { api } from '@/lib/api-client';
+import { toQueryString, useList, useOptions, useSave } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { formatCurrency } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-context';
@@ -94,6 +96,9 @@ function PartForm({ part, branchId: scopeBranch, scope, onDone }: { part?: PartD
     },
   });
   const brandId = watch('brandId');
+  const catWatch = watch('category');
+  const cats = useQuery({ queryKey: ['part-categories', scope], queryFn: () => api.get<PartCategoryDto[]>(`/parts/categories?${toQueryString({ ...scope, branchId: scopeBranch ?? undefined })}`) });
+  const subOptions = (cats.data ?? []).find((c) => c.name === catWatch)?.subcategories ?? [];
   const { items: models } = useOptions<ModelDto>('models', { brandId: brandId ?? '' }, { enabled: !!brandId });
 
   const onSubmit = handleSubmit((data) =>
@@ -117,14 +122,17 @@ function PartForm({ part, branchId: scopeBranch, scope, onDone }: { part?: PartD
       <Field label="Part name" required error={errors.name?.message}>
         <input {...register('name')} className={inputClass} placeholder="e.g. Display – Galaxy S24 OG" />
       </Field>
-      <Field label="Category" error={errors.category?.message} hint="e.g. Display, Charging, Battery">
-        <input {...register('category')} className={inputClass} />
+      <Field label="Category" error={errors.category?.message} hint="Pick one or type a new one (manage under Store → Part Categories)">
+        <input {...register('category')} list="part-cat-list" className={inputClass} />
+        <datalist id="part-cat-list">{(cats.data ?? []).map((c) => <option key={c.name} value={c.name} />)}</datalist>
       </Field>
       <Field label="Subcategory" error={errors.subcategory?.message} hint="e.g. Not glowing, Broken, No touch">
-        <input {...register('subcategory')} className={inputClass} />
+        <input {...register('subcategory')} list="part-sub-list" className={inputClass} />
+        <datalist id="part-sub-list">{subOptions.map((s) => <option key={s.name} value={s.name} />)}</datalist>
       </Field>
       <Field label="Colour" error={errors.color?.message} hint="e.g. Black, Blue — give each colour its own part code">
-        <input {...register('color')} className={inputClass} />
+        <input {...register('color')} list="part-color-list" className={inputClass} />
+        <datalist id="part-color-list">{['Black', 'Blue', 'Green', 'Gold', 'White', 'Silver', 'Red'].map((c) => <option key={c} value={c} />)}</datalist>
       </Field>
       <Field label="Brand" hint="Optional — leave blank for universal parts">
         <select

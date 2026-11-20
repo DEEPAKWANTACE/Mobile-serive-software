@@ -52,6 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Store',
     items: [
       { label: 'Part Requests', to: '/store/requests', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Part Categories', to: '/store/categories', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Stock', to: '/store/stock', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Stock Transfers', to: '/store/transfers', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Stock Ledger', to: '/store/ledger', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
@@ -63,6 +64,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Shop Settings', to: '/settings/shop', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Diagnosis Findings', to: '/settings/diagnosis-findings', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Job List Columns', to: '/settings/job-list-columns', roles: [ROLES.SUPER_ADMIN] },
+      { label: 'Manager Permissions', to: '/settings/manager-permissions', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Job Defaults', to: '/settings/job-defaults', roles: [ROLES.BRANCH_MANAGER] },
       { label: 'Branches', to: '/masters/branches', roles: [ROLES.SUPER_ADMIN] },
       { label: 'Cities', to: '/masters/cities', roles: [ROLES.SUPER_ADMIN] },

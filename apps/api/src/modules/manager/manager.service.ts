@@ -15,6 +15,7 @@ import { businessRange, businessToday, startOfBusinessDay } from '../../lib/busi
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
+import { assertCan } from '../../lib/permissions.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
 
 const DAY = 86_400_000;
@@ -133,11 +134,12 @@ export async function diagnosisPending(query: ManagerRangeQuery, actor: Actor): 
 /** Parts actually issued to jobs in the range. Returned / cancelled lines are excluded, so nothing is counted twice. */
 export async function consumption(query: ManagerRangeQuery, actor: Actor, unorderedOnly = false) {
   const branchId = scope(actor, query.branchId);
-  return prisma.jobPart.findMany({
-    where: { status: 'ISSUED', handledAt: businessRange(query.from, query.to), ...(unorderedOnly && { poId: null }), ...(branchId && { job: atBranch(branchId) }) },
+  const rows = await prisma.jobPart.findMany({
+    where: { status: 'ISSUED', noteStatus: 'APPROVED', handledAt: businessRange(query.from, query.to), ...(unorderedOnly && { poId: null }), ...(branchId && { job: atBranch(branchId) }) },
     select: {
       id: true,
       quantity: true,
+      usedQuantity: true,
       unitPrice: true,
       requestedBy: { select: { name: true } },
       part: {
@@ -155,6 +157,8 @@ export async function consumption(query: ManagerRangeQuery, actor: Actor, unorde
       },
     },
   });
+  // Only what the engineer confirmed as used (Return Note approved) counts as consumption.
+  return rows.map((r) => ({ ...r, quantity: r.usedQuantity ?? r.quantity })).filter((r) => r.quantity > 0);
 }
 
 /** Auto purchase order: total issued quantity per part for the period — no manual counting. */
@@ -190,6 +194,7 @@ export async function purchaseOrder(query: ManagerRangeQuery, actor: Actor): Pro
 
 export async function profitLoss(query: ManagerRangeQuery, actor: Actor): Promise<ProfitLossDto> {
   const branchId = scope(actor, query.branchId);
+  await assertCan(actor, 'view_pnl');
   const r = businessRange(query.from, query.to);
   const used = await consumption(query, actor);
 

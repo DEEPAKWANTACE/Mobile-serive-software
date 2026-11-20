@@ -1,4 +1,10 @@
+import { timingSafeEqual } from 'node:crypto';
 import { Router } from 'express';
+import { callRecordsSchema } from '@msm/shared';
+import { env } from './config/env.ts';
+import { HttpError } from './lib/http-error.ts';
+import { validate } from './middleware/validate.ts';
+import { ingest as ingestCalls } from './modules/calling/call-verify.service.ts';
 import { authenticate } from './middleware/authenticate.ts';
 import { accountsRoutes } from './modules/accounts/accounts.routes.ts';
 import { authRoutes } from './modules/auth/auth.routes.ts';
@@ -27,6 +33,13 @@ export const apiRouter = Router();
 // Public
 apiRouter.use('/health', healthRoutes);
 apiRouter.use('/auth', authRoutes);
+apiRouter.post('/calls/webhook', validate({ body: callRecordsSchema }), async (req, res) => {
+  const key = env.CALL_WEBHOOK_KEY;
+  if (!key) throw HttpError.badRequest('Call webhook is not enabled');
+  const given = String(req.header('x-api-key') ?? '');
+  if (given.length !== key.length || !timingSafeEqual(Buffer.from(given), Buffer.from(key))) throw HttpError.unauthorized();
+  res.json(await ingestCalls(req.body, 'WEBHOOK', req.body.branchId ?? null));
+});
 
 // Everything below requires a signed-in user
 apiRouter.use(authenticate);

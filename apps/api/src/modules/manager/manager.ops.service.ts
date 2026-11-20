@@ -1,6 +1,8 @@
 import {
   roundMoney,
   type CallingPendingRowDto,
+  type DayClosingDto,
+  type DayClosingStatusDto,
   type CallingReportDto,
   type JobStatus,
   type ManagerAlertDto,
@@ -15,7 +17,9 @@ import { businessRange, businessToday, startOfBusinessDay } from '../../lib/busi
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
+import { assertCan } from '../../lib/permissions.ts';
 import { recordAudit } from '../audit/audit.service.ts';
+import { dayBook } from '../accounts/accounts.service.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
 import { atBranch, consumption, diagnosisPending, groupConsumption, pendingJobs, scope } from './manager.service.ts';
 
@@ -143,25 +147,35 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
   const branchId = scope(actor, requested);
   const own = branchId ? { branchId } : {};
   const today = businessToday();
-  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved] = await Promise.all([
+  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved, notesWaiting, notesMissing, closingOpen] = await Promise.all([
     pendingJobs({ days: 15, branchId: requested }, actor).then((r) => r.length),
     diagnosisPending({ from: today, to: today, branchId: requested }, actor).then((r) => r.length),
     prisma.l4Request.count({ where: { status: 'PENDING', ...(branchId && { job: { branchId } }) } }),
     prisma.stockTransfer.count({ where: { status: 'SENT', ...(branchId && { toBranchId: branchId }) } }),
     stockOverview(actor, requested),
-    prisma.jobPart.count({ where: { status: 'ISSUED', poId: null, ...(branchId && { job: atBranch(branchId) }) } }),
+    prisma.jobPart.count({ where: { status: 'ISSUED', noteStatus: 'APPROVED', poId: null, ...(branchId && { job: atBranch(branchId) }) } }),
     prisma.job.count({ where: { ...own, status: { in: CALL_STATUSES }, callLogs: { none: {} } } }),
     prisma.job.count({ where: { ...own, status: { in: CALL_STATUSES }, callLogs: { some: { nextFollowUpAt: { lt: businessRange(today, today).lt } } } } }),
     prisma.job.count({ where: { ...own, status: 'AWAITING_APPROVAL' } }),
     prisma.expense.count({ where: { ...own, voidedAt: null, approvedAt: null, expenseDate: { gte: today.slice(0, 8) + '01' } } }),
+    prisma.jobPart.findMany({ where: { status: 'ISSUED', noteStatus: 'SUBMITTED', ...(branchId && { job: atBranch(branchId) }) }, select: { jobId: true }, distinct: ['jobId'] }).then((r) => r.length),
+    prisma.jobPart.findMany({
+      where: { status: 'ISSUED', noteStatus: { in: ['NONE', 'REJECTED'] }, job: { status: { in: ['REPAIRED', 'TESTING', 'READY_FOR_DELIVERY', 'DELIVERED'] }, ...atBranch(branchId) } },
+      select: { jobId: true },
+      distinct: ['jobId'],
+    }).then((r) => r.length),
+    closingPending(branchId),
   ]);
   const items: ManagerAlertDto[] = [
     { key: 'pending15', label: 'Jobs pending more than 15 days', count: old, priority: 'HIGH', link: '/branch-insights?tab=pending' },
     { key: 'l4', label: 'L4 transfer approvals pending', count: l4, priority: 'HIGH', link: '/l4' },
     { key: 'diagnosis', label: 'Same-day diagnosis pending', count: diag, priority: 'HIGH', link: '/branch-insights?tab=diagnosis' },
+    { key: 'returnNotes', label: 'Return Notes waiting for your approval', count: notesWaiting, priority: 'HIGH', link: '/branch-insights?tab=returnNotes' },
+    { key: 'closing', label: 'Day closing pending', count: closingOpen, priority: 'HIGH', link: '/accounts/day-book' },
     { key: 'incoming', label: 'Stock from Head Office awaiting acceptance', count: incoming, priority: 'MEDIUM', link: '/store/transfers' },
     { key: 'lowStock', label: 'Low stock items', count: stock.low.length, priority: 'MEDIUM', link: '/branch-insights?tab=stock' },
     { key: 'po', label: 'Consumed parts not yet on a purchase order', count: unordered, priority: 'MEDIUM', link: '/branch-insights?tab=po' },
+    { key: 'noteMissing', label: 'Jobs with issued parts but no approved Return Note', count: notesMissing, priority: 'MEDIUM', link: '/branch-insights?tab=returnNotes' },
     { key: 'noCall', label: 'Customers not called yet', count: noCall, priority: 'MEDIUM', link: '/branch-insights?tab=calling' },
     { key: 'followUp', label: 'Customer follow-ups due', count: due, priority: 'MEDIUM', link: '/calling' },
     { key: 'approval', label: 'Estimates awaiting customer approval', count: awaiting, priority: 'LOW', link: '/jobs' },
@@ -270,6 +284,7 @@ const poSelect = {
 
 /** Saves a PO from parts issued in the period that are on no PO yet, and marks them so they are never ordered twice. */
 export async function createPo(data: PoCreateData, actor: Actor) {
+  await assertCan(actor, 'manage_po');
   const branchId = scope(actor, data.branchId);
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select a branch'] });
   if (data.from > data.to) throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
@@ -299,6 +314,7 @@ export async function listPos(actor: Actor, requested?: string): Promise<Purchas
 }
 
 export async function forwardPo(id: string, actor: Actor) {
+  await assertCan(actor, 'manage_po');
   const po = await prisma.purchaseOrder.findUnique({ where: { id }, select: { branchId: true, status: true, poNumber: true } });
   if (!po) throw HttpError.notFound('Purchase order not found');
   if (actor.branchId && actor.branchId !== po.branchId) throw HttpError.forbidden();
@@ -313,6 +329,7 @@ export async function forwardPo(id: string, actor: Actor) {
 
 export async function addDiagnosisRemark(jobId: string, remark: string, actor: Actor) {
   scope(actor);
+  await assertCan(actor, 'manager_remarks');
   const job = await prisma.job.findUnique({ where: { id: jobId }, select: { branchId: true } });
   if (!job) throw HttpError.notFound('Job not found');
   if (actor.branchId && actor.branchId !== job.branchId) throw HttpError.forbidden();
@@ -323,3 +340,70 @@ export async function addDiagnosisRemark(jobId: string, remark: string, actor: A
 }
 
 export { startOfBusinessDay };
+
+// ─── Day closing ────────────────────────────────────────────────────────────
+
+const toClosingDto = (c: { date: string; expectedCash: { toNumber(): number }; countedCash: { toNumber(): number } | null; note: string | null; closedAt: Date; closedBy: { name: string } }): DayClosingDto => ({
+  date: c.date,
+  expectedCash: c.expectedCash.toNumber(),
+  countedCash: c.countedCash?.toNumber() ?? null,
+  variance: c.countedCash ? roundMoney(c.countedCash.toNumber() - c.expectedCash.toNumber()) : null,
+  note: c.note,
+  closedBy: c.closedBy.name,
+  closedAt: c.closedAt.toISOString(),
+});
+const closingSelect = { date: true, expectedCash: true, countedCash: true, note: true, closedAt: true, closedBy: { select: { name: true } } } as const;
+
+function closingBranch(actor: Actor, requested?: string) {
+  const branchId = scope(actor, requested);
+  if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select a branch'] });
+  return branchId;
+}
+
+export async function dayClosingStatus(date: string | undefined, actor: Actor, requested?: string): Promise<DayClosingStatusDto> {
+  const branchId = closingBranch(actor, requested);
+  const day = date ?? businessToday();
+  const [book, closing] = await Promise.all([
+    dayBook({ from: day, to: day, branchId }, actor),
+    prisma.dayClosing.findUnique({ where: { branchId_date: { branchId, date: day } }, select: closingSelect }),
+  ]);
+  return { date: day, expectedCash: book.closingCash, closing: closing ? toClosingDto(closing) : null };
+}
+
+export async function closeDay(data: { branchId?: string; date?: string; countedCash?: number | null; note?: string }, actor: Actor) {
+  const branchId = closingBranch(actor, data.branchId);
+  await assertCan(actor, 'close_day');
+  const day = data.date ?? businessToday();
+  if (day > businessToday()) throw HttpError.badRequest('Invalid request', { date: ['Cannot close a future day'] });
+  const status = await dayClosingStatus(day, actor, branchId);
+  if (status.closing) throw HttpError.conflict('This day is already closed');
+  try {
+    await prisma.$transaction(async (tx) => {
+      const row = await tx.dayClosing.create({
+        data: { branchId, date: day, expectedCash: status.expectedCash, countedCash: data.countedCash ?? null, note: data.note ?? null, closedById: actor.sub },
+        select: { id: true },
+      });
+      await recordAudit({ actorId: actor.sub, action: 'day.closed', entityType: 'day_closing', entityId: row.id, branchId, metadata: { date: day, expectedCash: status.expectedCash, countedCash: data.countedCash ?? null, note: data.note ?? null }, ip: actor.ip }, tx);
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === 'P2002') throw HttpError.conflict('This day is already closed');
+    throw e;
+  }
+}
+
+/** Branches whose yesterday had money activity and was never closed, or whose today is still open after 7 pm. */
+async function closingPending(branchId?: string) {
+  const today = businessToday();
+  const yesterday = businessToday(new Date(Date.now() - DAY));
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const branches = await prisma.branch.findMany({ where: { isActive: true, type: 'SERVICE_CENTER', ...(branchId && { id: branchId }) }, select: { id: true } });
+  let pending = 0;
+  for (const b of branches) {
+    const closed = new Set((await prisma.dayClosing.findMany({ where: { branchId: b.id, date: { in: [today, yesterday] } }, select: { date: true } })).map((c) => c.date));
+    const active = async (d: string) =>
+      (await prisma.payment.count({ where: { branchId: b.id, createdAt: businessRange(d, d) } })) + (await prisma.expense.count({ where: { branchId: b.id, voidedAt: null, expenseDate: d } })) > 0;
+    if (!closed.has(yesterday) && (await active(yesterday))) pending += 1;
+    else if (hour >= 19 && !closed.has(today) && (await active(today))) pending += 1;
+  }
+  return pending;
+}

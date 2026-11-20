@@ -13,6 +13,7 @@ import type { Prisma } from '../../generated/prisma/client.ts';
 import { HttpError } from '../../lib/http-error.ts';
 import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
+import { assertCan } from '../../lib/permissions.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { loadForAccess } from './jobs.service.ts';
 import { endAssignment, recordStatus } from './history.ts';
@@ -288,6 +289,7 @@ export async function listRequests(query: L4RequestListQuery, actor: Actor): Pro
 
 /** Branch Manager approves: the phone is sent to L4 now, under the same rules as a direct send. */
 export async function approveRequest(requestId: string, note: string | null | undefined, actor: Actor) {
+  await assertCan(actor, 'approve_l4');
   const req = await prisma.l4Request.findUnique({ where: { id: requestId }, select: { jobId: true, toBranchId: true, reason: true } });
   if (!req) throw HttpError.notFound('Request not found');
   const claimed = await prisma.l4Request.updateMany({
@@ -304,6 +306,7 @@ export async function approveRequest(requestId: string, note: string | null | un
 }
 
 export async function rejectRequest(requestId: string, note: string | null | undefined, actor: Actor) {
+  await assertCan(actor, 'approve_l4');
   const req = await prisma.l4Request.findUnique({ where: { id: requestId }, select: { jobId: true, job: { select: { branchId: true } } } });
   if (!req) throw HttpError.notFound('Request not found');
   if (actor.branchId && actor.branchId !== req.job.branchId) throw HttpError.forbidden();
