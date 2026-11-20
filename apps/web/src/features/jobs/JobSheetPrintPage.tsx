@@ -74,12 +74,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function PatternBoxes() {
-  return <div className="grid w-[58px] grid-cols-3 gap-1">{Array.from({ length: 9 }, (_, i) => <span key={i} className="block aspect-square border border-slate-900" />)}</div>;
+  return <div className="grid w-[58px] grid-cols-3 gap-1">{Array.from({ length: 9 }, (_, i) => <span key={i} className="block aspect-square border border-black" />)}</div>;
 }
 
 function PrintCheckbox({ checked, children }: { checked: boolean; children: ReactNode }) {
   return <div className="flex items-center gap-1.5">
-    <span className="flex size-3.5 shrink-0 items-center justify-center border border-slate-900 text-[10px] font-bold leading-none">{checked ? '✓' : ''}</span>
+    <span className="flex size-3.5 shrink-0 items-center justify-center border border-black text-[10px] font-bold leading-none">{checked ? '✓' : ''}</span>
     <span>{children}</span>
   </div>;
 }
@@ -109,13 +109,13 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
     ...(device.manualFault ? [device.manualFault] : []),
     ...(device.customerComplaint ? [device.customerComplaint] : []),
   ].join(', ');
-  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-slate-700 bg-white p-3 text-[14.5px] leading-snug print:box-border print:h-[196mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
-    <header className="relative border-b border-slate-700 px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
+  return <article className="flex min-h-[270mm] flex-col rounded-lg border border-black bg-white p-3 text-black grayscale text-[14.5px] leading-snug print:box-border print:h-[196mm] print:min-h-0 print:w-[136mm] print:break-inside-avoid print:overflow-hidden print:rounded-none print:p-2 print:text-[10.5px] print:leading-tight">
+    <header className="relative border-b border-black px-24 pb-2 text-center print:min-h-[24mm] print:shrink-0 print:px-[25mm] print:pb-1">
       <div className="font-bold">Inward Slip</div>
       <ShopHeader branch={job.branch} compact />
       <div className="absolute top-0 right-0 text-right font-semibold uppercase">{copy === 'customer' ? 'Customer Copy' : 'Office Copy'}</div>
     </header>
-    <div className="grid grid-cols-2 gap-x-5 gap-y-1 border-b border-slate-700 py-2 print:min-h-[28mm] print:shrink-0 print:gap-x-3 print:py-1.5">
+    <div className="grid grid-cols-2 gap-x-5 gap-y-1 border-b border-black py-2 print:min-h-[28mm] print:shrink-0 print:gap-x-3 print:py-1.5">
       <Row label="Date"><span className="whitespace-nowrap">{formatDateTime(job.createdAt)}</span></Row>
       <Row label="Job No."><span className="font-mono whitespace-nowrap">{serial(job.jobNumber)}</span></Row>
       <Row label="Customer">{job.customer.name}</Row>
@@ -127,9 +127,9 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Engineer">{job.assignedEngineer?.name}</Row>
     </div>
     {multipleDevices ? (
-      <div className="border-b border-slate-700 py-2 print:shrink-0 print:py-1">
+      <div className="border-b border-black py-2 print:shrink-0 print:py-1">
         <div className="mb-1 font-semibold">Items ({job.devices.length})</div>
-        <div className="divide-y divide-slate-300 border border-slate-400">
+        <div className="divide-y divide-black border border-black">
           {job.devices.map((device, index) => {
             const received = [...device.accessories, ...(device.accessoriesOther ? [device.accessoriesOther] : [])];
             return (
@@ -142,7 +142,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         </div>
       </div>
     ) : <>
-      <div className="space-y-1 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:py-1">
+      <div className="space-y-1 border-b border-black py-2 print:min-h-[22mm] print:shrink-0 print:py-1">
         <Row label={job.jobType === 'ACCESSORY' ? 'Accessory' : 'Product'}>{product}</Row>
         <div className="grid grid-cols-2 gap-x-5 print:gap-x-3">
           <Row label="Type">{job.jobType === 'MOBILE' ? 'Mobile' : 'Accessory'}</Row>
@@ -154,12 +154,12 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         </div>
         <Row label="Serial No."><span className="font-mono">{job.serialNumber}</span></Row>
       </div>
-      <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-slate-700 py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
-        <div><div className="border-b border-slate-400 font-semibold">Problem</div><p className="pt-1">{[...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])].join(', ')}</p><p>{job.customerComplaint}</p></div>
-        <div><div className="border-b border-slate-400 font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
+      <div className="grid min-h-28 grid-cols-2 gap-5 border-b border-black py-2 print:min-h-[22mm] print:shrink-0 print:gap-3 print:py-1">
+        <div><div className="border-b border-black font-semibold">Problem</div><p className="pt-1">{[...job.faults.map((f) => f.name), ...(job.manualFault ? [job.manualFault] : [])].join(', ')}</p><p>{job.customerComplaint}</p></div>
+        <div><div className="border-b border-black font-semibold">Remark</div><p className="pt-1">{job.physicalConditionRemark ?? job.conditionNotes}</p></div>
       </div>
     </>}
-    <div className="grid grid-cols-3 gap-5 border-b border-slate-700 py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">
+    <div className="grid grid-cols-3 gap-5 border-b border-black py-4 print:min-h-[34mm] print:shrink-0 print:items-center print:gap-3 print:py-1">
       <div className="col-span-2">
         <div className="grid grid-cols-2 gap-x-4">
           <div className="space-y-1">
@@ -173,9 +173,9 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
             <PrintCheckbox checked={job.warranty === 'OUT_OF_WARRANTY'}>Out Warranty</PrintCheckbox>
           </div>
         </div>
-        <div className="mt-2 border-t border-slate-300 pt-1">
+        <div className="mt-2 border-t border-black pt-1">
           <PrintCheckbox checked={!accessories.length}>No accessory received</PrintCheckbox>
-          {!!otherAccessories.length && <div className="mt-1 text-[0.9em] text-slate-700">Other accessories: {otherAccessories.join(', ')}</div>}
+          {!!otherAccessories.length && <div className="mt-1 text-[0.9em] text-black">Other accessories: {otherAccessories.join(', ')}</div>}
         </div>
       </div>
       <div>
@@ -184,7 +184,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       </div>
     </div>
     {job.approvedAt && job.estimateLines.length > 0 ? (
-      <div className="border-b border-slate-700 py-2 print:shrink-0 print:py-1">
+      <div className="border-b border-black py-2 print:shrink-0 print:py-1">
         <div className="font-bold">Approved costing: {formatCurrency(job.approvedAmount ?? job.quotedAmount ?? 0)}</div>
         <ul className="mt-0.5 text-[0.9em]">
           {job.estimateLines.map((l) => (
@@ -196,11 +196,11 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
         </ul>
       </div>
     ) : (
-      <div className="border-b border-slate-700 py-2 font-bold print:flex print:min-h-[7mm] print:shrink-0 print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
+      <div className="border-b border-black py-2 font-bold print:flex print:min-h-[7mm] print:shrink-0 print:items-center print:py-1">Estimate Amount: {job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</div>
     )}
-    {!!advance.length && <div className="border-b border-slate-300 py-2 print:shrink-0 print:py-1">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
-    {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-slate-300 py-2 text-xs print:shrink-0 print:py-1 print:text-[9px]"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
-    <div lang="mr" className="flex-1 py-3 text-[12px] leading-relaxed text-slate-800 print:min-h-0 print:overflow-hidden print:py-1 print:text-[9px] print:leading-snug">
+    {!!advance.length && <div className="border-b border-black py-2 print:shrink-0 print:py-1">Advance: <strong>{formatCurrency(advance.reduce((s, p) => s + p.amount, 0))}</strong> ({advance.map((p) => PAYMENT_MODE_LABELS[p.mode]).join(', ')})</div>}
+    {(job.warrantyPeriod || job.warrantyTerms) && <div className="border-b border-black py-2 text-xs print:shrink-0 print:py-1 print:text-[9px]"><strong>Repair warranty:</strong> {job.warrantyPeriod || 'As stated'}{job.warrantyTerms && ` — ${job.warrantyTerms}`}</div>}
+    <div lang="mr" className="flex-1 py-3 text-[12px] leading-relaxed text-black print:min-h-0 print:overflow-hidden print:py-1 print:text-[9px] print:leading-snug">
       <strong>सुचना:</strong>
       <p>१) पावती आणल्याशिवाय मोबाईल मिळणार नाही.</p>
       <p>२) आऊट वारंटी मोबाईल ३० दिवसाचे आत घेऊन जाणे.</p>
@@ -208,6 +208,6 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <p>४) मोबाईल रिपेयर झाल्यानंतर मोबाईल चेक करून घेणे. नंतर कुठलीही तक्रार ऐकून घेतल्या जाणार नाही.</p>
       <p>५) सांगितलेल्या खर्चात बदल होऊ शकतो.</p>
     </div>
-    <footer className="mt-auto flex min-h-[20mm] items-end justify-between border-t border-slate-700 pt-6 text-xs font-semibold print:min-h-[14mm] print:shrink-0 print:pb-1 print:pt-2 print:text-[9px]"><span>Customer Signature</span><span>Authorised Signature</span></footer>
+    <footer className="mt-auto flex min-h-[20mm] items-end justify-between border-t border-black pt-6 text-xs font-semibold print:min-h-[14mm] print:shrink-0 print:pb-1 print:pt-2 print:text-[9px]"><span>Customer Signature</span><span>Authorised Signature</span></footer>
   </article>;
 }

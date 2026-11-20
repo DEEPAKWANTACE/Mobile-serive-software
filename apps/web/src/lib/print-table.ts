@@ -21,12 +21,12 @@ export function writeTable(win: Window, { title, subtitle, headers, rows, landsc
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>
   @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 10mm; }
-  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #0f172a; margin: 0; }
+  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; color: #000; margin: 0; }
   h1 { font-size: 16px; margin: 0 0 2px; }
-  p { font-size: 11px; color: #475569; margin: 0 0 10px; }
+  p { font-size: 11px; color: #000; margin: 0 0 10px; }
   table { width: 100%; border-collapse: collapse; font-size: 10px; }
-  th, td { border: 1px solid #cbd5e1; padding: 4px 5px; text-align: left; vertical-align: top; }
-  th { background: #f1f5f9; font-weight: 600; }
+  th, td { border: 1px solid #000; padding: 4px 5px; text-align: left; vertical-align: top; }
+  th { background: #fff; font-weight: 700; }
   tr { break-inside: avoid; }
 </style></head><body>
 <h1>${esc(title)}</h1>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}
