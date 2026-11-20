@@ -5,6 +5,8 @@ import {
   ROLES,
   type JobMovementDto,
   type L4MovementListQuery,
+  type L4RequestDto,
+  type L4RequestListQuery,
   type SendToL4Data,
 } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
@@ -185,4 +187,130 @@ export async function listMovements(query: L4MovementListQuery, actor: Actor): P
       customer: m.job.customer.name,
     },
   }));
+}
+
+// ─── Engineer L4 requests: the Branch Manager approves before the phone moves ───
+
+/** An engineer asks to send the job to L4. Nothing moves until a Branch Manager approves. */
+export async function requestL4(jobId: string, { toBranchId, reason }: SendToL4Data, actor: Actor) {
+  const job = await loadForAccess(jobId, actor);
+  if (job.location !== 'AT_BRANCH' || job.currentBranchId !== job.branchId) throw HttpError.conflict('The phone is not at its own branch');
+  if (job.assignedEngineerId !== actor.sub) throw HttpError.forbidden('Only the engineer working on it can request L4');
+  if (!L4_SENDABLE_STATUSES.includes(job.status)) {
+    throw HttpError.conflict(`Cannot request L4 while the job is "${JOB_STATUS_LABELS[job.status]}"`);
+  }
+  const target = await prisma.branch.findUnique({ where: { id: toBranchId }, select: { id: true, code: true, type: true, isActive: true } });
+  if (!target || !target.isActive || target.type !== 'MAIN_OFFICE' || target.id === job.branchId) {
+    throw HttpError.badRequest('Invalid request', { toBranchId: ['Select an active main office (L4)'] });
+  }
+  if (await prisma.l4Request.findFirst({ where: { jobId, status: 'PENDING' }, select: { id: true } })) {
+    throw HttpError.conflict('An L4 request for this job is already waiting for approval');
+  }
+  await prisma.$transaction(async (tx) => {
+    const created = await tx.l4Request.create({ data: { jobId, toBranchId: target.id, reason: reason ?? null, requestedById: actor.sub } });
+    await recordAudit(
+      { actorId: actor.sub, action: 'job.l4_requested', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { requestId: created.id, to: target.code, reason: reason ?? null }, ip: actor.ip },
+      tx,
+    );
+  });
+}
+
+const requestSelect = {
+  id: true,
+  status: true,
+  reason: true,
+  requestedAt: true,
+  decidedAt: true,
+  decisionNote: true,
+  requestedBy: { select: { name: true } },
+  decidedBy: { select: { name: true } },
+  toBranch: { select: { id: true, code: true, name: true } },
+  job: {
+    select: {
+      id: true,
+      jobNumber: true,
+      status: true,
+      imei: true,
+      createdAt: true,
+      diagnosisNotes: true,
+      jobType: true,
+      accessoryName: true,
+      manualBrand: true,
+      manualModel: true,
+      brand: { select: { name: true } },
+      deviceModel: { select: { name: true } },
+      customer: { select: { name: true } },
+      branch: { select: { code: true } },
+      assignedEngineer: { select: { name: true } },
+    },
+  },
+} satisfies Prisma.L4RequestSelect;
+
+export async function listRequests(query: L4RequestListQuery, actor: Actor): Promise<L4RequestDto[]> {
+  const branch = actor.branchId ?? query.branchId;
+  const rows = await prisma.l4Request.findMany({
+    where: {
+      ...(query.status && { status: query.status }),
+      ...(branch && { job: { branchId: branch } }),
+      ...(actor.role === ROLES.ENGINEER && { requestedById: actor.sub }),
+    },
+    select: requestSelect,
+    orderBy: { requestedAt: 'desc' },
+    take: 300,
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    reason: r.reason,
+    requestedBy: r.requestedBy.name,
+    requestedAt: r.requestedAt.toISOString(),
+    decidedBy: r.decidedBy?.name ?? null,
+    decidedAt: r.decidedAt?.toISOString() ?? null,
+    decisionNote: r.decisionNote,
+    to: r.toBranch,
+    job: {
+      id: r.job.id,
+      jobNumber: publicJobNumber(r.job.jobNumber),
+      device:
+        r.job.jobType === 'ACCESSORY'
+          ? (r.job.accessoryName ?? 'Accessory')
+          : [r.job.brand?.name ?? r.job.manualBrand, r.job.deviceModel?.name ?? r.job.manualModel].filter(Boolean).join(' ') || 'Mobile',
+      imei: r.job.imei,
+      customer: r.job.customer.name,
+      status: r.job.status,
+      loginDate: r.job.createdAt.toISOString(),
+      engineer: r.job.assignedEngineer?.name ?? null,
+      diagnosis: r.job.diagnosisNotes,
+      branchCode: r.job.branch.code,
+    },
+  }));
+}
+
+/** Branch Manager approves: the phone is sent to L4 now, under the same rules as a direct send. */
+export async function approveRequest(requestId: string, note: string | null | undefined, actor: Actor) {
+  const req = await prisma.l4Request.findUnique({ where: { id: requestId }, select: { jobId: true, toBranchId: true, reason: true } });
+  if (!req) throw HttpError.notFound('Request not found');
+  const claimed = await prisma.l4Request.updateMany({
+    where: { id: requestId, status: 'PENDING' },
+    data: { status: 'APPROVED', decidedById: actor.sub, decidedAt: new Date(), decisionNote: note ?? null },
+  });
+  if (!claimed.count) throw HttpError.conflict('This request was already decided');
+  try {
+    await sendToL4(req.jobId, { toBranchId: req.toBranchId, reason: req.reason }, actor);
+  } catch (e) {
+    await prisma.l4Request.update({ where: { id: requestId }, data: { status: 'PENDING', decidedById: null, decidedAt: null, decisionNote: null } });
+    throw e;
+  }
+}
+
+export async function rejectRequest(requestId: string, note: string | null | undefined, actor: Actor) {
+  const req = await prisma.l4Request.findUnique({ where: { id: requestId }, select: { jobId: true, job: { select: { branchId: true } } } });
+  if (!req) throw HttpError.notFound('Request not found');
+  if (actor.branchId && actor.branchId !== req.job.branchId) throw HttpError.forbidden();
+  const claimed = await prisma.l4Request.updateMany({
+    where: { id: requestId, status: 'PENDING' },
+    data: { status: 'REJECTED', decidedById: actor.sub, decidedAt: new Date(), decisionNote: note ?? null },
+  });
+  if (!claimed.count) throw HttpError.conflict('This request was already decided');
+  await recordAudit({ actorId: actor.sub, action: 'job.l4_rejected', entityType: 'job', entityId: req.jobId, branchId: req.job.branchId, metadata: { requestId, note: note ?? null }, ip: actor.ip });
 }

@@ -19,6 +19,7 @@ import { settingsRoutes } from './modules/settings/settings.routes.ts';
 import { stateRoutes } from './modules/states/states.routes.ts';
 import { userRoutes } from './modules/users/users.routes.ts';
 import { reminderRoutes } from './modules/reminders/reminders.routes.ts';
+import { managerRoutes } from './modules/manager/manager.routes.ts';
 
 /** All feature modules are mounted here under /api/v1. */
 export const apiRouter = Router();
@@ -46,3 +47,4 @@ apiRouter.use('/calling', callingRoutes);
 apiRouter.use('/reports', reportRoutes);
 apiRouter.use('/settings', settingsRoutes);
 apiRouter.use('/reminders', reminderRoutes);
+apiRouter.use('/manager', managerRoutes);

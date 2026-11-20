@@ -17,6 +17,14 @@ export const EXPENSE_CATEGORIES = [
   'Salary / advance',
   'Spare purchase (cash)',
   'Repairs & maintenance',
+  'Tea',
+  'Snacks',
+  'Breakfast',
+  'Drinking water',
+  'Office maintenance',
+  'Transportation',
+  'Staff expenses',
+  'Miscellaneous',
   'Other',
 ] as const;
 
@@ -25,7 +33,8 @@ export const businessDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM
 
 export const expenseCreateSchema = z.object({
   branchId: z.uuid().nullish(), // required for Super Admin
-  category: z.enum(EXPENSE_CATEGORIES, 'Select a category'),
+  /** One of EXPENSE_CATEGORIES, or a custom category typed by the manager. */
+  category: z.string().trim().min(2, 'Select a category').max(60),
   description: z.string().trim().min(2, 'Describe the expense').max(200),
   amount: z.coerce.number('Enter amount').min(0.01, 'Enter amount').max(10_000_000).multipleOf(0.01, 'Max 2 decimal places'),
   mode: z.enum(PAYMENT_MODES).default('CASH'),
@@ -54,6 +63,7 @@ export type ExpenseDto = {
   createdAt: string;
   createdBy: { id: string; name: string };
   voided: { at: string; by: string; reason: string | null } | null;
+  approved: { at: string; by: string } | null;
   branch: { code: string };
 };
 
@@ -70,6 +80,17 @@ export type DayBookDto = {
   net: number;
   /** Cash received − cash refunds − cash expenses: what should be in the drawer. */
   cashInHand: number;
+  /** Cash that was in the drawer before `from` (all earlier cash in − cash refunds − cash expenses). */
+  openingCash: number;
+  /** Cash at the end of the period: opening + cashInHand. */
+  closingCash: number;
+  /** UPI + card received − their refunds − their expenses in the period. */
+  onlineBalance: number;
+  /** Closing cash + online balance of the period. */
+  totalAvailable: number;
+  /** Still to collect from customers on repaired jobs waiting for pickup. */
+  outstandingDue: number;
+  expenseByCategory: { category: string; amount: number }[];
   deliveredCount: number;
   invoicedTotal: number;
   payments: {

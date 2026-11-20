@@ -14,6 +14,10 @@ accountsRoutes.get('/day-book', validate({ query: dayBookQuerySchema }), async (
 accountsRoutes.post('/expenses', validate({ body: expenseCreateSchema }), async (req, res) => {
   res.status(201).json(await service.createExpense(req.body, actorOf(req)));
 });
+accountsRoutes.post('/expenses/:id/approve', validate({ params: idParamSchema }), async (req, res) => {
+  await service.approveExpense(req.params.id as string, actorOf(req));
+  res.status(204).end();
+});
 accountsRoutes.post('/expenses/:id/void', validate({ params: idParamSchema, body: expenseVoidSchema }), async (req, res) => {
   await service.voidExpense(req.params.id as string, req.body.reason, actorOf(req));
   res.status(204).end();

@@ -17,6 +17,12 @@ import { prisma } from '../../lib/prisma.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
+import { summary as callingSummary } from '../calling/calling.service.ts';
+
+/** Money still to collect on repaired jobs waiting for pickup. */
+async function outstandingSummary(actor: Actor, branchId?: string) {
+  return (await callingSummary(actor, branchId)).ready.amount;
+}
 
 const emptyTotals = (): ModeTotals & { total: number } => ({ CASH: 0, UPI: 0, CARD: 0, total: 0 });
 const add = (t: ModeTotals & { total: number }, mode: PaymentMode, amount: number) => {
@@ -36,13 +42,16 @@ const expenseSelect = {
   voidReason: true,
   createdBy: { select: { id: true, name: true } },
   voidedBy: { select: { name: true } },
+  approvedAt: true,
+  approvedBy: { select: { name: true } },
   branch: { select: { code: true } },
 } satisfies Prisma.ExpenseSelect;
 
 type ExpenseRow = Prisma.ExpenseGetPayload<{ select: typeof expenseSelect }>;
 
-const toExpenseDto = ({ voidedAt, voidedBy, voidReason, amount, createdAt, ...e }: ExpenseRow): ExpenseDto => ({
+const toExpenseDto = ({ voidedAt, voidedBy, voidReason, amount, createdAt, approvedAt, approvedBy, ...e }: ExpenseRow): ExpenseDto => ({
   ...e,
+  approved: approvedAt ? { at: approvedAt.toISOString(), by: approvedBy?.name ?? '' } : null,
   amount: amount.toNumber(),
   createdAt: createdAt.toISOString(),
   voided: voidedAt ? { at: voidedAt.toISOString(), by: voidedBy?.name ?? '', reason: voidReason } : null,
@@ -74,6 +83,20 @@ export async function createExpense(data: ExpenseCreateData, actor: Actor) {
       tx,
     );
     return toExpenseDto(row);
+  });
+}
+
+/** Branch Manager / Super Admin sign off an expense (kept on record, not required to count it). */
+export async function approveExpense(id: string, actor: Actor) {
+  if (actor.role !== 'SUPER_ADMIN' && actor.role !== 'BRANCH_MANAGER') throw HttpError.forbidden();
+  const exp = await prisma.expense.findUnique({ where: { id }, select: { branchId: true, voidedAt: true, approvedAt: true, amount: true } });
+  if (!exp) throw HttpError.notFound('Expense not found');
+  assertBranchAccess(actor, exp.branchId);
+  if (exp.voidedAt) throw HttpError.conflict('This expense is voided');
+  if (exp.approvedAt) return;
+  await prisma.$transaction(async (tx) => {
+    await tx.expense.update({ where: { id }, data: { approvedAt: new Date(), approvedById: actor.sub } });
+    await recordAudit({ actorId: actor.sub, action: 'expense.approved', entityType: 'expense', entityId: id, branchId: exp.branchId, metadata: { amount: exp.amount.toNumber() }, ip: actor.ip }, tx);
   });
 }
 
@@ -124,6 +147,16 @@ export async function dayBook(query: DayBookQuery, actor: Actor): Promise<DayBoo
     prisma.invoice.aggregate({ where: { ...branch, createdAt: range }, _count: { _all: true }, _sum: { total: true } }),
   ]);
 
+  // Cash in the drawer before the period starts (everything earlier, per branch scope).
+  const before = { createdAt: { lt: range.gte } };
+  const [priorPay, priorExp, due] = await Promise.all([
+    prisma.payment.groupBy({ by: ['kind'], where: { ...branch, mode: 'CASH', ...before }, _sum: { amount: true } }),
+    prisma.expense.aggregate({ where: { ...branch, mode: 'CASH', voidedAt: null, expenseDate: { lt: from } }, _sum: { amount: true } }),
+    outstandingSummary(actor, 'branchId' in branch ? branch.branchId : undefined),
+  ]);
+  const priorIn = priorPay.reduce((s, g) => s + (g.kind === 'REFUND' ? -1 : 1) * (g._sum.amount?.toNumber() ?? 0), 0);
+  const openingCash = roundMoney(priorIn - (priorExp._sum.amount?.toNumber() ?? 0));
+
   const received = emptyTotals();
   const refunds = emptyTotals();
   const spent = emptyTotals();
@@ -131,9 +164,20 @@ export async function dayBook(query: DayBookQuery, actor: Actor): Promise<DayBoo
   const expenseItems = expenses.map(toExpenseDto);
   for (const e of expenseItems) if (!e.voided) add(spent, e.mode, e.amount);
 
+  const byCategory = new Map<string, number>();
+  for (const e of expenseItems) if (!e.voided) byCategory.set(e.category, roundMoney((byCategory.get(e.category) ?? 0) + e.amount));
+  const cashInHand = roundMoney(received.CASH - refunds.CASH - spent.CASH);
+  const onlineBalance = roundMoney(received.UPI + received.CARD - refunds.UPI - refunds.CARD - spent.UPI - spent.CARD);
+
   return {
     from,
     to,
+    openingCash,
+    closingCash: roundMoney(openingCash + cashInHand),
+    onlineBalance,
+    totalAvailable: roundMoney(openingCash + cashInHand + onlineBalance),
+    outstandingDue: due,
+    expenseByCategory: [...byCategory].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount),
     received,
     refunds,
     expenses: spent,

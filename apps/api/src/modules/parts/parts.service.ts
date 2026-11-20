@@ -14,6 +14,7 @@ export const partSelect = {
   name: true,
   category: true,
   subcategory: true,
+  color: true,
   sellingPrice: true,
   costPrice: true,
   reorderLevel: true,

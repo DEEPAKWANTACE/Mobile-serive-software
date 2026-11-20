@@ -61,6 +61,9 @@ model Branch {
   jobsHere              Job[]           @relation("JobCurrentBranch")
   movementsOut          JobMovement[]   @relation("MovementFrom")
   movementsIn           JobMovement[]   @relation("MovementTo")
+  l4RequestsTo          L4Request[]     @relation("L4RequestTo")
+  purchaseOrders        PurchaseOrder[]
+  managerRemarks        ManagerRemark[]
   expenses              Expense[]
   callLogs              CallLog[]
   reminders             Reminder[]
@@ -113,6 +116,11 @@ model User {
   stockTransfersSent     StockTransfer[]    @relation("StockTransferSentBy")
   stockTransfersReceived StockTransfer[]    @relation("StockTransferReceivedBy")
   movementsSent          JobMovement[]      @relation("MovementSentBy")
+  l4Requested            L4Request[]        @relation("L4RequestedBy")
+  expensesApproved       Expense[]          @relation("ExpenseApprovedBy")
+  purchaseOrders         PurchaseOrder[]    @relation("PurchaseOrderCreatedBy")
+  managerRemarks         ManagerRemark[]    @relation("ManagerRemarkBy")
+  l4Decided              L4Request[]        @relation("L4DecidedBy")
   movementsReceived      JobMovement[]      @relation("MovementReceivedBy")
   expensesCreated        Expense[]          @relation("ExpenseCreatedBy")
   expensesVoided         Expense[]          @relation("ExpenseVoidedBy")
@@ -404,6 +412,8 @@ model Job {
   currentBranch           Branch             @relation("JobCurrentBranch", fields: [currentBranchId], references: [id])
   movements               JobMovement[]
   callLogs                CallLog[]
+  l4Requests              L4Request[]
+  managerRemarks          ManagerRemark[]
   deliveredAt             DateTime?          @map("delivered_at")
   deliveredById           String?            @map("delivered_by_id") @db.Uuid
   /// Name of the person who collected the phone (customer or someone on their behalf).
@@ -830,6 +840,8 @@ model Part {
   name           String
   category       String?
   subcategory    String?
+  /// Colour variant (e.g. Black / Blue) — each colour has its own part code.
+  color          String?
   brandId        String?         @map("brand_id") @db.Uuid
   deviceModelId  String?         @map("device_model_id") @db.Uuid
   /// Price charged to the customer.
@@ -913,18 +925,21 @@ enum JobPartStatus {
 
 /// A part requested for / used on a job.
 model JobPart {
-  id            String        @id @default(uuid(7)) @db.Uuid
-  jobId         String        @map("job_id") @db.Uuid
-  partId        String        @map("part_id") @db.Uuid
+  id            String         @id @default(uuid(7)) @db.Uuid
+  jobId         String         @map("job_id") @db.Uuid
+  partId        String         @map("part_id") @db.Uuid
   quantity      Int
   /// Selling price at the time of request.
-  unitPrice     Decimal       @map("unit_price") @db.Decimal(10, 2)
-  status        JobPartStatus @default(REQUESTED)
+  unitPrice     Decimal        @map("unit_price") @db.Decimal(10, 2)
+  status        JobPartStatus  @default(REQUESTED)
   note          String?
-  requestedById String        @map("requested_by_id") @db.Uuid
-  requestedAt   DateTime      @default(now()) @map("requested_at")
-  handledById   String?       @map("handled_by_id") @db.Uuid
-  handledAt     DateTime?     @map("handled_at")
+  requestedById String         @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime       @default(now()) @map("requested_at")
+  handledById   String?        @map("handled_by_id") @db.Uuid
+  handledAt     DateTime?      @map("handled_at")
+  /// Purchase order this consumption was already counted in (so it is never ordered twice).
+  poId          String?        @map("po_id") @db.Uuid
+  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
 
   job         Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
   part        Part  @relation(fields: [partId], references: [id])
@@ -980,19 +995,22 @@ model InvoiceLine {
 
 /// Money paid out of the branch (tea, travel, courier…). Never deleted — voided with a reason.
 model Expense {
-  id          String      @id @default(uuid(7)) @db.Uuid
-  branchId    String      @map("branch_id") @db.Uuid
-  category    String
-  description String
-  amount      Decimal     @db.Decimal(10, 2)
-  mode        PaymentMode
+  id           String      @id @default(uuid(7)) @db.Uuid
+  branchId     String      @map("branch_id") @db.Uuid
+  category     String
+  description  String
+  amount       Decimal     @db.Decimal(10, 2)
+  mode         PaymentMode
   /// Business date the expense belongs to (YYYY-MM-DD in the business timezone).
-  expenseDate String      @map("expense_date")
-  createdById String      @map("created_by_id") @db.Uuid
-  createdAt   DateTime    @default(now()) @map("created_at")
-  voidedAt    DateTime?   @map("voided_at")
-  voidedById  String?     @map("voided_by_id") @db.Uuid
-  voidReason  String?     @map("void_reason")
+  expenseDate  String      @map("expense_date")
+  createdById  String      @map("created_by_id") @db.Uuid
+  createdAt    DateTime    @default(now()) @map("created_at")
+  voidedAt     DateTime?   @map("voided_at")
+  voidedById   String?     @map("voided_by_id") @db.Uuid
+  voidReason   String?     @map("void_reason")
+  approvedById String?     @map("approved_by_id") @db.Uuid
+  approvedAt   DateTime?   @map("approved_at")
+  approvedBy   User?       @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
 
   branch    Branch @relation(fields: [branchId], references: [id])
   createdBy User   @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
@@ -1030,6 +1048,12 @@ model CallLog {
   note           String?
   /// When to call again / when the customer promised to come.
   nextFollowUpAt DateTime?   @map("next_follow_up_at")
+  /// What the customer said.
+  feedback       String?
+  /// Customer satisfaction 1 (unhappy) to 5 (happy).
+  satisfaction   Int?
+  /// MANUAL = typed in by staff; VERIFIED = matched to a telephony call record (not integrated yet).
+  source         String      @default("MANUAL")
   createdById    String      @map("created_by_id") @db.Uuid
   createdAt      DateTime    @default(now()) @map("created_at")
 
@@ -1083,17 +1107,20 @@ enum StockTransferStatus {
 
 /// Parts moving between branch stores. Stock leaves on send and arrives on receive.
 model StockTransfer {
-  id           String              @id @default(uuid(7)) @db.Uuid
-  partId       String              @map("part_id") @db.Uuid
-  fromBranchId String              @map("from_branch_id") @db.Uuid
-  toBranchId   String              @map("to_branch_id") @db.Uuid
-  quantity     Int
-  status       StockTransferStatus @default(SENT)
-  note         String?
-  sentById     String              @map("sent_by_id") @db.Uuid
-  sentAt       DateTime            @default(now()) @map("sent_at")
-  receivedById String?             @map("received_by_id") @db.Uuid
-  receivedAt   DateTime?           @map("received_at")
+  id               String              @id @default(uuid(7)) @db.Uuid
+  partId           String              @map("part_id") @db.Uuid
+  fromBranchId     String              @map("from_branch_id") @db.Uuid
+  toBranchId       String              @map("to_branch_id") @db.Uuid
+  quantity         Int
+  status           StockTransferStatus @default(SENT)
+  note             String?
+  sentById         String              @map("sent_by_id") @db.Uuid
+  sentAt           DateTime            @default(now()) @map("sent_at")
+  receivedById     String?             @map("received_by_id") @db.Uuid
+  receivedAt       DateTime?           @map("received_at")
+  /// Quantity actually counted at the branch; differs from `quantity` when a discrepancy is reported.
+  receivedQuantity Int?                @map("received_quantity")
+  discrepancyNote  String?             @map("discrepancy_note")
 
   part       Part   @relation(fields: [partId], references: [id])
   fromBranch Branch @relation("StockTransferFrom", fields: [fromBranchId], references: [id])
@@ -1171,4 +1198,79 @@ model JobAssignment {
   @@index([jobId, assignedAt])
   @@index([engineerId, endedAt])
   @@map("job_assignments")
+}
+
+enum L4RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Engineer's request to send a job to the main office (L4). Only an approved request moves the phone.
+model L4Request {
+  id            String          @id @default(uuid(7)) @db.Uuid
+  jobId         String          @map("job_id") @db.Uuid
+  toBranchId    String          @map("to_branch_id") @db.Uuid
+  reason        String?
+  status        L4RequestStatus @default(PENDING)
+  requestedById String          @map("requested_by_id") @db.Uuid
+  requestedAt   DateTime        @default(now()) @map("requested_at")
+  decidedById   String?         @map("decided_by_id") @db.Uuid
+  decidedAt     DateTime?       @map("decided_at")
+  decisionNote  String?         @map("decision_note")
+
+  job         Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  toBranch    Branch @relation("L4RequestTo", fields: [toBranchId], references: [id])
+  requestedBy User   @relation("L4RequestedBy", fields: [requestedById], references: [id])
+  decidedBy   User?  @relation("L4DecidedBy", fields: [decidedById], references: [id])
+
+  @@index([jobId, status])
+  @@index([status, requestedAt])
+  @@map("l4_requests")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT // created from consumption; the manager is reviewing
+  FORWARDED // sent to Head Office for replenishment
+}
+
+/// Purchase order built from parts actually issued to jobs. Each consumed line is attached to at most one PO.
+model PurchaseOrder {
+  id          String              @id @default(uuid(7)) @db.Uuid
+  poNumber    String              @unique @map("po_number")
+  branchId    String              @map("branch_id") @db.Uuid
+  fromDate    String              @map("from_date")
+  toDate      String              @map("to_date")
+  status      PurchaseOrderStatus @default(DRAFT)
+  note        String?
+  /// Snapshot of the lines (part code, product, brand, model, colour, quantity, rate) at creation.
+  lines       Json
+  createdById String              @map("created_by_id") @db.Uuid
+  createdAt   DateTime            @default(now()) @map("created_at")
+  forwardedAt DateTime?           @map("forwarded_at")
+
+  branch    Branch    @relation(fields: [branchId], references: [id])
+  createdBy User      @relation("PurchaseOrderCreatedBy", fields: [createdById], references: [id])
+  jobParts  JobPart[]
+
+  @@index([branchId, createdAt])
+  @@map("purchase_orders")
+}
+
+/// Branch Manager remark on a job (e.g. why it was not diagnosed on the day).
+model ManagerRemark {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  jobId     String   @map("job_id") @db.Uuid
+  branchId  String   @map("branch_id") @db.Uuid
+  kind      String // DIAGNOSIS
+  remark    String
+  byId      String   @map("by_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id])
+  by     User   @relation("ManagerRemarkBy", fields: [byId], references: [id])
+
+  @@index([jobId, kind, createdAt])
+  @@map("manager_remarks")
 }

@@ -27,7 +27,9 @@ import { api, ApiError } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
 import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/format';
 import { BranchScopePicker } from './BranchScopePicker';
-import { ArrowDownLeft, ReceiptText, Scale, Undo2, Wallet } from 'lucide-react';
+import { ArrowDownLeft, Banknote, Download, FileText, Landmark, ReceiptText, Scale, Undo2, Wallet } from 'lucide-react';
+import { downloadXlsx } from '@/lib/xlsx';
+import { openPrintWindow, writeTable } from '@/lib/print-table';
 
 const rupeeFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const rupees = (n: number) => rupeeFmt.format(Math.round(n));
@@ -35,6 +37,16 @@ const rupees = (n: number) => rupeeFmt.format(Math.round(n));
 export function DayBookPage() {
   const { user } = useAuth();
   const canVoid = !!user && EXPENSE_VOID_ROLES.includes(user.role);
+  const canApprove = user?.role === ROLES.BRANCH_MANAGER || user?.role === ROLES.SUPER_ADMIN;
+  const queryClient = useQueryClient();
+  const approve = useMutation({
+    mutationFn: (id: string) => api.post(`/accounts/expenses/${id}/approve`, {}),
+    onSuccess: () => {
+      toast.success('Expense approved');
+      void queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const canOpenJobs = user?.role !== ROLES.ACCOUNTS;
   // CCO only sees today and yesterday — no older records.
   const isCco = user?.role === ROLES.CCO;
@@ -49,6 +61,23 @@ export function DayBookPage() {
     queryKey: ['accounts', 'day-book', params],
     queryFn: () => api.get<DayBookDto>(`/accounts/day-book?${toQueryString(params)}`),
   });
+
+  const exportRows = (d: DayBookDto) => {
+    const rows: (string | number)[][] = [
+      ...d.payments.map((p) => [formatDateTime(p.createdAt), p.kind === 'REFUND' ? 'Refund' : p.kind === 'ADVANCE' ? 'Advance' : 'Payment', p.job.jobNumber, p.job.customer, PAYMENT_MODE_LABELS[p.mode], p.kind === 'REFUND' ? -p.amount : p.amount, p.receivedBy]),
+      ...d.expenseItems.filter((e) => !e.voided).map((e) => [formatDate(e.expenseDate), `Expense: ${e.category}`, '', e.description, PAYMENT_MODE_LABELS[e.mode], -e.amount, `${e.createdBy.name}${e.approved ? ` (approved ${e.approved.by})` : ''}`]),
+    ];
+    return rows;
+  };
+  const exportHeaders = ['Date / time', 'Type', 'Job', 'Customer / description', 'Mode', 'Amount', 'By'];
+  const exportXlsx = () => data && void downloadXlsx(`day_book_${from}_${to}.xlsx`, exportHeaders, exportRows(data), 'Day Book');
+  const exportPdf = () => {
+    if (!data) return;
+    const win = openPrintWindow();
+    if (!win) return toast.error('Allow pop-ups to download the PDF');
+    const sub = `${formatDate(from)} to ${formatDate(to)} · Opening cash ${rupees(data.openingCash)} · Received ${rupees(data.received.total)} · Expenses ${rupees(data.expenses.total)} · Refunds ${rupees(data.refunds.total)} · Closing cash ${rupees(data.closingCash)} · Online ${rupees(data.onlineBalance)} · Outstanding due ${rupees(data.outstandingDue)}`;
+    writeTable(win, { title: 'Day Book', subtitle: sub, headers: exportHeaders, rows: exportRows(data), landscape: true });
+  };
 
   const quick = (f: string, t: string) => {
     setFrom(f);
@@ -98,7 +127,18 @@ export function DayBookPage() {
     },
     { header: 'Mode', cell: (e) => PAYMENT_MODE_LABELS[e.mode] },
     { header: 'Amount', className: 'text-right', cell: (e) => <span className={e.voided ? 'text-slate-400' : 'font-medium'}>{formatCurrency(e.amount)}</span> },
-    { header: 'By', cell: (e) => e.createdBy.name },
+    { header: 'Added by', cell: (e) => e.createdBy.name },
+    {
+      header: 'Approved by',
+      cell: (e) =>
+        e.approved ? (
+          <span className="text-sm text-emerald-700">{e.approved.by}</span>
+        ) : canApprove && !e.voided ? (
+          <Button variant="link" onClick={() => approve.mutate(e.id)}>Approve</Button>
+        ) : (
+          <span className="text-slate-400">—</span>
+        ),
+    },
     {
       header: '',
       className: 'text-right',
@@ -113,7 +153,11 @@ export function DayBookPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Day Book" description="Money received, refunds and office expenses" actions={<Button onClick={() => setAdding(true)}>Add expense</Button>} />
+      <PageHeader title="Day Book" description="Money received, refunds and office expenses" actions={<>
+        <Button variant="secondary" size="sm" disabled={!data} onClick={exportXlsx}><Download className="size-4" /> Excel</Button>
+        <Button variant="secondary" size="sm" disabled={!data} onClick={exportPdf}><FileText className="size-4" /> PDF</Button>
+        <Button onClick={() => setAdding(true)}>Add expense</Button>
+      </>} />
       <FilterBar>
         <BranchScopePicker value={branchId} onChange={setBranchId} />
         {isCco ? (
@@ -150,7 +194,27 @@ export function DayBookPage() {
             <StatCard label="Expenses" value={rupees(data.expenses.total)} icon={ReceiptText} />
             <StatCard label="Net" value={rupees(data.net)} tone="brand" icon={Scale} />
             <StatCard label="Cash in hand" value={rupees(data.cashInHand)} tone="info" icon={Wallet} hint={`${data.deliveredCount} delivered`} />
+            <StatCard label="Opening cash" value={rupees(data.openingCash)} icon={Banknote} hint="Before this period" />
+            <StatCard label="Closing cash" value={rupees(data.closingCash)} tone="info" icon={Wallet} hint="Opening + cash in hand" />
+            <StatCard label="Online balance" value={rupees(data.onlineBalance)} icon={Landmark} hint="UPI + card, net" />
+            <StatCard label="Total available" value={rupees(data.totalAvailable)} tone="good" icon={Scale} hint="Cash + online" />
+            <StatCard label="Customer due" value={rupees(data.outstandingDue)} tone="warning" icon={ReceiptText} hint="Ready phones, unpaid" />
           </div>
+
+          {data.expenseByCategory.length > 0 && (
+            <Card title="Expenses by category">
+              <table className="w-full text-sm">
+                <tbody className="divide-y divide-slate-100">
+                  {data.expenseByCategory.map((c) => (
+                    <tr key={c.category}>
+                      <td className="py-1.5">{c.category}</td>
+                      <td className="py-1.5 text-right font-medium">{formatCurrency(c.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          )}
 
           <Card title={`By payment mode · ${data.deliveredCount} phone${data.deliveredCount === 1 ? '' : 's'} delivered (invoiced ${formatCurrency(data.invoicedTotal)})`}>
             <table className="w-full text-sm">
@@ -203,10 +267,13 @@ export function DayBookPage() {
   );
 }
 
+const CUSTOM = '__custom__';
+
 function ExpenseForm({ branchId, onDone }: { branchId: string; onDone: () => void }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ category: '', description: '', amount: '', mode: 'CASH' as PaymentMode, expenseDate: todayIso() });
+  const [custom, setCustom] = useState(false);
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const save = useMutation({
@@ -227,12 +294,16 @@ function ExpenseForm({ branchId, onDone }: { branchId: string; onDone: () => voi
     <form onSubmit={(e) => (e.preventDefault(), save.mutate())} className="space-y-4">
       {!user?.branch && !branchId && <p className="text-sm text-amber-700">Select a branch at the top of the page first.</p>}
       <Field label="Category" required error={errors.category}>
-        <select value={form.category} onChange={set('category')} className={inputClass}>
+        <select value={custom ? CUSTOM : form.category} onChange={(e) => { const isCustom = e.target.value === CUSTOM; setCustom(isCustom); setForm((f) => ({ ...f, category: isCustom ? '' : e.target.value })); }} className={inputClass}>
           <option value="">Select category</option>
           {EXPENSE_CATEGORIES.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
+          <option value={CUSTOM}>Custom category…</option>
         </select>
+        {custom && (
+          <input value={form.category} onChange={set('category')} autoFocus className={`${inputClass} mt-2`} placeholder="Type the new category" />
+        )}
       </Field>
       <Field label="Description" required error={errors.description}>
         <input value={form.description} onChange={set('description')} className={inputClass} placeholder="e.g. Tea for staff" />

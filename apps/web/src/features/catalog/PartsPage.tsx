@@ -33,7 +33,7 @@ export function PartsPage() {
   const columns: Column<PartDto>[] = [
     { header: 'Code', cell: (p) => <span className="font-mono font-semibold">{p.code}</span> },
     { header: 'Part', cell: (p) => <span className="font-medium">{p.name}</span> },
-    { header: 'Category', cell: (p) => p.category ? `${p.category}${p.subcategory ? ` › ${p.subcategory}` : ''}` : '—' },
+    { header: 'Category', cell: (p) => p.category ? `${p.category}${p.subcategory ? ` › ${p.subcategory}` : ''}${p.color ? ` · ${p.color}` : ''}` : (p.color ?? '—') },
     { header: 'For', cell: (p) => (p.model ? `${p.brand?.name ?? ''} ${p.model.name}` : (p.brand?.name ?? 'Any')) },
     { header: 'Selling', cell: (p) => formatCurrency(p.sellingPrice) },
     { header: 'Cost', cell: (p) => (p.costPrice !== null ? formatCurrency(p.costPrice) : '—') },
@@ -84,6 +84,7 @@ function PartForm({ part, branchId: scopeBranch, scope, onDone }: { part?: PartD
       name: part?.name ?? '',
       category: part?.category ?? '',
       subcategory: part?.subcategory ?? '',
+      color: part?.color ?? '',
       branchId: scopeBranch,
       brandId: part?.brand?.id ?? null,
       deviceModelId: part?.model?.id ?? null,
@@ -121,6 +122,9 @@ function PartForm({ part, branchId: scopeBranch, scope, onDone }: { part?: PartD
       </Field>
       <Field label="Subcategory" error={errors.subcategory?.message} hint="e.g. Not glowing, Broken, No touch">
         <input {...register('subcategory')} className={inputClass} />
+      </Field>
+      <Field label="Colour" error={errors.color?.message} hint="e.g. Black, Blue — give each colour its own part code">
+        <input {...register('color')} className={inputClass} />
       </Field>
       <Field label="Brand" hint="Optional — leave blank for universal parts">
         <select

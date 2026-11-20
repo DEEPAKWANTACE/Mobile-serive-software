@@ -1,4 +1,4 @@
-import { STORE_ROLES, type StockTransferCreateData, type StockTransferDto, type StockTransferListQuery } from '@msm/shared';
+import { STORE_ROLES, type StockTransferCreateData, type StockTransferDto, type StockTransferListQuery, type StockTransferReceiveData } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
 import { assertBranchAccess } from '../../lib/access.ts';
 import { HttpError } from '../../lib/http-error.ts';
@@ -16,7 +16,9 @@ const select = {
   note: true,
   sentAt: true,
   receivedAt: true,
-  part: { select: { id: true, code: true, name: true } },
+  receivedQuantity: true,
+  discrepancyNote: true,
+  part: { select: { id: true, code: true, name: true, category: true, color: true, costPrice: true, sellingPrice: true } },
   fromBranch: { select: { id: true, code: true, name: true } },
   toBranch: { select: { id: true, code: true, name: true } },
   sentBy: { select: { name: true } },
@@ -25,7 +27,7 @@ const select = {
 
 const toDto = (t: Prisma.StockTransferGetPayload<{ select: typeof select }>): StockTransferDto => ({
   id: t.id,
-  part: t.part,
+  part: { ...t.part, costPrice: t.part.costPrice?.toNumber() ?? null, sellingPrice: t.part.sellingPrice.toNumber() },
   from: t.fromBranch,
   to: t.toBranch,
   quantity: t.quantity,
@@ -35,6 +37,8 @@ const toDto = (t: Prisma.StockTransferGetPayload<{ select: typeof select }>): St
   sentAt: t.sentAt.toISOString(),
   receivedBy: t.receivedBy?.name ?? null,
   receivedAt: t.receivedAt?.toISOString() ?? null,
+  receivedQuantity: t.receivedQuantity,
+  discrepancyNote: t.discrepancyNote,
 });
 
 function assertStore(actor: Actor, branchId: string) {
@@ -94,24 +98,33 @@ async function loadSent(id: string) {
   return t;
 }
 
-async function close(id: string, status: 'RECEIVED' | 'CANCELLED', actor: Actor) {
+async function close(id: string, status: 'RECEIVED' | 'CANCELLED', actor: Actor, tally?: StockTransferReceiveData) {
   const t = await loadSent(id);
   const receiving = status === 'RECEIVED';
+  const counted = receiving ? (tally?.receivedQuantity ?? t.quantity) : t.quantity;
+  if (counted > t.quantity) throw HttpError.badRequest('Invalid request', { receivedQuantity: [`Cannot receive more than the ${t.quantity} sent`] });
+  const discrepancy = receiving && counted !== t.quantity;
+  if (discrepancy && !tally?.note) throw HttpError.badRequest('Invalid request', { note: ['Explain the difference in quantity'] });
   // Receiving branch confirms receipt; the sending branch may cancel while it is still in transit.
   assertStore(actor, receiving ? t.toBranchId : t.fromBranchId);
 
   return prisma.$transaction(async (tx) => {
     const { count } = await tx.stockTransfer.updateMany({
       where: { id, status: 'SENT' },
-      data: { status, receivedById: receiving ? actor.sub : null, receivedAt: new Date() },
+      data: {
+        status,
+        receivedById: receiving ? actor.sub : null,
+        receivedAt: new Date(),
+        ...(receiving && { receivedQuantity: counted, discrepancyNote: discrepancy ? (tally?.note ?? null) : null }),
+      },
     });
     if (!count) throw HttpError.conflict('This transfer was already received or cancelled');
     const m = await applyMovement(tx, {
       partId: t.partId,
       branchId: receiving ? t.toBranchId : t.fromBranchId,
       type: 'TRANSFER_IN',
-      quantity: t.quantity,
-      reference: receiving ? `From ${t.fromBranch.code}` : `Cancelled transfer to ${t.toBranch.code}`,
+      quantity: counted,
+      reference: receiving ? `From ${t.fromBranch.code}${discrepancy ? ` (sent ${t.quantity}, counted ${counted})` : ''}` : `Cancelled transfer to ${t.toBranch.code}`,
       actorId: actor.sub,
     });
     await recordAudit(
@@ -121,7 +134,7 @@ async function close(id: string, status: 'RECEIVED' | 'CANCELLED', actor: Actor)
         entityType: 'part',
         entityId: t.partId,
         branchId: receiving ? t.toBranchId : t.fromBranchId,
-        metadata: { code: t.part.code, quantity: t.quantity, transferId: id, stockAfter: m.balanceAfter },
+        metadata: { code: t.part.code, quantity: t.quantity, receivedQuantity: counted, discrepancy, note: tally?.note ?? null, transferId: id, stockAfter: m.balanceAfter },
         ip: actor.ip,
       },
       tx,
@@ -130,7 +143,7 @@ async function close(id: string, status: 'RECEIVED' | 'CANCELLED', actor: Actor)
   });
 }
 
-export const receive = (id: string, actor: Actor) => close(id, 'RECEIVED', actor);
+export const receive = (id: string, actor: Actor, tally?: StockTransferReceiveData) => close(id, 'RECEIVED', actor, tally);
 export const cancel = (id: string, actor: Actor) => close(id, 'CANCELLED', actor);
 
 export async function list(query: StockTransferListQuery, actor: Actor) {

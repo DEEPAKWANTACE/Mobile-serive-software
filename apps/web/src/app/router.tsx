@@ -6,6 +6,7 @@ import { DayBookPage } from '@/features/accounts/DayBookPage';
 import { CallingPage } from '@/features/calling/CallingPage';
 import { L4TransfersPage } from '@/features/l4/L4TransfersPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
+import { BranchInsightsPage } from '@/features/manager/BranchInsightsPage';
 import { EngineerReportPage } from '@/features/reports/EngineerReportPage';
 import { EntriesPage } from '@/features/entries/EntriesPage';
 import { InvoicePage } from '@/features/billing/InvoicePage';
@@ -107,6 +108,10 @@ export const router = createBrowserRouter([
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
             children: [{ path: 'entries', element: <EntriesPage /> }],
+          },
+          {
+            element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER]} />,
+            children: [{ path: 'branch-insights', element: <BranchInsightsPage /> }],
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,

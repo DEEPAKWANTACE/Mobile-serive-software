@@ -14,3 +14,4 @@ export * from './schemas/reports.js';
 export * from './schemas/messages.js';
 export * from './schemas/settings.js';
 export * from './schemas/reminders.js';
+export * from './schemas/manager.js';

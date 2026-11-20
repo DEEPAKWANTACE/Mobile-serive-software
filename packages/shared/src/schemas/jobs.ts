@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { listQuerySchema, optionalText } from './common.js';
 import type { JobPartDto } from './inventory.js';
-import type { Role } from '../roles.js';
+import { ROLES, type Role } from '../roles.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -986,3 +986,40 @@ export const bulkJobActionSchema = z.discriminatedUnion('action', [
 export type BulkJobActionInput = z.input<typeof bulkJobActionSchema>;
 export type BulkJobActionData = z.output<typeof bulkJobActionSchema>;
 export type BulkJobResultDto = { results: { jobId: string; ok: boolean; error?: string }[]; succeeded: number; failed: number };
+
+// ─── L4 transfer requests (engineer asks, Branch Manager decides) ───────────
+
+export const L4_REQUEST_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+export type L4RequestStatus = (typeof L4_REQUEST_STATUSES)[number];
+/** Who may approve or reject an engineer's L4 request. */
+export const L4_APPROVER_ROLES: readonly Role[] = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER];
+
+export const l4RequestListQuerySchema = z.object({
+  status: z.enum(L4_REQUEST_STATUSES).optional(),
+  branchId: z.uuid().optional(),
+});
+export type L4RequestListQuery = z.output<typeof l4RequestListQuerySchema>;
+
+export type L4RequestDto = {
+  id: string;
+  status: L4RequestStatus;
+  reason: string | null;
+  requestedBy: string;
+  requestedAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+  decisionNote: string | null;
+  to: { id: string; code: string; name: string };
+  job: {
+    id: string;
+    jobNumber: string;
+    device: string;
+    imei: string | null;
+    customer: string;
+    status: JobStatus;
+    loginDate: string;
+    engineer: string | null;
+    diagnosis: string | null;
+    branchCode: string;
+  };
+};

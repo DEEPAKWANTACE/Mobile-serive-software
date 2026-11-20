@@ -33,6 +33,10 @@ export const callLogCreateSchema = z.object({
   note: optionalText(500),
   /** ISO date-time for the next call / promised visit. */
   nextFollowUpAt: z.iso.datetime({ offset: true }).nullish(),
+  /** What the customer said. */
+  feedback: optionalText(300),
+  /** Customer satisfaction, 1 (unhappy) to 5 (happy). */
+  satisfaction: z.coerce.number().int().min(1).max(5).nullish(),
 });
 export type CallLogCreateInput = z.input<typeof callLogCreateSchema>;
 export type CallLogCreateData = z.output<typeof callLogCreateSchema>;
@@ -43,6 +47,10 @@ export type CallLogDto = {
   outcome: CallOutcome;
   note: string | null;
   nextFollowUpAt: string | null;
+  feedback: string | null;
+  satisfaction: number | null;
+  /** MANUAL = typed in by staff; VERIFIED = matched to a telephony record. */
+  source: string;
   createdAt: string;
   createdBy: { id: string; name: string };
 };

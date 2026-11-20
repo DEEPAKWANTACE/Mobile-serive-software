@@ -12,6 +12,9 @@ import {
   photoDeleteSchema,
   movementListQuerySchemaL4,
   movementNoteSchema,
+  l4RequestListQuerySchema,
+  L4_APPROVER_ROLES,
+  type L4RequestListQuery,
   sendToL4Schema,
   type L4MovementListQuery,
   callLogCreateSchema,
@@ -110,6 +113,9 @@ jobRoutes.get('/trend', authorize(...assigners, ROLES.ACCOUNTS), validate({ quer
 jobRoutes.get('/imei-check', authorize(...viewers), validate({ query: imeiCheckQuerySchema }), async (_req, res) => {
   const q = res.locals.query as { imei: string; excludeJobId?: string };
   res.json(await editing.imeiCheck(q.imei, q.excludeJobId));
+});
+jobRoutes.get('/l4/requests', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER), validate({ query: l4RequestListQuerySchema }), async (req, res) => {
+  res.json(await l4.listRequests(res.locals.query as L4RequestListQuery, actorOf(req)));
 });
 jobRoutes.get('/l4/movements', authorize(...assigners), validate({ query: movementListQuerySchemaL4 }), async (req, res) => {
   res.json(await l4.listMovements(res.locals.query as L4MovementListQuery, actorOf(req)));
@@ -260,7 +266,22 @@ jobRoutes.post('/:id/calls', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validat
 
 // ─── L4 / main office ───────────────────────────────────────────────────────
 jobRoutes.post('/:id/l4/send', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ENGINEER), validate({ params: idParamSchema, body: sendToL4Schema }), async (req, res) => {
-  await l4.sendToL4(req.params.id as string, req.body, actorOf(req));
+  const actor = actorOf(req);
+  // Engineers only ask; a Branch Manager approves before the phone moves.
+  if (actor.role === ROLES.ENGINEER) {
+    await l4.requestL4(req.params.id as string, req.body, actor);
+    res.status(202).json({ requested: true });
+    return;
+  }
+  await l4.sendToL4(req.params.id as string, req.body, actor);
+  res.status(204).end();
+});
+jobRoutes.post('/l4/requests/:id/approve', authorize(...L4_APPROVER_ROLES), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+  await l4.approveRequest(req.params.id as string, req.body.note, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/l4/requests/:id/reject', authorize(...L4_APPROVER_ROLES), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+  await l4.rejectRequest(req.params.id as string, req.body.note, actorOf(req));
   res.status(204).end();
 });
 jobRoutes.post('/:id/l4/receive', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {

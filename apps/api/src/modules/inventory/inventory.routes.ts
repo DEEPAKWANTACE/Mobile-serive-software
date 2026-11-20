@@ -11,6 +11,7 @@ import {
   stockReceiptSchema,
   stockTransferCreateSchema,
   stockTransferListQuerySchema,
+  stockTransferReceiveSchema,
   type StockTransferListQuery,
 } from '@msm/shared';
 import { authorize } from '../../middleware/authorize.ts';
@@ -62,8 +63,8 @@ inventoryRoutes.get('/transfers', store, validate({ query: stockTransferListQuer
 inventoryRoutes.post('/transfers', store, validate({ body: stockTransferCreateSchema }), async (req, res) => {
   res.status(201).json(await transfers.send(req.body, actorOf(req)));
 });
-inventoryRoutes.post('/transfers/:id/receive', store, validate({ params: idParamSchema }), async (req, res) => {
-  res.json(await transfers.receive(req.params.id as string, actorOf(req)));
+inventoryRoutes.post('/transfers/:id/receive', store, validate({ params: idParamSchema, body: stockTransferReceiveSchema }), async (req, res) => {
+  res.json(await transfers.receive(req.params.id as string, actorOf(req), req.body));
 });
 inventoryRoutes.post('/transfers/:id/cancel', store, validate({ params: idParamSchema }), async (req, res) => {
   res.json(await transfers.cancel(req.params.id as string, actorOf(req)));

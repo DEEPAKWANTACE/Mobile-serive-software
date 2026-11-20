@@ -30,7 +30,7 @@ export function TransferRequestForm({ job, onDone }: { job: JobDto; onDone: () =
       ? api.post(`/jobs/${job.id}/l4/send`, { toBranchId: to.slice(3), reason: reason.trim() || null })
       : api.post(`/jobs/${job.id}/transfers`, { toEngineerId: to, reason: reason.trim() || null }),
     onSuccess: () => {
-      toast.success(toL4 ? 'Sent to L4 — the main office must receive it' : 'Transfer request sent — the job stays with you until it is accepted');
+      toast.success(toL4 ? 'L4 request sent — the Branch Manager must approve it' : 'Transfer request sent — the job stays with you until it is accepted');
       void queryClient.invalidateQueries();
       onDone();
     },

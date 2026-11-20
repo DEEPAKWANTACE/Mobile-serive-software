@@ -28,11 +28,13 @@ export function LogCallForm({ jobId, jobNumber, status, customer, onDone }: Prop
   const [outcome, setOutcome] = useState<CallOutcome | ''>('');
   const [note, setNote] = useState('');
   const [next, setNext] = useState('');
+  const [feedback, setFeedback] = useState('');
+  const [satisfaction, setSatisfaction] = useState<number | null>(null);
   const [error, setError] = useState<string>();
 
   const save = useMutation({
     mutationFn: () =>
-      api.post(`/jobs/${jobId}/calls`, { purpose, outcome, note: note || null, nextFollowUpAt: next ? new Date(next).toISOString() : null }),
+      api.post(`/jobs/${jobId}/calls`, { purpose, outcome, note: note || null, feedback: feedback || null, satisfaction, nextFollowUpAt: next ? new Date(next).toISOString() : null }),
     onSuccess: () => {
       toast.success('Call logged');
       void queryClient.invalidateQueries({ queryKey: ['calling'] });
@@ -76,6 +78,19 @@ export function LogCallForm({ jobId, jobNumber, status, customer, onDone }: Prop
       </Field>
       <Field label="Note">
         <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="e.g. Will come Saturday evening" />
+      </Field>
+      <Field label="Customer feedback">
+        <input value={feedback} onChange={(e) => setFeedback(e.target.value)} className={inputClass} placeholder="What the customer said (optional)" />
+      </Field>
+      <Field label="Customer satisfaction">
+        <div className="flex gap-1.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button key={n} type="button" onClick={() => setSatisfaction(satisfaction === n ? null : n)} className={`size-9 rounded-md border text-sm ${satisfaction === n ? 'border-brand-600 bg-brand-50 font-semibold text-brand-700' : 'border-slate-300 hover:bg-slate-50'}`}>
+              {n}
+            </button>
+          ))}
+          <span className="ml-2 self-center text-xs text-slate-500">1 = unhappy · 5 = very happy</span>
+        </div>
       </Field>
       <Field label="Next follow-up / promised visit">
         <div className="flex flex-wrap gap-2">

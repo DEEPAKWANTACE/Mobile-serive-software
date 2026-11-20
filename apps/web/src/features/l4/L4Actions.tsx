@@ -61,15 +61,15 @@ export function L4Panel({ job, show = 'all' }: { job: JobDto; show?: 'all' | 'ba
       )}
       {canSend && (
         <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
-          <div className="font-medium text-violet-950">Send to L4 / main office</div>
+          <div className="font-medium text-violet-950">{isAssigned ? 'Request L4 / main office transfer' : 'Send to L4 / main office'}</div>
           <p className="mt-1 text-sm text-violet-900">Use this when the repair can't be done at this branch. The phone goes to the main office and its engineer takes over.</p>
           <Button variant="secondary" className="mt-3" onClick={() => setDialog('send')}>
-            Send to L4 / main office
+            {isAssigned ? 'Request L4 transfer' : 'Send to L4 / main office'}
           </Button>
         </div>
       )}
-      <Modal open={dialog === 'send'} onClose={() => setDialog(null)} title="Send to main office (L4)" size="sm">
-        {dialog === 'send' && <SendForm job={job} onDone={() => done('Sent to L4 — the main office must receive it')} onCancel={() => setDialog(null)} />}
+      <Modal open={dialog === 'send'} onClose={() => setDialog(null)} title={isAssigned ? 'Request L4 transfer' : 'Send to main office (L4)'} size="sm">
+        {dialog === 'send' && <SendForm job={job} request={isAssigned} onDone={() => done(isAssigned ? 'Request sent — the Branch Manager must approve it' : 'Sent to L4 — the main office must receive it')} onCancel={() => setDialog(null)} />}
       </Modal>
       <Modal open={dialog === 'receive' || dialog === 'back'} onClose={() => setDialog(null)} title={dialog === 'receive' ? 'Receive phone' : `Send back to ${job.branch.name}`} size="sm">
         {(dialog === 'receive' || dialog === 'back') && (
@@ -86,7 +86,7 @@ export function L4Panel({ job, show = 'all' }: { job: JobDto; show?: 'all' | 'ba
   );
 }
 
-function SendForm({ job, onDone, onCancel }: { job: JobDto; onDone: () => void; onCancel: () => void }) {
+function SendForm({ job, request, onDone, onCancel }: { job: JobDto; request: boolean; onDone: () => void; onCancel: () => void }) {
   const { items: offices } = useOptions<BranchDto>('branches', { type: 'MAIN_OFFICE' });
   const choices = offices.filter((b) => b.id !== job.branch.id);
   const [to, setTo] = useState('');
@@ -112,8 +112,8 @@ function SendForm({ job, onDone, onCancel }: { job: JobDto; onDone: () => void; 
       <Field label="Reason" required error={error}>
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Board-level work not possible here" />
       </Field>
-      <p className="text-xs text-slate-500">The current engineer is released; the main office assigns its own engineer after receiving the phone. Customer calls and delivery stay with this branch.</p>
-      <FormActions onCancel={onCancel} loading={send.isPending} submitLabel="Send to L4" />
+      <p className="text-xs text-slate-500">{request ? 'Your Branch Manager must approve this before the phone moves. ' : ''}The current engineer is released; the main office assigns its own engineer after receiving the phone. Customer calls and delivery stay with this branch.</p>
+      <FormActions onCancel={onCancel} loading={send.isPending} submitLabel={request ? 'Send request' : 'Send to L4'} />
     </form>
   );
 }

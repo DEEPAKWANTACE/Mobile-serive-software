@@ -1,4 +1,5 @@
 import type React from 'react';
+import { ManagerAlerts } from '@/features/manager/BranchInsightsPage';
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
@@ -152,6 +153,7 @@ export function DashboardPage() {
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
       {user.role === ROLES.SUPER_ADMIN && <AdminDashboard user={user} />}
+      {user.role === ROLES.BRANCH_MANAGER && <ManagerAlerts />}
       {(user.role === ROLES.BRANCH_MANAGER || user.role === ROLES.CCO) && <BranchDashboard user={user} />}
       <Modal open={findJobOpen} onClose={() => setFindJobOpen(false)} title="Find a job" size="sm">
         <form onSubmit={findJob} className="space-y-4">

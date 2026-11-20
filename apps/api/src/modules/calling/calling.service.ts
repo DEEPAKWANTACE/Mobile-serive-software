@@ -124,6 +124,9 @@ const callSelect = {
   outcome: true,
   note: true,
   nextFollowUpAt: true,
+  feedback: true,
+  satisfaction: true,
+  source: true,
   createdAt: true,
   createdBy: { select: { id: true, name: true } },
 } satisfies Prisma.CallLogSelect;
@@ -151,6 +154,8 @@ export async function logCall(jobId: string, data: CallLogCreateData, actor: Act
         outcome: data.outcome,
         note: data.note ?? null,
         nextFollowUpAt: data.nextFollowUpAt ? new Date(data.nextFollowUpAt) : null,
+        feedback: data.feedback ?? null,
+        satisfaction: data.satisfaction ?? null,
         createdById: actor.sub,
       },
       select: callSelect,

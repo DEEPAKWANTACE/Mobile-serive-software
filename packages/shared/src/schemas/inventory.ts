@@ -20,6 +20,7 @@ export const partCreateSchema = z.object({
   name: z.string().trim().min(2, 'Enter part name').max(150),
   category: optionalText(100),
   subcategory: optionalText(100),
+  color: optionalText(50),
   brandId: z.uuid().nullish(),
   deviceModelId: z.uuid().nullish(),
   sellingPrice: priceAmount,
@@ -44,6 +45,7 @@ export type PartDto = {
   name: string;
   category: string | null;
   subcategory: string | null;
+  color: string | null;
   branchId: string | null;
   isGlobal: boolean;
   brand: { id: string; name: string } | null;
@@ -210,6 +212,13 @@ export const stockTransferCreateSchema = z.object({
 });
 export type StockTransferCreateData = z.output<typeof stockTransferCreateSchema>;
 
+/** Receiving branch counts the boxes: accept as sent, or report a different quantity (discrepancy). */
+export const stockTransferReceiveSchema = z.object({
+  receivedQuantity: z.coerce.number().int('Whole number').min(0).max(100_000).optional(),
+  note: optionalText(300),
+});
+export type StockTransferReceiveData = z.output<typeof stockTransferReceiveSchema>;
+
 export const stockTransferListQuerySchema = z.object({
   view: z.enum(['incoming', 'outgoing', 'all']).default('incoming'),
   branchId: z.uuid().optional(),
@@ -218,7 +227,7 @@ export type StockTransferListQuery = z.output<typeof stockTransferListQuerySchem
 
 export type StockTransferDto = {
   id: string;
-  part: { id: string; code: string; name: string };
+  part: { id: string; code: string; name: string; category: string | null; color: string | null; costPrice: number | null; sellingPrice: number };
   from: { id: string; code: string; name: string };
   to: { id: string; code: string; name: string };
   quantity: number;
@@ -228,4 +237,7 @@ export type StockTransferDto = {
   sentAt: string;
   receivedBy: string | null;
   receivedAt: string | null;
+  /** Counted quantity when it differs from `quantity`. */
+  receivedQuantity: number | null;
+  discrepancyNote: string | null;
 };
