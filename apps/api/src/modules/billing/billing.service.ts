@@ -60,8 +60,6 @@ function lineText(l: BillJob['estimateLines'][number]) {
 const netPaid = (payments: BillJob['payments']) =>
   roundMoney(payments.reduce((sum, p) => sum + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
 
-const RWR_PHOTO_MESSAGE = 'Please upload the required mobile phone or PCB photographs before proceeding with delivery.';
-
 function assertDeliverable(status: JobStatus) {
   if (!DELIVERABLE_STATUSES.includes(status)) {
     throw HttpError.conflict(`Only repaired (Ready) or RWR phones can be delivered — this job is "${JOB_STATUS_LABELS[status]}"`);
@@ -78,9 +76,6 @@ async function loadBillJob(jobId: string, actor: Actor) {
   if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the branch that took in the phone can deliver it');
   if (access.location !== 'AT_BRANCH' || access.currentBranchId !== access.branchId) {
     throw HttpError.conflict('The phone is not back at the branch yet — receive it from L4 first');
-  }
-  if (access.status === 'RWR' && !(await prisma.jobPhoto.count({ where: { jobId, kind: 'RWR' } }))) {
-    throw HttpError.badRequest(RWR_PHOTO_MESSAGE, { photos: [RWR_PHOTO_MESSAGE] });
   }
   return prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: billSelect });
 }

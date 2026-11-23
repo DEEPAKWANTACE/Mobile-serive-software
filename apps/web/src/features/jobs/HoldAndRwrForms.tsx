@@ -10,7 +10,6 @@ import { PhotoPicker } from './PhotoPicker';
 import { PartStockPicker } from '@/features/inventory/PartStockPicker';
 import type { PartStockOptionDto } from '@msm/shared';
 
-const RWR_PHOTO_MESSAGE = 'Please upload the required mobile phone or PCB photographs before proceeding with delivery.';
 
 export function SpareHoldForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
@@ -89,7 +88,7 @@ export function SpareReceivedForm({ job, onDone }: { job: JobDto; onDone: () => 
   );
 }
 
-/** Return without repair: reason, explanation and phone / PCB photos are compulsory. */
+/** Return without repair: reason, explanation are compulsory; photos optional. */
 export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
   const defaultReason: RwrReason | '' =
@@ -123,12 +122,11 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
       onSubmit={(e) => {
         e.preventDefault();
         const errs = {
-          photos: photos.length ? undefined : RWR_PHOTO_MESSAGE,
           reason: reason ? undefined : 'Select a reason',
           note: note.trim().length >= 5 ? undefined : 'Explain why the phone is returned unrepaired',
         };
         setErrors(errs);
-        if (!errs.reason && !errs.note && !errs.photos) save.mutate();
+        if (!errs.reason && !errs.note) save.mutate();
       }}
       className="space-y-4"
     >
@@ -151,8 +149,8 @@ export function RwrForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
           placeholder="e.g. Board already tampered at another shop, not safe to repair"
         />
       </Field>
-      <PhotoPicker label="Mobile phone / PCB photos *" multiple files={photos} onChange={setPhotos} error={errors.photos} />
-      <p className="text-xs text-slate-500">These photos are kept as proof of the condition in which the phone was returned.</p>
+      <PhotoPicker label="Mobile phone / PCB photos (optional)" multiple files={photos} onChange={setPhotos} error={errors.photos} />
+      <p className="text-xs text-slate-500">Any photos added are kept as proof of the condition in which the phone was returned.</p>
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel="Request RWR" />
     </form>
   );

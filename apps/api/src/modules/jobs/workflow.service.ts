@@ -451,7 +451,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
   return { status: resume };
 }
 
-// ─── RWR: return without repair (reason and phone / PCB photos compulsory) ────
+// ─── RWR: return without repair (reason compulsory, photos optional) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
   const isCounterOrManager =
@@ -460,10 +460,6 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
   const prepared = preparePhotos({ RWR: files });
-  if (!prepared.length) {
-    const message = 'Please upload the required mobile phone or PCB photographs before proceeding with delivery.';
-    throw HttpError.badRequest(message, { photos: [message] });
-  }
 
   await withStoredPhotos(prepared, () =>
     prisma.$transaction(async (tx) => {
