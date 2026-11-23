@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { isValidImei, PAYMENT_MODE_LABELS, PAYMENT_MODES, roundMoney, type BillPreviewDto, type JobDto, type PaymentMode } from '@msm/shared';
@@ -21,7 +20,6 @@ export function DeliveryForm({ job, onDone }: { job: JobDto; onDone: () => void 
 }
 
 function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPreviewDto; onDone: () => void }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [discount, setDiscount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
@@ -72,7 +70,6 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
       queryClient.removeQueries({ queryKey: ['jobs', job.id, 'bill'] });
       void queryClient.invalidateQueries({ predicate: (q) => !(q.queryKey[0] === 'jobs' && q.queryKey[2] === 'bill') });
       onDone();
-      navigate('/');
     },
     onError: (err) => {
       const d = err instanceof ApiError ? (err.details as Record<string, string[]> | undefined) : undefined;
