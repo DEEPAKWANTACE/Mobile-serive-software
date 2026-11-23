@@ -181,8 +181,20 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
   const beforeDiagnosis = access.status === 'ASSIGNED';
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },
-    select: { quotedAmount: true, estimatedAmount: true, estimateOptions: true, deadRiskRequested: true, deadRiskApprovedAt: true },
+    select: {
+      quotedAmount: true, estimatedAmount: true, estimateOptions: true, deadRiskRequested: true, deadRiskApprovedAt: true,
+      manualBrand: true, manualModel: true, accessoryName: true, manualFault: true, customerComplaint: true,
+      brand: { select: { name: true } }, deviceModel: { select: { name: true } }, faults: { select: { fault: { select: { name: true } } } },
+      assignedEngineer: { select: { name: true } },
+    },
   });
+  const approver = await prisma.user.findUnique({ where: { id: actor.sub }, select: { name: true } });
+  const recorded = {
+    model: job.accessoryName ?? (`${job.manualBrand ?? job.brand?.name ?? ''} ${job.manualModel ?? job.deviceModel?.name ?? ''}`.trim() || null),
+    problem: [...job.faults.map((x) => x.fault.name), job.manualFault, job.customerComplaint].filter(Boolean).join(' · ') || null,
+    engineer: job.assignedEngineer?.name ?? null,
+    cco: approver?.name ?? null,
+  };
 
   const approved = decision === 'APPROVED';
   const editedLines: CostLine[] | null = approved && lines?.length
@@ -245,7 +257,7 @@ export async function decideApproval(id: string, { decision, selectedOptionId, a
         entityType: 'job',
         entityId: id,
         branchId: access.branchId,
-        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk, deadRiskApproved: deadRiskNow, items: editedLines?.length ?? null, beforeDiagnosis },
+        metadata: { amount: finalApprovedAmount, note: note ?? null, waitingForDeadRisk, deadRiskApproved: deadRiskNow, items: editedLines?.length ?? null, beforeDiagnosis, ...recorded },
         ip: actor.ip,
       },
       tx,
@@ -439,7 +451,7 @@ export async function spareReceived(id: string, note: string | null | undefined,
   return { status: resume };
 }
 
-// ─── RWR: return without repair (reason compulsory, motherboard photos optional) ────
+// ─── RWR: return without repair (reason and phone / PCB photos compulsory) ────
 
 export async function returnWithoutRepair(id: string, { reason, note }: RwrData, files: Express.Multer.File[], actor: Actor) {
   const isCounterOrManager =
@@ -448,6 +460,10 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
   const prepared = preparePhotos({ RWR: files });
+  if (!prepared.length) {
+    const message = 'Please upload the required mobile phone or PCB photographs before proceeding with delivery.';
+    throw HttpError.badRequest(message, { photos: [message] });
+  }
 
   await withStoredPhotos(prepared, () =>
     prisma.$transaction(async (tx) => {
@@ -471,7 +487,7 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
   return { status: 'RWR_PENDING' as const };
 }
 
-/** Only the owning branch manager can accept an RWR request and release it for delivery. */
+/** Branch Manager approval: the case goes back to the CCO, who alone delivers it to the customer. */
 export async function finalizeRwr(id: string, actor: Actor) {
   const isManager = actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.SUPER_ADMIN;
   if (!isManager) throw HttpError.forbidden();
@@ -481,7 +497,7 @@ export async function finalizeRwr(id: string, actor: Actor) {
   }
   if (access.status !== 'RWR_PENDING') throw notAllowed(access.status);
   await prisma.$transaction(async (tx) => {
-    await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date(), dueAt: null }, { actor, remark: 'RWR finalized by Branch Manager' });
+    await moveFrom(tx, id, 'RWR_PENDING', { status: 'RWR', rwrAt: new Date(), dueAt: null }, { actor, remark: 'RWR approved by Branch Manager — back with CCO for delivery' });
     await recordAudit({ actorId: actor.sub, action: 'job.rwr_finalized', entityType: 'job', entityId: id, branchId: access.branchId, ip: actor.ip }, tx);
   });
   return { status: 'RWR' as const };

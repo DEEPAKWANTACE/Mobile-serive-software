@@ -7,6 +7,7 @@ import { CallingPage } from '@/features/calling/CallingPage';
 import { L4TransfersPage } from '@/features/l4/L4TransfersPage';
 import { ReportsPage } from '@/features/reports/ReportsPage';
 import { BranchInsightsPage } from '@/features/manager/BranchInsightsPage';
+import { RwrPage } from '@/features/manager/RwrPage';
 import { ManagerPermissionsPage } from '@/features/manager/ManagerPermissionsPage';
 import { PartCategoriesPage } from '@/features/catalog/PartCategoriesPage';
 import { EngineerReportPage } from '@/features/reports/EngineerReportPage';
@@ -113,7 +114,10 @@ export const router = createBrowserRouter([
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER]} />,
-            children: [{ path: 'branch-insights', element: <BranchInsightsPage /> }],
+            children: [
+              { path: 'branch-insights', element: <BranchInsightsPage /> },
+              { path: 'rwr', element: <RwrPage /> },
+            ],
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN]} />,

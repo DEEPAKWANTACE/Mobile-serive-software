@@ -59,7 +59,7 @@ export const JOB_PENDING_WITH: Record<JobStatus, string> = {
   READY_FOR_DELIVERY: 'Counter · customer collection',
   SPARE_PENDING: 'Store / engineer · spare part',
   RWR_PENDING: 'Branch Manager · RWR approval',
-  RWR: 'Counter · customer collection',
+  RWR: 'CCO · customer delivery',
   DELIVERED: 'Completed',
   CANCELLED: 'Closed',
 };

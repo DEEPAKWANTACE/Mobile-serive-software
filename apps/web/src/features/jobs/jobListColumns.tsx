@@ -35,7 +35,7 @@ export function useJobListColumns(role: Role | undefined): JobListColumn[] {
 /** Phone is back at its own branch and ready to hand over (RWR returns need the Branch Manager). */
 export const canDeliverRow = (j: JobListItemDto, role: Role | undefined) =>
   j.location === 'AT_BRANCH' && j.currentBranch.id === j.branch.id &&
-  ((j.status === 'READY_FOR_DELIVERY' && (role === ROLES.CCO || role === ROLES.BRANCH_MANAGER)) || (j.status === 'RWR' && role === ROLES.BRANCH_MANAGER));
+  ((j.status === 'READY_FOR_DELIVERY' && (role === ROLES.CCO || role === ROLES.BRANCH_MANAGER)) || (j.status === 'RWR' && role === ROLES.CCO));
 
 export const jobProblem = (j: JobListItemDto) => j.faults.join(', ');
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2 } from 'lucide-react';
-import { type JobListItemDto, type Paginated } from '@msm/shared';
+import { JOB_PENDING_WITH, type JobListItemDto, type Paginated } from '@msm/shared';
 import { Modal } from '@/components/ui/Modal';
 import { inputClass } from '@/components/ui/Field';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
@@ -51,7 +51,7 @@ export function FindJobModal({ open, onClose }: Props) {
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onKeyDown={handleKeyDown}
-            autoFocus
+            data-autofocus
             placeholder="Search by Mobile number or Job number..."
             className={`${inputClass} pl-9`}
           />
@@ -95,8 +95,9 @@ export function FindJobModal({ open, onClose }: Props) {
                     <span>📞 {job.customer.phone}</span>
                   </div>
                 </div>
-                <div className="shrink-0 text-right">
+                <div className="shrink-0 space-y-1 text-right">
                   <JobStatusBadge status={job.status} />
+                  <div className="text-[11px] text-slate-500">{JOB_PENDING_WITH[job.status]}</div>
                 </div>
               </button>
             ))

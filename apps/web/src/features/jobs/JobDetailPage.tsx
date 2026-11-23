@@ -144,7 +144,7 @@ export function JobDetailPage() {
   const ownBranch = !user?.branch || user.branch.id === job.branch.id;
   const canDeliver = atHome && ownBranch && (
     (job.status === 'READY_FOR_DELIVERY' && (user?.role === ROLES.CCO || user?.role === ROLES.BRANCH_MANAGER))
-    || (job.status === 'RWR' && user?.role === ROLES.BRANCH_MANAGER));
+    || (job.status === 'RWR' && user?.role === ROLES.CCO));
   const canRepeat = user?.role === ROLES.CCO && ownBranch;
 
   return (
@@ -988,7 +988,7 @@ function describe(entry: JobHistoryEntryDto) {
         ? `Diagnosed — estimate ${formatCurrency(Number(meta.total ?? 0))} (within agreed amount)`
         : `Diagnosed — estimate ${formatCurrency(Number(meta.total ?? 0))}, sent for customer approval`;
     case 'job.approved':
-      return `Customer approved ${formatCurrency(Number(meta.amount ?? 0))}${meta.note ? ` — “${meta.note}”` : ''}`;
+      return `Customer approved ${formatCurrency(Number(meta.amount ?? 0))}${meta.note ? ` — “${meta.note}”` : ''}${meta.model ? ` · Model: ${meta.model}` : ''}${meta.problem ? ` · Problem: ${meta.problem}` : ''}${meta.engineer ? ` · Engineer: ${meta.engineer}` : ''}${meta.cco ? ` · CCO: ${meta.cco}` : ''}`;
     case 'job.rejected':
       return `Customer rejected ${formatCurrency(Number(meta.amount ?? 0))} — “${meta.note ?? ''}”`;
     case 'job.status_changed':
@@ -1024,7 +1024,7 @@ function describe(entry: JobHistoryEntryDto) {
     case 'job.rwr_requested':
       return `RWR requested — “${meta.note ?? ''}”`;
     case 'job.rwr_finalized':
-      return 'RWR finalized by Branch Manager';
+      return 'RWR approved by Branch Manager — back with CCO';
     case 'job.dead_risk_approved':
       return `Dead-device risk accepted by customer${meta.note ? ` — “${meta.note}”` : ''}`;
     case 'job.approved_estimate_changed':
@@ -1032,7 +1032,7 @@ function describe(entry: JobHistoryEntryDto) {
     case 'job.part_cancelled':
       return `Part request cancelled: ${meta.code} ${meta.name}`;
     case 'job.delivered':
-      return `Delivered to ${meta.deliveredTo} — invoice ${meta.invoiceNumber}, total ${formatCurrency(Number(meta.total ?? 0))}${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
+      return `Delivered to ${meta.deliveredTo} — ${meta.invoiceNumber ? `invoice ${meta.invoiceNumber}, total ${formatCurrency(Number(meta.total ?? 0))}` : 'no invoice (RWR)'}${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
     case 'job.call_logged':
       return `Customer call: ${CALL_OUTCOME_LABELS[meta.outcome as keyof typeof CALL_OUTCOME_LABELS] ?? meta.outcome}${meta.note ? ` — “${meta.note}”` : ''}`;
     case 'job.sent_to_l4':

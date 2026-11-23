@@ -66,7 +66,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const [loggingCall, setLoggingCall] = useState(false);
   const atHome = job.location === 'AT_BRANCH' && job.currentBranch.id === job.branch.id;
   const canDeliver = atHome && (job.status === 'READY_FOR_DELIVERY' || job.status === 'RWR') &&
-    user?.branch?.id === job.branch.id && (job.status === 'RWR' ? user.role === ROLES.BRANCH_MANAGER : canApprove);
+    user?.branch?.id === job.branch.id && (job.status === 'RWR' ? user.role === ROLES.CCO : canApprove);
 
   const isManager = user?.role === ROLES.BRANCH_MANAGER;
   const pending = job.pendingTransfer;
@@ -93,7 +93,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const finalizeRwr = useMutation({
     mutationFn: () => api.post(`/jobs/${job.id}/rwr/finalize`, {}),
     onSuccess: () => {
-      toast.success('RWR finalized — ready for Branch Manager delivery');
+      toast.success('RWR approved — sent back to the CCO for delivery');
       void queryClient.invalidateQueries();
     },
     onError: (e) => toast.error(e.message),
@@ -196,11 +196,11 @@ export function WorkPanel({ job }: { job: JobDto }) {
         )}
         {job.status === 'RWR_PENDING' && (
           <div className="rounded-lg bg-amber-50 p-5 ring-1 ring-amber-300">
-            <div className="font-semibold text-amber-950">RWR requested — locked for CCO and engineer</div>
+            <div className="font-semibold text-amber-950">RWR awaiting Branch Manager approval — locked for CCO and engineer</div>
             <p className="mt-1 text-sm text-amber-900">{job.rwrNote}</p>
             {user?.role === ROLES.BRANCH_MANAGER && user.branch?.id === job.branch.id && (
               <Button className="mt-3" loading={finalizeRwr.isPending} onClick={() => finalizeRwr.mutate()}>
-                Finalize RWR
+                Approve RWR
               </Button>
             )}
           </div>
@@ -210,7 +210,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
             <div className="font-medium">Returned without repair — {job.rwrReason ? RWR_REASON_LABELS[job.rwrReason] : ''}</div>
             <p className="mt-1 whitespace-pre-line text-slate-700">{job.rwrNote}</p>
             <p className="mt-1 text-xs text-slate-500">
-              {job.rwrAt && formatDateTime(job.rwrAt)} · motherboard photos are in the Photos section below.
+              {job.rwrAt && formatDateTime(job.rwrAt)} · phone / PCB photos are in the Photos section below. Pending with the CCO for final delivery.
             </p>
           </div>
         )}
@@ -294,7 +294,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-red-200">
               {canRwr && (
                 <Button size="sm" variant="primary" onClick={() => setAction('rwr')}>
-                  Finalize RWR (return to counter)
+                  Return without repair (RWR)
                 </Button>
               )}
               {canApprove && (

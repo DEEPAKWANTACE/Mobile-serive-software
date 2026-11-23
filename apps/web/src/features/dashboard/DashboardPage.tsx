@@ -165,7 +165,7 @@ export function DashboardPage() {
               onChange={(event) => setJobSearch(event.target.value)}
               placeholder="Mobile, job no., customer or device"
               className={inputClass}
-              autoFocus
+              data-autofocus
             />
           </label>
           <p className="text-xs text-slate-500">You can also search by IMEI, serial number, city or problem.</p>

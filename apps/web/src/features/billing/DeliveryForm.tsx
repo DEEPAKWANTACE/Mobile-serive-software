@@ -25,7 +25,6 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
   const queryClient = useQueryClient();
   const [discount, setDiscount] = useState('');
   const [discountReason, setDiscountReason] = useState('');
-  const [inspection, setInspection] = useState('');
   const [deliveredTo, setDeliveredTo] = useState(job.customer.name);
   const [accessoriesReturned, setAccessoriesReturned] = useState(false);
   const [note, setNote] = useState('');
@@ -35,8 +34,9 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
   const [imei, setImei] = useState(job.imei && job.imei !== 'N/A' ? job.imei : '');
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
 
-  const subtotal = bill.kind === 'RWR' ? Number(inspection) || 0 : bill.subtotal;
-  const total = roundMoney(subtotal - (Number(discount) || 0));
+  // RWR: no invoice and no charge — only an advance, if any, is refunded.
+  const isRwr = bill.kind === 'RWR';
+  const total = roundMoney(bill.subtotal - (isRwr ? 0 : Number(discount) || 0));
   const due = roundMoney(total - bill.paid);
 
   const [payments, setPayments] = useState<PayRow[]>(() => [{ mode: 'CASH', amount: due > 0 ? String(due) : '', reference: '' }]);
@@ -54,10 +54,9 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
 
   const deliver = useMutation({
     mutationFn: () =>
-      api.post<{ invoiceNumber: string }>(`/jobs/${job.id}/deliver`, {
-        discount: Number(discount) || 0,
-        discountReason: discountReason || null,
-        inspectionCharge: bill.kind === 'RWR' ? Number(inspection) || 0 : 0,
+      api.post<{ invoiceNumber: string | null }>(`/jobs/${job.id}/deliver`, {
+        discount: isRwr ? 0 : Number(discount) || 0,
+        discountReason: isRwr ? null : discountReason || null,
         payments: due > 0 ? payments.filter((p) => Number(p.amount) > 0).map((p) => ({ ...p, reference: p.reference || null })) : [],
         refund: due < 0 ? { mode: refundMode, amount: -due } : null,
         deliveredTo,
@@ -67,7 +66,8 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         ...(bill.kind === 'REPAIR' && { warrantyPeriod: warrantyPeriod.trim() || null, warrantyTerms: warrantyTerms.trim() || null }),
       }),
     onSuccess: (r) => {
-      showDeliveredPrintToast(job.id, job.jobNumber, r.invoiceNumber);
+      if (r.invoiceNumber) showDeliveredPrintToast(job.id, job.jobNumber, r.invoiceNumber);
+      else toast.success('Phone delivered to the customer (no invoice for RWR)');
       // The bill preview no longer applies to a delivered job; drop it instead of refetching it.
       queryClient.removeQueries({ queryKey: ['jobs', job.id, 'bill'] });
       void queryClient.invalidateQueries({ predicate: (q) => !(q.queryKey[0] === 'jobs' && q.queryKey[2] === 'bill') });
@@ -128,11 +128,16 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         </fieldset>
       )}
 
-      {/* Bill */}
+      {/* Bill (never for RWR — no invoice) */}
+      {isRwr ? (
+        <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          Returned without repair — no invoice and no charge.
+          {due < 0 && <span className="mt-1 block font-semibold text-orange-700">Refund advance to customer: {formatCurrency(-due)}</span>}
+        </div>
+      ) : (
       <div className="rounded-md border border-slate-200">
         <ul className="divide-y divide-slate-100 text-sm">
-          {bill.kind === 'REPAIR' ? (
-            bill.lines.map((l, i) => (
+          {bill.lines.map((l, i) => (
               <li key={i} className="flex justify-between gap-3 px-3 py-1.5">
                 <span>
                   {l.partCode && <span className="mr-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-xs font-semibold">{l.partCode}</span>}
@@ -141,16 +146,7 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
                 </span>
                 <span className="shrink-0">{formatCurrency(l.amount)}</span>
               </li>
-            ))
-          ) : (
-            <li className="flex items-center justify-between gap-3 px-3 py-2">
-              <span>
-                Returned without repair — inspection / diagnosis charge
-                <span className="block text-xs text-slate-500">Leave blank if no charge</span>
-              </span>
-              <input value={inspection} onChange={(e) => setInspection(e.target.value)} inputMode="decimal" placeholder="₹ 0" className={`${inputClass} w-28!`} />
-            </li>
-          )}
+            ))}
           <li className="flex items-center justify-between gap-3 px-3 py-2">
             <span>Discount</span>
             <span className="flex items-center gap-2">
@@ -173,9 +169,10 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         </ul>
         {(errors.discount || errors.discountReason) && <p className="px-3 pb-2 text-xs text-red-600">{errors.discount ?? errors.discountReason}</p>}
       </div>
+      )}
 
       {/* Payment / refund */}
-      {due > 0 && (
+      {due > 0 && !isRwr && (
         <div>
           <div className="mb-2 flex items-center justify-between text-sm font-medium text-slate-700">
             <span>Payment received</span>
@@ -266,7 +263,7 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
           Cancel
         </Button>
         <Button type="submit" loading={deliver.isPending} disabled={missingIdentification}>
-          Deliver & create invoice
+          {isRwr ? 'Deliver to customer' : 'Deliver & create invoice'}
         </Button>
       </div>
     </form>

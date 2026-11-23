@@ -7,6 +7,7 @@ import { Field, inputClass } from '@/components/ui/Field';
 import { Modal } from '@/components/ui/Modal';
 import { api, ApiError } from '@/lib/api-client';
 import { formatCurrency, formatJobNumber } from '@/lib/format';
+import { useAuth } from '@/features/auth/auth-context';
 import { useJob } from './api';
 import { RwrForm } from './HoldAndRwrForms';
 import { CostLinesEditor, rowsFromJob, rowsToLines, rowsTotal, type CostRow } from './CostLinesEditor';
@@ -25,6 +26,7 @@ export function ApprovalDecisionDialog({ jobId, onClose }: { jobId: string | nul
 
 export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const options = job.estimateOptions ?? [];
   const [mode, setMode] = useState<Mode>('approve');
   // Pending diagnosis: nothing is costed yet, so start from the intake estimate.
@@ -92,6 +94,10 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
   };
 
   const total = rowsTotal(rows);
+  const modelName = job.jobType === 'ACCESSORY'
+    ? (job.accessoryName ?? 'Accessory')
+    : (job.manualBrand || job.manualModel ? `${job.manualBrand ?? ''} ${job.manualModel ?? ''}` : `${job.brand?.name ?? ''} ${job.model?.name ?? ''}`).trim() || '—';
+  const problem = [...job.faults.map((x) => x.name), job.manualFault, job.customerComplaint].filter(Boolean).join(' · ') || '—';
   const engineerFound = [...job.diagnosisFindings.map((f) => f.label), job.diagnosisNotes].filter(Boolean).join(' · ');
 
   return (
@@ -99,6 +105,10 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
       <div className="grid grid-cols-1 gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 text-sm ring-1 ring-slate-200 sm:grid-cols-2">
         <div><span className="text-slate-500">Customer:</span> <strong>{job.customer.name}</strong></div>
         <div><span className="text-slate-500">Mobile:</span> <a href={`tel:${job.customer.phone}`} className="font-medium text-brand-600">{job.customer.phone}</a></div>
+        <div><span className="text-slate-500">Model:</span> <strong>{modelName}</strong></div>
+        <div><span className="text-slate-500">Engineer:</span> <strong>{job.assignedEngineer?.name ?? '—'}</strong></div>
+        <div><span className="text-slate-500">CCO (taking approval):</span> <strong>{user?.name ?? '—'}</strong></div>
+        <div className="sm:col-span-2"><span className="text-slate-500">Problem / issue:</span> {problem}</div>
         {beforeDiagnosis ? (
           <>
             <div className="sm:col-span-2"><span className="text-slate-500">Intake estimate:</span> <strong>{job.estimatedAmount !== null ? formatCurrency(job.estimatedAmount) : 'To be decided'}</strong></div>

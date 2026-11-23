@@ -30,6 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Operations',
     items: [
       { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.CCO] },
+      { label: 'RWR', to: '/rwr', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
       { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },

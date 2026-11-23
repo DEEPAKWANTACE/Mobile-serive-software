@@ -60,6 +60,8 @@ function lineText(l: BillJob['estimateLines'][number]) {
 const netPaid = (payments: BillJob['payments']) =>
   roundMoney(payments.reduce((sum, p) => sum + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
 
+const RWR_PHOTO_MESSAGE = 'Please upload the required mobile phone or PCB photographs before proceeding with delivery.';
+
 function assertDeliverable(status: JobStatus) {
   if (!DELIVERABLE_STATUSES.includes(status)) {
     throw HttpError.conflict(`Only repaired (Ready) or RWR phones can be delivered — this job is "${JOB_STATUS_LABELS[status]}"`);
@@ -68,13 +70,17 @@ function assertDeliverable(status: JobStatus) {
 
 async function loadBillJob(jobId: string, actor: Actor) {
   const access = await loadForAccess(jobId, actor);
-  if (access.status === 'RWR' && actor.role !== ROLES.BRANCH_MANAGER) {
-    throw HttpError.forbidden('Only this job\'s Branch Manager can deliver an RWR job');
+  // The Branch Manager only approves an RWR; the CCO makes the final hand-over.
+  if (access.status === 'RWR' && actor.role !== ROLES.CCO) {
+    throw HttpError.forbidden('Only the CCO can deliver an RWR job after Branch Manager approval');
   }
   // The owning branch delivers, and only once the phone is physically back with it.
   if (actor.branchId && actor.branchId !== access.branchId) throw HttpError.forbidden('Only the branch that took in the phone can deliver it');
   if (access.location !== 'AT_BRANCH' || access.currentBranchId !== access.branchId) {
     throw HttpError.conflict('The phone is not back at the branch yet — receive it from L4 first');
+  }
+  if (access.status === 'RWR' && !(await prisma.jobPhoto.count({ where: { jobId, kind: 'RWR' } }))) {
+    throw HttpError.badRequest(RWR_PHOTO_MESSAGE, { photos: [RWR_PHOTO_MESSAGE] });
   }
   return prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: billSelect });
 }
@@ -135,12 +141,13 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   }
   if (bill.accessories.length && !data.accessoriesReturned) throw invalid('accessoriesReturned', 'Confirm the accessories were returned');
 
-  const lines = bill.kind === 'RWR' && data.inspectionCharge > 0
-    ? [{ description: 'Inspection / diagnosis charge', partCode: null, warranty: null, amount: data.inspectionCharge }]
-    : bill.lines;
+  // No invoice and no charge for a phone returned without repair: any advance is simply refunded.
+  const isRwr = bill.kind === 'RWR';
+  const lines = isRwr ? [] : bill.lines;
   const subtotal = roundMoney(lines.reduce((s, l) => s + l.amount, 0));
-  if (data.discount > subtotal) throw invalid('discount', 'Discount cannot be more than the bill');
-  const total = roundMoney(subtotal - data.discount);
+  const discount = isRwr ? 0 : data.discount;
+  if (discount > subtotal) throw invalid('discount', 'Discount cannot be more than the bill');
+  const total = roundMoney(subtotal - discount);
   const due = roundMoney(total - bill.paid);
 
   const collected = roundMoney(data.payments.reduce((s, p) => s + p.amount, 0));
@@ -174,25 +181,27 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
     await recordStatus(tx, { jobId, from: job.status, to: 'DELIVERED', actorId: actor.sub, remark: `Delivered to ${data.deliveredTo}${data.note ? ` — ${data.note}` : ''}` });
 
     const branch = await tx.branch.findUniqueOrThrow({ where: { id: job.branchId }, select: { id: true, code: true } });
-    const invoiceNumber = invoiceNumberFor(branch, job.jobNumber);
+    const invoiceNumber = isRwr ? null : invoiceNumberFor(branch, job.jobNumber);
 
-    const invoice = await tx.invoice.create({
-      data: {
-        invoiceNumber,
-        jobId,
-        branchId: job.branchId,
-        subtotal,
-        discount: data.discount,
-        discountReason: data.discount > 0 ? (data.discountReason ?? null) : null,
-        total,
-        createdById: actor.sub,
-        lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
-      },
-      select: { id: true, invoiceNumber: true },
-    });
+    const invoice = isRwr
+      ? null
+      : await tx.invoice.create({
+          data: {
+            invoiceNumber: invoiceNumber!,
+            jobId,
+            branchId: job.branchId,
+            subtotal,
+            discount,
+            discountReason: discount > 0 ? (data.discountReason ?? null) : null,
+            total,
+            createdById: actor.sub,
+            lines: { create: lines.map((l, i) => ({ ...l, sortOrder: i })) },
+          },
+          select: { id: true, invoiceNumber: true },
+        });
 
     // Earlier advances belong to this invoice too.
-    await tx.payment.updateMany({ where: { jobId, invoiceId: null }, data: { invoiceId: invoice.id } });
+    if (invoice) await tx.payment.updateMany({ where: { jobId, invoiceId: null }, data: { invoiceId: invoice.id } });
     const payments = [
       ...data.payments.map((pay) => ({ ...pay, kind: 'FINAL' as const })),
       ...(data.refund ? [{ ...data.refund, kind: 'REFUND' as const }] : []),
@@ -202,7 +211,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
         data: {
           jobId,
           branchId: job.branchId,
-          invoiceId: invoice.id,
+          invoiceId: invoice?.id ?? null,
           kind: pay.kind,
           mode: pay.mode,
           amount: pay.amount,
@@ -228,7 +237,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
         metadata: {
           invoiceNumber,
           total,
-          discount: data.discount,
+          discount,
           collected,
           refund: data.refund?.amount ?? 0,
           deliveredTo: data.deliveredTo,
@@ -237,7 +246,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
       },
       tx,
     );
-    return { invoiceId: invoice.id, invoiceNumber, total, collected, refund: data.refund?.amount ?? 0 };
+    return { invoiceId: invoice?.id ?? null, invoiceNumber, total, collected, refund: data.refund?.amount ?? 0 };
   });
 }
 
