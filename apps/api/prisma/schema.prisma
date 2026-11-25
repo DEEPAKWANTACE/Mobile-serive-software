@@ -132,6 +132,7 @@ model User {
   remindersCreated       Reminder[]           @relation("ReminderCreatedBy")
   remindersAssigned      Reminder[]           @relation("ReminderAssignedTo")
   jobsDelivered          Job[]                @relation("JobDeliveredBy")
+  loanersReceived        Job[]                @relation("JobLoanerReturnedBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
   partsRequested         JobPart[]            @relation("JobPartRequestedBy")
@@ -243,6 +244,7 @@ model DeviceModel {
   prices     ServicePrice[]
   jobs       Job[]
   jobDevices JobDevice[]
+  loanedJobs Job[]          @relation("JobLoanerModel")
 
   @@unique([brandId, name])
   @@map("device_models")
@@ -392,6 +394,12 @@ enum TransferStatus {
 }
 
 model Job {
+  /// Loaner phone lent to the customer. While set and not returned, the job cannot be delivered or cancelled.
+  loanerModelId           String?            @map("loaner_model_id") @db.Uuid
+  loanerModel             DeviceModel?       @relation("JobLoanerModel", fields: [loanerModelId], references: [id], onDelete: Restrict)
+  loanerReturnedAt        DateTime?          @map("loaner_returned_at")
+  loanerReturnedById      String?            @map("loaner_returned_by_id") @db.Uuid
+  loanerReturnedBy        User?              @relation("JobLoanerReturnedBy", fields: [loanerReturnedById], references: [id])
   /// Dealer / shopkeeper who brought the phone (if not walk-in).
   retailer                String?
   /// Whether this job was received directly from a customer or through a retailer.

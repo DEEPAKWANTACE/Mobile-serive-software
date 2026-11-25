@@ -367,6 +367,8 @@ function AdminDashboard({ user }: { user: AuthUser }) {
   );
 }
 
+type SectionKey = 'trend' | 'stages' | 'summary' | 'overdue' | 'ready' | 'approval' | 'spares' | 'queue';
+
 // ─── Branch manager / CCO / Super Admin ─────────────────────────────────────
 
 function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string }) {
@@ -377,12 +379,17 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
   const [customFrom, setCustomFrom] = useState(todayIso());
   const [customTo, setCustomTo] = useState(todayIso());
 
+  // Box numbers count the branch the phone is at, so the list a box opens uses the same rule.
+  const boxLink = (query: string) => `/jobs?${query}&current=true${branchId ? `&branchId=${branchId}` : ''}`;
+
   const openDateFilteredJobs = (from?: string, to?: string) => {
     setDateModalOpen(false);
     const params = new URLSearchParams();
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     if (branchId) params.set('branchId', branchId);
+    // The "Today's jobs" box counts phones at this branch; keep its Today list in step with that number.
+    if (from === todayIso() && to === todayIso()) params.set('current', 'true');
     navigate(`/jobs${params.toString() ? `?${params.toString()}` : ''}`);
   };
   const stats = useQuery({
@@ -409,6 +416,20 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
   });
   const [assigning, setAssigning] = useState<JobListItemDto | null>(null);
   const withEngineer = by ? (['ASSIGNED', 'IN_REPAIR', 'REPAIRED', 'TESTING'] as const).reduce((s, st) => s + by[st], 0) : undefined;
+
+  // Sections below the boxes open one at a time; none is open to start with.
+  const [section, setSection] = useState<SectionKey | null>(null);
+  const sections: { key: SectionKey; label: string; count?: number }[] = [
+    { key: 'trend', label: 'Jobs in & out' },
+    { key: 'stages', label: 'Where jobs are now' },
+    { key: 'summary', label: 'Job summary' },
+    { key: 'overdue', label: 'Overdue' },
+    { key: 'ready', label: 'Ready for collection', count: collection.length },
+    { key: 'approval', label: 'Customer approval', count: approvals.data?.total },
+    { key: 'spares', label: 'Spare parts', count: spares.data?.total },
+    // Only phones arriving at a main office (L4) wait here.
+    ...(queue.data?.items.length ? [{ key: 'queue' as const, label: 'Waiting for engineer', count: queue.data.total }] : []),
+  ];
 
   const branchCol = isSuperAdmin ? [{ header: 'Branch', cell: (j: JobListItemDto) => j.branch.code }] : [];
 
@@ -460,9 +481,9 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
   return (
     <>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatCard label="With engineers" value={withEngineer} to="/jobs?view=engineers" tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
-        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to="/jobs?view=ready" tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
-        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to="/jobs?status=AWAITING_APPROVAL" tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
+        <StatCard label="With engineers" value={withEngineer} to={boxLink('view=engineers')} tone="brand" icon={Wrench} hint="Diagnosis, repair & testing" />
+        <StatCard label="Ready for collection" value={by ? by.READY_FOR_DELIVERY + by.RWR : undefined} to={boxLink('view=ready')} tone="good" icon={PackageCheck} hint={toCollect > 0 ? `${formatCurrency(toCollect)} to collect` : undefined} />
+        <StatCard label="Approval needed" value={by?.AWAITING_APPROVAL} to={boxLink('status=AWAITING_APPROVAL')} tone={by?.AWAITING_APPROVAL ? 'warning' : 'default'} icon={PhoneCall} hint="Call these customers" />
         <StatCard
           label="RR · Repeat repair"
           value={stats.data?.repeatRepairs}
@@ -474,11 +495,11 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} to="/jobs?status=SPARE_PENDING" />
-        <MiniStat label="Follow-ups due" value={followUps.data?.followUpsDue} icon={CalendarClock} to="/calling" />
+        <MiniStat label="Spare not available" value={by?.SPARE_PENDING} icon={PackageSearch} to={boxLink('status=SPARE_PENDING')} />
+        <MiniStat label="Follow-ups due" value={followUps.data?.followUpsDue} icon={CalendarClock} to="/calling?list=due" />
         <MiniStat label="At L4 / in transit" value={stats.data?.atL4} icon={Truck} to="/l4" />
-        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} to="/jobs?status=CUSTOMER_REJECTED" />
-        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} to="/jobs?status=DELIVERED" />
+        <MiniStat label="Customer rejected" value={by?.CUSTOMER_REJECTED} icon={ShieldAlert} to={boxLink('status=CUSTOMER_REJECTED')} />
+        <MiniStat label="Delivered" value={by?.DELIVERED} icon={FilePlus2} to={boxLink('status=DELIVERED')} />
         <button
           type="button"
           onClick={() => setDateModalOpen(true)}
@@ -588,123 +609,145 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
       {/* Temporarily keep the remaining dashboard sections hidden from CCO users. */}
       {user.role !== ROLES.CCO && (
         <>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+          <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1" role="tablist" aria-label="Dashboard sections">
+            {sections.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="tab"
+                aria-selected={section === t.key}
+                onClick={() => setSection((current) => (current === t.key ? null : t.key))}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium ${section === t.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                {t.label}{t.count === undefined ? '' : ` (${t.count})`}
+              </button>
+            ))}
+          </div>
+
+          {section === 'trend' && (
           <TrendCard branchId={branchId} />
-        </div>
-        <Card title="Where jobs are now" subtitle="Phones at this branch, by stage" icon={ClipboardList} className="h-full">
-          <BarList
-            items={by ? PIPELINE.map(([st, label]) => ({ key: st, label, value: by[st], to: `/jobs?status=${st}` })) : []}
-            emptyText="Loading…"
-          />
-        </Card>
-      </div>
-
-      <DashboardSummary branchId={branchId} />
-
-      <OverdueCard branchId={branchId} />
-
-      <Card
-        title={`Ready for collection (${collection.length})`}
-        subtitle="Call the customer, then deliver & bill"
-        icon={PackageCheck}
-        actions={toCollect > 0 && <span className="text-sm font-medium text-slate-700">To collect: {formatCurrency(toCollect)}</span>}
-      >
-        <DataTable
-          columns={[
-            { header: 'Job no.', cell: jobLink },
-            {
-              header: 'Customer',
-              cell: (j) => (
-                <div>
-                  <div className="font-medium">{j.customer.name}</div>
-                  <a href={`tel:${j.customer.phone}`} className="text-xs text-brand-600 hover:underline">
-                    📞 {j.customer.phone}
-                  </a>
-                </div>
-              ),
-            },
-            { header: 'Device', cell: (j) => j.device },
-            { header: 'Status', cell: (j) => <JobStatusBadge status={j.status} /> },
-            {
-              header: 'Balance',
-              cell: (j) => {
-                const bal = (j.status === 'RWR' ? 0 : (j.quotedAmount ?? 0)) - j.paid;
-                return <span className={`font-semibold ${bal < 0 ? 'text-orange-700' : ''}`}>{bal < 0 ? `Refund ${formatCurrency(-bal)}` : formatCurrency(bal)}</span>;
-              },
-            },
-            { header: 'Waiting', cell: (j) => <span className="text-slate-600">{timeAgo(j.createdAt)}</span> },
-            ...branchCol,
-            {
-              header: '',
-              className: 'text-right',
-              cell: (j) => (
-                <Link to={`/jobs/${j.id}`}>
-                  <Button size="sm">Deliver</Button>
-                </Link>
-              ),
-            },
-          ]}
-          rows={collection}
-          rowKey={(j) => j.id}
-          isLoading={ready.isLoading || rwr.isLoading}
-          emptyMessage="No phones waiting for collection"
-        />
-      </Card>
-
-      <Card title="Customer approval needed" subtitle="Call and record the customer's answer" icon={PhoneCall}>
-        <DataTable
-          columns={approvalColumns}
-          rows={approvals.data?.items}
-          rowKey={(j) => j.id}
-          isLoading={approvals.isLoading}
-          emptyMessage="No estimates waiting for customer approval"
-        />
-      </Card>
-
-      {!!spares.data?.items.length && (
-        <Card title="Waiting for spare parts" icon={PackageSearch}>
-          <DataTable
-            columns={[
-              { header: 'Job no.', cell: jobLink },
-              { header: 'Part needed', cell: (j) => <span className="font-medium">{j.sparePart}</span> },
-              { header: 'Device', cell: (j) => j.device },
-              { header: 'Engineer', cell: (j) => j.assignedEngineer?.name ?? '—' },
-              ...branchCol,
-            ]}
-            rows={spares.data.items}
-            rowKey={(j) => j.id}
-          />
-        </Card>
-      )}
-
-      {/* Only phones arriving at a main office (L4) wait here; new job sheets are always assigned at intake. */}
-      {!!queue.data?.items.length && <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        <Card
-          title="Waiting for an engineer"
-          subtitle="Oldest first"
-          icon={UserCheck}
-          className={isSuperAdmin ? 'lg:col-span-3' : 'lg:col-span-2'}
-          actions={
-            (queue.data?.total ?? 0) > 10 && (
-              <Link to="/jobs" className="text-sm text-brand-600 hover:underline">
-                View all {queue.data?.total}
-              </Link>
-            )
-          }
-        >
-          <DataTable columns={queueColumns} rows={queue.data?.items} rowKey={(j) => j.id} isLoading={queue.isLoading} emptyMessage="All jobs are assigned 🎉" />
-        </Card>
-
-        {!isSuperAdmin && (
-          <Card title="Engineer workload" subtitle="Open jobs per engineer" icon={Users} className="h-fit">
+          )}
+          {section === 'stages' && (
+          <Card title="Where jobs are now" subtitle="Phones at this branch, by stage" icon={ClipboardList}>
             <BarList
-              items={(engineers.data ?? []).map((e) => ({ key: e.id, label: e.name, value: e.openJobs }))}
-              emptyText={engineers.isLoading ? 'Loading…' : 'No active engineers'}
+              items={by ? PIPELINE.map(([st, label]) => ({ key: st, label, value: by[st], to: boxLink(`status=${st}`) })) : []}
+              emptyText="Loading…"
             />
           </Card>
-        )}
-      </div>}
+          )}
+          {section === 'summary' && (
+          <DashboardSummary branchId={branchId} />
+          )}
+          {section === 'overdue' && (
+          <OverdueCard branchId={branchId} />
+          )}
+          {section === 'ready' && (
+          <Card
+            title={`Ready for collection (${collection.length})`}
+            subtitle="Call the customer, then deliver & bill"
+            icon={PackageCheck}
+            actions={toCollect > 0 && <span className="text-sm font-medium text-slate-700">To collect: {formatCurrency(toCollect)}</span>}
+          >
+            <DataTable
+              columns={[
+                { header: 'Job no.', cell: jobLink },
+                {
+                  header: 'Customer',
+                  cell: (j) => (
+                    <div>
+                      <div className="font-medium">{j.customer.name}</div>
+                      <a href={`tel:${j.customer.phone}`} className="text-xs text-brand-600 hover:underline">
+                        📞 {j.customer.phone}
+                      </a>
+                    </div>
+                  ),
+                },
+                { header: 'Device', cell: (j) => j.device },
+                { header: 'Status', cell: (j) => <JobStatusBadge status={j.status} /> },
+                {
+                  header: 'Balance',
+                  cell: (j) => {
+                    const bal = (j.status === 'RWR' ? 0 : (j.quotedAmount ?? 0)) - j.paid;
+                    return <span className={`font-semibold ${bal < 0 ? 'text-orange-700' : ''}`}>{bal < 0 ? `Refund ${formatCurrency(-bal)}` : formatCurrency(bal)}</span>;
+                  },
+                },
+                { header: 'Waiting', cell: (j) => <span className="text-slate-600">{timeAgo(j.createdAt)}</span> },
+                ...branchCol,
+                {
+                  header: '',
+                  className: 'text-right',
+                  cell: (j) => (
+                    <Link to={`/jobs/${j.id}`}>
+                      <Button size="sm">Deliver</Button>
+                    </Link>
+                  ),
+                },
+              ]}
+              rows={collection}
+              rowKey={(j) => j.id}
+              isLoading={ready.isLoading || rwr.isLoading}
+              emptyMessage="No phones waiting for collection"
+            />
+          </Card>
+          )}
+          {section === 'approval' && (
+          <Card title="Customer approval needed" subtitle="Call and record the customer's answer" icon={PhoneCall}>
+            <DataTable
+              columns={approvalColumns}
+              rows={approvals.data?.items}
+              rowKey={(j) => j.id}
+              isLoading={approvals.isLoading}
+              emptyMessage="No estimates waiting for customer approval"
+            />
+          </Card>
+          )}
+          {section === 'spares' && (
+            <Card title="Waiting for spare parts" icon={PackageSearch}>
+              <DataTable
+                columns={[
+                  { header: 'Job no.', cell: jobLink },
+                  { header: 'Part needed', cell: (j) => <span className="font-medium">{j.sparePart}</span> },
+                  { header: 'Device', cell: (j) => j.device },
+                  { header: 'Engineer', cell: (j) => j.assignedEngineer?.name ?? '—' },
+                  ...branchCol,
+                ]}
+                rows={spares.data?.items}
+                rowKey={(j) => j.id}
+                isLoading={spares.isLoading}
+                emptyMessage="No jobs waiting for spare parts"
+              />
+            </Card>
+          )}
+          {section === 'queue' && (
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+            <Card
+              title="Waiting for an engineer"
+              subtitle="Oldest first"
+              icon={UserCheck}
+              className={isSuperAdmin ? 'lg:col-span-3' : 'lg:col-span-2'}
+              actions={
+                (queue.data?.total ?? 0) > 10 && (
+                  <Link to="/jobs" className="text-sm text-brand-600 hover:underline">
+                    View all {queue.data?.total}
+                  </Link>
+                )
+              }
+            >
+              <DataTable columns={queueColumns} rows={queue.data?.items} rowKey={(j) => j.id} isLoading={queue.isLoading} emptyMessage="All jobs are assigned 🎉" />
+            </Card>
+
+            {!isSuperAdmin && (
+              <Card title="Engineer workload" subtitle="Open jobs per engineer" icon={Users} className="h-fit">
+                <BarList
+                  items={(engineers.data ?? []).map((e) => ({ key: e.id, label: e.name, value: e.openJobs }))}
+                  emptyText={engineers.isLoading ? 'Loading…' : 'No active engineers'}
+                />
+              </Card>
+            )}
+          </div>
+          )}
+        </>
+      )}
 
       <AssignEngineerDialog
         job={
@@ -714,8 +757,6 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         }
         onClose={() => setAssigning(null)}
       />
-        </>
-      )}
     </>
   );
 }

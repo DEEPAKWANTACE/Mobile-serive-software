@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -35,6 +35,20 @@ import { openPrintWindow, writeTable } from '@/lib/print-table';
 const rupeeFmt = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 const rupees = (n: number) => rupeeFmt.format(Math.round(n));
 
+/** How many of the latest records the short view shows. */
+const RECENT = 5;
+
+/** Sections opened from the cards at the top. */
+const VIEWS = {
+  received: 'Received',
+  refunds: 'Refunds',
+  expenses: 'Expenses',
+  net: 'Net – full history',
+  cash: 'Cash in hand',
+  online: 'Online balance',
+} as const;
+type View = keyof typeof VIEWS;
+
 export function DayBookPage() {
   const { user } = useAuth();
   const canVoid = !!user && EXPENSE_VOID_ROLES.includes(user.role);
@@ -56,6 +70,18 @@ export function DayBookPage() {
   const [branchId, setBranchId] = useState('');
   const [adding, setAdding] = useState(false);
   const [voiding, setVoiding] = useState<ExpenseDto | null>(null);
+  // The open section lives in the URL, so it survives a refresh or coming back from a job.
+  const [urlParams, setUrlParams] = useSearchParams();
+  const requested = urlParams.get('view');
+  const view = requested && Object.hasOwn(VIEWS, requested) ? (requested as View) : null;
+  const [modeFilter, setModeFilter] = useState<PaymentMode | ''>('');
+  const [search, setSearch] = useState('');
+  const openView = (next: View | null) => {
+    setModeFilter('');
+    setSearch('');
+    setUrlParams(next ? { view: next } : {}, { replace: true });
+  };
+  const card = (key: View) => ({ onClick: () => openView(view === key ? null : key), active: view === key });
 
   const params = { from, to, branchId };
   const { data, isLoading, error } = useQuery({
@@ -152,6 +178,20 @@ export function DayBookPage() {
     },
   ];
 
+  // Filters for an opened section. Cash and online are limited to their own payment modes.
+  const term = search.trim().toLowerCase();
+  const matches = (...values: string[]) => !term || values.some((v) => v.toLowerCase().includes(term));
+  const modeOk = (mode: PaymentMode) =>
+    (view !== 'cash' || mode === 'CASH') && (view !== 'online' || mode !== 'CASH') && (!modeFilter || mode === modeFilter);
+  const shownPayments = (data?.payments ?? []).filter(
+    (p) =>
+      (view !== 'received' || p.kind !== 'REFUND') &&
+      (view !== 'refunds' || p.kind === 'REFUND') &&
+      modeOk(p.mode) &&
+      matches(p.job.jobNumber, p.job.customer, p.receivedBy, p.reference ?? ''),
+  );
+  const shownExpenses = (data?.expenseItems ?? []).filter((e) => modeOk(e.mode) && matches(e.category, e.description, e.createdBy.name));
+
   return (
     <div className="space-y-5">
       <PageHeader title="Day Book" description="Money received, refunds and office expenses" actions={<>
@@ -191,71 +231,111 @@ export function DayBookPage() {
         <>
           {/* Same compact cards as the dashboard: whole rupees, icon badge, 2 / 3 / 4 per row. */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            <StatCard label="Received" value={rupees(data.received.total)} tone="good" icon={ArrowDownLeft} />
-            <StatCard label="Refunds" value={rupees(data.refunds.total)} tone="warning" icon={Undo2} />
-            <StatCard label="Expenses" value={rupees(data.expenses.total)} icon={ReceiptText} />
-            <StatCard label="Net" value={rupees(data.net)} tone="brand" icon={Scale} />
-            <StatCard label="Cash in hand" value={rupees(data.cashInHand)} tone="info" icon={Wallet} hint={`${data.deliveredCount} delivered`} />
+            <StatCard label="Received" value={rupees(data.received.total)} tone="good" icon={ArrowDownLeft} {...card('received')} />
+            <StatCard label="Refunds" value={rupees(data.refunds.total)} tone="warning" icon={Undo2} {...card('refunds')} />
+            <StatCard label="Expenses" value={rupees(data.expenses.total)} icon={ReceiptText} {...card('expenses')} />
+            <StatCard label="Net" value={rupees(data.net)} tone="brand" icon={Scale} {...card('net')} />
+            <StatCard label="Cash in hand" value={rupees(data.cashInHand)} tone="info" icon={Wallet} hint={`${data.deliveredCount} delivered`} {...card('cash')} />
             <StatCard label="Opening cash" value={rupees(data.openingCash)} icon={Banknote} hint="Before this period" />
             <StatCard label="Closing cash" value={rupees(data.closingCash)} tone="info" icon={Wallet} hint="Opening + cash in hand" />
-            <StatCard label="Online balance" value={rupees(data.onlineBalance)} icon={Landmark} hint="UPI + card, net" />
+            <StatCard label="Online balance" value={rupees(data.onlineBalance)} icon={Landmark} hint="UPI + card, net" {...card('online')} />
             <StatCard label="Total available" value={rupees(data.totalAvailable)} tone="good" icon={Scale} hint="Cash + online" />
             <StatCard label="Customer due" value={rupees(data.outstandingDue)} tone="warning" icon={ReceiptText} hint="Ready phones, unpaid" />
           </div>
 
-          {data.expenseByCategory.length > 0 && (
-            <Card title="Expenses by category">
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-slate-100">
-                  {data.expenseByCategory.map((c) => (
-                    <tr key={c.category}>
-                      <td className="py-1.5">{c.category}</td>
-                      <td className="py-1.5 text-right font-medium">{formatCurrency(c.amount)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-          )}
-
-          <Card title={`By payment mode · ${data.deliveredCount} phone${data.deliveredCount === 1 ? '' : 's'} delivered (invoiced ${formatCurrency(data.invoicedTotal)})`}>
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500">
-                <tr>
-                  <th className="py-1.5 font-medium"></th>
-                  {PAYMENT_MODES.map((m) => (
-                    <th key={m} className="py-1.5 text-right font-medium">{PAYMENT_MODE_LABELS[m]}</th>
-                  ))}
-                  <th className="py-1.5 text-right font-medium">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {([['Received', data.received], ['Refunds', data.refunds], ['Expenses', data.expenses]] as const).map(([label, t]) => (
-                  <tr key={label}>
-                    <td className="py-1.5">{label}</td>
-                    {PAYMENT_MODES.map((m) => (
-                      <td key={m} className="py-1.5 text-right">{formatCurrency(t[m])}</td>
+          {view === null ? (
+            <>
+              <p className="text-sm text-slate-500">Showing the latest {RECENT} records. Click a card above to open its full list.</p>
+              <Card
+                title="Recent payments"
+                actions={data.payments.length > RECENT && <Button variant="link" onClick={() => openView('net')}>View all {data.payments.length}</Button>}
+              >
+                <DataTable columns={paymentColumns} rows={data.payments.slice(-RECENT).reverse()} rowKey={(p) => p.id} emptyMessage="No payments in this period" />
+              </Card>
+              <Card
+                title="Recent expenses"
+                actions={data.expenseItems.length > RECENT && <Button variant="link" onClick={() => openView('expenses')}>View all {data.expenseItems.length}</Button>}
+              >
+                <DataTable columns={expenseColumns} rows={data.expenseItems.slice(-RECENT).reverse()} rowKey={(e) => e.id} emptyMessage="No expenses in this period" />
+              </Card>
+            </>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="mr-auto text-base font-semibold text-slate-900">{VIEWS[view]}</h2>
+                <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search records" placeholder="Search job, customer, description, staff…" className={`${inputClass} w-72!`} />
+                {view !== 'cash' && (
+                  <select value={modeFilter} onChange={(e) => setModeFilter(e.target.value as PaymentMode | '')} aria-label="Payment mode" className={`${inputClass} w-40!`}>
+                    <option value="">All modes</option>
+                    {PAYMENT_MODES.filter((m) => view !== 'online' || m !== 'CASH').map((m) => (
+                      <option key={m} value={m}>{PAYMENT_MODE_LABELS[m]}</option>
                     ))}
-                    <td className="py-1.5 text-right font-medium">{formatCurrency(t.total)}</td>
-                  </tr>
-                ))}
-                <tr className="font-semibold">
-                  <td className="py-1.5">Net</td>
-                  {PAYMENT_MODES.map((m) => (
-                    <td key={m} className="py-1.5 text-right">{formatCurrency(data.received[m] - data.refunds[m] - data.expenses[m])}</td>
-                  ))}
-                  <td className="py-1.5 text-right">{formatCurrency(data.net)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </Card>
+                  </select>
+                )}
+                <Button variant="secondary" size="sm" onClick={() => openView(null)}>Back to short view</Button>
+              </div>
 
-          <Card title={`Payments (${data.payments.length})`}>
-            <DataTable columns={paymentColumns} rows={data.payments} rowKey={(p) => p.id} emptyMessage="No payments in this period" />
-          </Card>
-          <Card title={`Expenses (${data.expenseItems.length})`}>
-            <DataTable columns={expenseColumns} rows={data.expenseItems} rowKey={(e) => e.id} emptyMessage="No expenses in this period" />
-          </Card>
+              {view === 'net' && (
+                <Card title={`By payment mode · ${data.deliveredCount} phone${data.deliveredCount === 1 ? '' : 's'} delivered (invoiced ${formatCurrency(data.invoicedTotal)})`}>
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-slate-500">
+                      <tr>
+                        <th className="py-1.5 font-medium"></th>
+                        {PAYMENT_MODES.map((m) => (
+                          <th key={m} className="py-1.5 text-right font-medium">{PAYMENT_MODE_LABELS[m]}</th>
+                        ))}
+                        <th className="py-1.5 text-right font-medium">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {([['Received', data.received], ['Refunds', data.refunds], ['Expenses', data.expenses]] as const).map(([label, t]) => (
+                        <tr key={label}>
+                          <td className="py-1.5">{label}</td>
+                          {PAYMENT_MODES.map((m) => (
+                            <td key={m} className="py-1.5 text-right">{formatCurrency(t[m])}</td>
+                          ))}
+                          <td className="py-1.5 text-right font-medium">{formatCurrency(t.total)}</td>
+                        </tr>
+                      ))}
+                      <tr className="font-semibold">
+                        <td className="py-1.5">Net</td>
+                        {PAYMENT_MODES.map((m) => (
+                          <td key={m} className="py-1.5 text-right">{formatCurrency(data.received[m] - data.refunds[m] - data.expenses[m])}</td>
+                        ))}
+                        <td className="py-1.5 text-right">{formatCurrency(data.net)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+
+              {view === 'expenses' && data.expenseByCategory.length > 0 && (
+                <Card title="Expenses by category">
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-slate-100">
+                      {data.expenseByCategory.map((c) => (
+                        <tr key={c.category}>
+                          <td className="py-1.5">{c.category}</td>
+                          <td className="py-1.5 text-right font-medium">{formatCurrency(c.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </Card>
+              )}
+
+              {view !== 'expenses' && (
+                <Card title={`${view === 'refunds' ? 'Refunds' : 'Payments'} (${shownPayments.length})`}>
+                  <DataTable columns={paymentColumns} rows={shownPayments} rowKey={(p) => p.id} emptyMessage="No matching records in this period" />
+                </Card>
+              )}
+              {view !== 'received' && view !== 'refunds' && (
+                <Card title={`Expenses (${shownExpenses.length})`}>
+                  <DataTable columns={expenseColumns} rows={shownExpenses} rowKey={(e) => e.id} emptyMessage="No matching expenses in this period" />
+                </Card>
+              )}
+            </>
+          )}
         </>
       )}
 

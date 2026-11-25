@@ -130,6 +130,9 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       skipDiagnosis: false,
       customerAlreadyApproved: false,
       dueAt: null,
+      loanerPhone: false,
+      loanerBrandId: null,
+      loanerModelId: null,
       engineerId: '',
       advance: null,
     },
@@ -138,6 +141,8 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const brandId = watch('brandId');
   const modelId = watch('deviceModelId');
   const jobType = watch('jobType');
+  const loanerPhone = watch('loanerPhone');
+  const loanerBrandId = watch('loanerBrandId');
   const skipDiagnosis = watch('skipDiagnosis');
   const customerType = watch('customerType');
   const phone = watch('customer.phone');
@@ -148,6 +153,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
 
   const { items: brands } = useOptions<BrandDto>('brands', { branchId: formBranch || undefined });
   const { items: models } = useOptions<ModelDto>('models', { brandId }, { enabled: !!brandId });
+  const { items: loanerModels } = useOptions<ModelDto>('models', { brandId: loanerBrandId ?? undefined }, { enabled: !!loanerBrandId });
   const { items: faults } = useOptions<FaultDto>('faults', { branchId: formBranch || undefined });
   const prices = useQuery({
     queryKey: ['models', modelId, 'prices'],
@@ -654,6 +660,65 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
         <Field label="Remarks / customer complaint" className="mt-4" {...err(errors.customerComplaint?.message)}>
           <textarea {...register('customerComplaint')} rows={2} className={inputClass} />
         </Field>
+      </Card>
+
+      <Card title="Loaner phone">
+        <label className="flex cursor-pointer items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            {...register('loanerPhone', {
+              onChange: (e) => {
+                if (e.target.checked) return;
+                setValue('loanerBrandId', null, { shouldValidate: true });
+                setValue('loanerModelId', null, { shouldValidate: true });
+              },
+            })}
+            className="mt-0.5 size-4 accent-brand-600"
+          />
+          <span>
+            <span className="block font-medium text-slate-800">Loaner Phone</span>
+            <span className="text-xs text-slate-500">A phone is lent to the customer. The job cannot be delivered or closed until it is returned.</span>
+          </span>
+        </label>
+        {loanerPhone && (
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Loaner phone brand" required {...err(errors.loanerBrandId?.message)}>
+              <Controller
+                control={control}
+                name="loanerBrandId"
+                render={({ field }) => (
+                  <Combobox
+                    value={field.value ?? ''}
+                    onChange={(v) => {
+                      field.onChange(v || null);
+                      setValue('loanerModelId', null);
+                    }}
+                    placeholder="Select brand"
+                    invalid={!!errors.loanerBrandId}
+                    options={brands.map((b) => ({ value: b.id, label: b.name }))}
+                  />
+                )}
+              />
+            </Field>
+            <Field label="Loaner phone model number" required {...err(errors.loanerModelId?.message)}>
+              <Controller
+                control={control}
+                name="loanerModelId"
+                render={({ field }) => (
+                  <Combobox
+                    value={field.value ?? ''}
+                    onChange={(v) => field.onChange(v || null)}
+                    disabled={!loanerBrandId}
+                    placeholder={loanerBrandId ? 'Select model' : 'Select brand first'}
+                    invalid={!!errors.loanerModelId}
+                    emptyText="Model not found — ask admin to add it"
+                    options={loanerModels.map((m) => ({ value: m.id, label: m.name }))}
+                  />
+                )}
+              />
+            </Field>
+          </div>
+        )}
       </Card>
 
       <Card title="Inward">

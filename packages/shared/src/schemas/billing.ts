@@ -20,6 +20,8 @@ export const deliverySchema = z
     refund: z.object({ mode: z.enum(PAYMENT_MODES), amount: money.refine((v) => v > 0, 'Enter amount'), reference: optionalText(60) }).nullish(),
     deliveredTo: z.string().trim().min(2, 'Who collected the phone?').max(100),
     accessoriesReturned: z.boolean().default(false),
+    /** Required when a loaner phone is still with the customer: confirms it is back. */
+    loanerReturned: z.boolean().default(false),
     note: optionalText(500),
     /** Required for mobile delivery; "N/A" must be an explicit counter choice. */
     imei: z.string().trim().refine((v) => v === 'N/A' || isValidImei(v), 'Enter a valid 15-digit IMEI or select N/A').optional(),
@@ -49,6 +51,8 @@ export type BillPreviewDto = {
   warrantyTerms: string | null;
   serialNumberRequired: boolean;
   accessories: string[];
+  /** "Brand Model" of a loaner phone not yet received back, else null. */
+  loanerPending: string | null;
 };
 
 export type InvoiceDto = {

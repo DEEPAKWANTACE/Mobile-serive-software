@@ -38,7 +38,7 @@ import { JobStatusBadge } from './JobStatusBadge';
 import { NewJobPage } from './NewJobPage';
 import { useJob } from './api';
 import { ApprovalDecisionDialog } from './ApprovalDecisionDialog';
-import { buildJobColumns, jobCellText, JobRowAction, useJobListColumns, useJobListMode } from './jobListColumns';
+import { buildJobColumns, isBackHome, jobCellText, JobRowAction, phoneWhereabouts, useJobListColumns, useJobListMode } from './jobListColumns';
 import { DeliverJobDialog } from './DeliverJobDialog';
 
 type Tab = 'show' | 'add' | 'edit' | 'delete';
@@ -95,7 +95,8 @@ export function JobsPage() {
           </Link>
         </div>
       )}
-      {tab === 'show' && <ShowJobs />}
+      {/* Remounts when the link changes, so filters always match the box or menu item that was clicked. */}
+      {tab === 'show' && <ShowJobs key={params.toString()} />}
       {tab === 'add' && <NewJobPage embedded />}
       {tab === 'edit' && <EditTab />}
       {tab === 'delete' && <DeleteTab canDelete={canDelete} />}
@@ -123,6 +124,17 @@ const viewParams = (v: string) =>
           : v === 'balance' ? { balanceDue: true }
             : v === 'over15' ? { open: true, minAgeDays: 15 }
               : {};
+
+/** Filters that only come from a dashboard link; shown as chips so they can be seen and removed. */
+const LINK_FLAGS = {
+  open: 'Open jobs only',
+  repeat: 'Repeat repairs',
+  today: 'Worked on today',
+  completed: 'Repaired / delivered',
+  current: 'At this branch',
+  owned: 'This branch’s customers',
+} as const;
+type LinkFlag = keyof typeof LINK_FLAGS;
 
 /** Short labels for the phone cards. */
 const MOBILE_LABELS: Partial<Record<JobListColumn, string>> = {
@@ -238,16 +250,24 @@ export function ShowJobs() {
   const [engineerId, setEngineerId] = useState(searchParams.get('engineerId') ?? searchParams.get('engineer') ?? '');
   const [branchId, setBranchId] = useState(searchParams.get('branchId') ?? '');
   const [view, setView] = useState(searchParams.get('view') ?? '');
+  const [flags, setFlags] = useState<LinkFlag[]>(() => (Object.keys(LINK_FLAGS) as LinkFlag[]).filter((f) => searchParams.get(f) === 'true'));
+  const [statuses, setStatuses] = useState(searchParams.get('statuses') ?? '');
+  // Search boxes keep their own text, so they are rebuilt when filters are cleared.
+  const [clearCount, setClearCount] = useState(0);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<Map<string, JobListItemDto>>(new Map());
   const listViewportRef = useRef<HTMLDivElement>(null);
   const columnKeys = useJobListColumns(user?.role);
   const mobile = mobileLayout(columnKeys);
-  const pageSize = useFittedPageSize(listViewportRef, mobile.height);
   const canBulk = bulkActionsFor(user?.role).length > 0;
+  // The Branch Manager's Repeat Repair list also shows whether each phone is back at its home branch.
+  const repeatColumns = user?.role === ROLES.BRANCH_MANAGER && flags.includes('repeat');
+  // Phone cards get two more lines for it.
+  const cardHeight = mobile.height + (repeatColumns ? 36 : 0);
+  const pageSize = useFittedPageSize(listViewportRef, cardHeight);
   const reset = <T,>(fn: (v: T) => void) => (v: T) => (fn(v), setPage(1));
   // Clear the selection only when a filter really changes (SearchInput re-sends its value after every render).
-  useEffect(() => setSelected(new Map()), [search, product, from, to, status, engineerId, branchId, view]);
+  useEffect(() => setSelected(new Map()), [search, product, from, to, status, engineerId, branchId, view, flags, statuses]);
 
   const params = {
     page,
@@ -258,13 +278,10 @@ export function ShowJobs() {
     from,
     to,
     status,
-    ...(searchParams.get('statuses') && { statuses: searchParams.get('statuses')! }),
+    ...(statuses && { statuses }),
     engineerId,
     branchId,
-    ...(searchParams.get('open') === 'true' && { open: true }),
-    ...(searchParams.get('today') === 'true' && { today: true }),
-    ...(searchParams.get('completed') === 'true' && { completed: true }),
-    ...(searchParams.get('repeat') === 'true' && { repeat: true }),
+    ...Object.fromEntries(flags.map((f) => [f, true])),
     ...viewParams(view),
   };
   const infinite = useJobListMode() === 'INFINITE';
@@ -300,7 +317,7 @@ export function ShowJobs() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
   const actionHandlers = { role: user?.role, onApprove: (j: JobListItemDto) => setApprovingId(j.id), onDeliver: (j: JobListItemDto) => setDeliveringId(j.id) };
-  const columns = buildJobColumns(columnKeys, actionHandlers);
+  const columns = buildJobColumns(columnKeys, actionHandlers, repeatColumns);
   const showCol = (key: JobListColumn) => columnKeys.includes(key);
 
   const exportCsv = async () => {
@@ -316,7 +333,22 @@ export function ShowJobs() {
     );
   };
 
-  const activeFilterCount = [search, product, from, to, status, engineerId, branchId, view].filter(Boolean).length;
+  const clearAll = () => {
+    for (const set of [setSearch, setProduct, setFrom, setTo, setStatus, setEngineerId, setBranchId, setView, setStatuses]) set('');
+    setFlags([]);
+    setClearCount((n) => n + 1);
+    setPage(1);
+  };
+  const chips: { key: string; label: string; remove: () => void }[] = [
+    ...(view ? [{ key: 'view', label: VIEWS.find(([v]) => v === view)?.[1] ?? view, remove: () => reset(setView)('') }] : []),
+    ...(status ? [{ key: 'status', label: `Status: ${JOB_STATUS_LABELS[status as keyof typeof JOB_STATUS_LABELS] ?? status}`, remove: () => reset(setStatus)('') }] : []),
+    ...(statuses ? [{ key: 'statuses', label: `Status: ${statuses.split(',').map((s) => JOB_STATUS_LABELS[s as keyof typeof JOB_STATUS_LABELS] ?? s).join(', ')}`, remove: () => reset(setStatuses)('') }] : []),
+    ...(from || to ? [{ key: 'dates', label: `Date: ${from ? formatDate(from) : 'start'} – ${to ? formatDate(to) : 'today'}`, remove: () => (setFrom(''), setTo(''), setPage(1)) }] : []),
+    ...(engineerId ? [{ key: 'engineer', label: `Engineer: ${engineerId === 'none' ? 'Unassigned' : (engineers.data?.find((e) => e.id === engineerId)?.name ?? 'selected')}`, remove: () => reset(setEngineerId)('') }] : []),
+    ...(branchId ? [{ key: 'branch', label: `Branch: ${branches.find((b) => b.id === branchId)?.code ?? 'selected'}`, remove: () => (setBranchId(''), setEngineerId(''), setPage(1)) }] : []),
+    ...flags.map((f) => ({ key: f, label: LINK_FLAGS[f], remove: () => (setFlags((list) => list.filter((x) => x !== f)), setPage(1)) })),
+  ];
+  const activeFilterCount = chips.length + [search, product].filter(Boolean).length;
   const changeSelection = (ids: Set<string>) => setSelected((previous) => {
     const next = new Map(previous);
     for (const job of data?.items ?? []) {
@@ -330,6 +362,7 @@ export function ShowJobs() {
     <div className="relative flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
       <div className="theme-panel hidden shrink-0 items-center gap-2 rounded-lg bg-white p-2 ring-1 ring-slate-200 md:flex">
         <SearchInput
+          key={clearCount}
           onSearch={reset(setSearch)}
           initialValue={search}
           placeholder="Search job no, customer, phone, model, IMEI, problem…"
@@ -356,7 +389,7 @@ export function ShowJobs() {
           </div>
           <div className="space-y-2 md:contents">
             <div className="md:hidden">
-              <SearchInput onSearch={reset(setSearch)} initialValue={search} placeholder="Search jobs…" className="w-full!" />
+              <SearchInput key={clearCount} onSearch={reset(setSearch)} initialValue={search} placeholder="Search jobs…" className="w-full!" />
             </div>
             {!isEngineer && (
               <select value={view} onChange={(event) => reset(setView)(event.target.value)} className={`${inputClass} w-full! md:hidden`} aria-label="Job view">
@@ -366,7 +399,7 @@ export function ShowJobs() {
             <div className="md:hidden">
               <FilterSelect value={status} onChange={reset(setStatus)} placeholder="All statuses" options={JOB_STATUS_FILTER_OPTIONS.map((s) => ({ value: s, label: JOB_STATUS_LABELS[s] }))} />
             </div>
-            <SearchInput onSearch={reset(setProduct)} placeholder="Product (brand / model)" className="w-full! md:w-56!" />
+            <SearchInput key={`product-${clearCount}`} onSearch={reset(setProduct)} placeholder="Product (brand / model)" className="w-full! md:w-56!" />
         <label className="flex items-center gap-1.5 text-sm text-slate-600">
               <span className="w-10 md:w-auto">From</span><input type="date" value={from} max={to || undefined} onChange={(e) => reset(setFrom)(e.target.value)} className={`${inputClass} min-w-0 flex-1 md:w-36! md:flex-none`} />
         </label>
@@ -395,6 +428,18 @@ export function ShowJobs() {
         </div>
       )}
 
+      {chips.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5 text-xs" aria-label="Applied filters">
+          <span className="font-semibold text-slate-500">Filtered by</span>
+          {chips.map((chip) => (
+            <button key={chip.key} type="button" onClick={chip.remove} title="Remove this filter" className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-medium text-brand-700 ring-1 ring-brand-200 hover:bg-brand-100">
+              {chip.label} <X className="size-3" />
+            </button>
+          ))}
+          <button type="button" onClick={clearAll} className="font-medium text-slate-600 underline hover:text-slate-900">Clear all</button>
+        </div>
+      )}
+
       {canBulk && user && (
         <div className="shrink-0"><BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} /></div>
       )}
@@ -419,7 +464,7 @@ export function ShowJobs() {
         </div>
         <div className={`job-list-mobile grid content-start gap-2 md:hidden ${infinite ? '' : 'min-h-full'}`}>
           {isLoading && !data ? <p className="py-10 text-center text-sm text-slate-500">Loading…</p> : !data?.items.length ? <p className="py-10 text-center text-sm text-slate-500">No jobs match these filters</p> : data.items.map((job) => (
-            <article key={job.id} style={{ height: mobile.height }} className={`overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
+            <article key={job.id} style={{ height: cardHeight }} className={`overflow-hidden rounded-lg bg-white px-3 py-2 ring-1 ${job.dueAt ? 'ring-amber-300' : 'ring-slate-200'}`}>
               <div className="flex h-7 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   {canBulk && <input type="checkbox" aria-label={`Select ${formatJobNumber(job.jobNumber)}`} checked={selected.has(job.id)} onChange={() => { const ids = new Set(selected.keys()); if (ids.has(job.id)) ids.delete(job.id); else ids.add(job.id); changeSelection(ids); }} className="size-4 shrink-0 accent-brand-600" />}
@@ -439,6 +484,12 @@ export function ShowJobs() {
                     </dd>
                   </div>
                 ))}
+                {repeatColumns && (
+                  <>
+                    <div className="col-span-2 truncate text-slate-400">Repeat of: <span className="font-medium text-slate-700">{job.repeatOf ? formatJobNumber(job.repeatOf) : '—'}</span></div>
+                    <div className="col-span-2 truncate text-slate-400">Back at home: <span className="font-medium text-slate-700">{isBackHome(job) ? 'Yes' : 'No'} · {phoneWhereabouts(job)}</span></div>
+                  </>
+                )}
               </dl>
             </article>
           ))}
@@ -505,6 +556,9 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
   const [found, setFound] = useState<JobListItemDto | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reason, setReason] = useState('');
+  const [loanerReturned, setLoanerReturned] = useState(false);
+  const detail = useJob(found?.id ?? '', !!found);
+  const loanerOut = detail.data?.loaner && !detail.data.loaner.returnedAt ? detail.data.loaner : null;
   const [refundMode, setRefundMode] = useState<PaymentMode>('CASH');
   const [error, setError] = useState<string>();
 
@@ -512,6 +566,7 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
     toast.success(msg);
     setFound(null);
     setReason('');
+    setLoanerReturned(false);
     void queryClient.invalidateQueries();
   };
   const del = useMutation({
@@ -523,7 +578,7 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
     },
   });
   const cancel = useMutation({
-    mutationFn: () => api.post(`/jobs/${found!.id}/cancel`, { reason, refundMode: found!.paid > 0 ? refundMode : null }),
+    mutationFn: () => api.post(`/jobs/${found!.id}/cancel`, { reason, refundMode: found!.paid > 0 ? refundMode : null, loanerReturned }),
     onSuccess: () => done(`Job ${found!.jobNumber} cancelled`),
     onError: (e) => setError(e instanceof ApiError ? Object.values((e.details as Record<string, string[]>) ?? {})[0]?.[0] ?? e.message : e.message),
   });
@@ -531,7 +586,7 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
   const canCancel = found && CANCELLABLE_STATUSES.includes(found.status);
   return (
     <Card title={canDelete ? 'Delete or cancel a job' : 'Cancel a job'} subtitle="Search the job number and check the details first" icon={Trash2}>
-      <JobLookup onFound={(j) => (setFound(j), setError(undefined))} initial={params.get('job') ?? ''} />
+      <JobLookup onFound={(j) => (setFound(j), setError(undefined), setLoanerReturned(false))} initial={params.get('job') ?? ''} />
       {found && (
         <div className="mt-5 space-y-4 border-t border-slate-100 pt-5">
           <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
@@ -565,7 +620,13 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
                       </select>
                     </Field>
                   )}
-                  <Button disabled={reason.trim().length < 3} loading={cancel.isPending} onClick={() => cancel.mutate()}>Cancel job</Button>
+                  {loanerOut && (
+                    <label className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+                      <input type="checkbox" checked={loanerReturned} onChange={(e) => setLoanerReturned(e.target.checked)} className="mt-0.5 size-4 accent-brand-600" />
+                      <span>Loaner phone <b>{loanerOut.brand} {loanerOut.model}</b> has been received back. The job cannot be cancelled without it.</span>
+                    </label>
+                  )}
+                  <Button disabled={reason.trim().length < 3 || !detail.data || (!!loanerOut && !loanerReturned)} loading={cancel.isPending} onClick={() => cancel.mutate()}>Cancel job</Button>
                 </div>
               ) : (
                 <p className="mt-1 text-sm text-slate-600">This job can't be cancelled at its current stage (repaired, returned or closed).</p>

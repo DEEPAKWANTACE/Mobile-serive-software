@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { CALL_OUTCOME_LABELS, ROLES, type CallingRowDto, type PendingCollectionSummaryDto } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
@@ -27,7 +27,8 @@ const TABS: { key: ListKind; label: string }[] = [
 export function CallingPage() {
   const { user } = useAuth();
   const canCall = user?.role !== ROLES.ACCOUNTS;
-  const [list, setList] = useState<ListKind>('ready');
+  const [searchParams] = useSearchParams();
+  const [list, setList] = useState<ListKind>(() => TABS.find((t) => t.key === searchParams.get('list'))?.key ?? 'ready');
   const [branchId, setBranchId] = useState('');
   const [calling, setCalling] = useState<CallingRowDto | null>(null);
   const qs = branchId ? `&branchId=${branchId}` : '';

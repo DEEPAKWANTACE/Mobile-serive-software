@@ -47,6 +47,8 @@ const billSelect = {
   payments: { select: { kind: true, amount: true } },
   warrantyPeriod: true,
   warrantyTerms: true,
+  loanerReturnedAt: true,
+  loanerModel: { select: { name: true, brand: { select: { name: true } } } },
   branch: { select: { allowImeiNa: true, requireImeiAtDelivery: true, defaultWarrantyPeriod: true, defaultWarrantyTerms: true } },
 } satisfies Prisma.JobSelect;
 
@@ -98,6 +100,7 @@ function buildPreview(job: BillJob): BillPreviewDto {
     warrantyTerms: job.warrantyTerms ?? job.branch.defaultWarrantyTerms,
     serialNumberRequired: !isRwr && job.jobType === 'ACCESSORY',
     accessories: [...job.accessories, ...(job.accessoriesOther ? [job.accessoriesOther] : [])],
+    loanerPending: job.loanerModel && !job.loanerReturnedAt ? `${job.loanerModel.brand.name} ${job.loanerModel.name}` : null,
   };
 }
 
@@ -134,6 +137,9 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
   if (bill.serialNumberRequired && !job.serialNumber) {
     throw invalid('serialNumber', 'Add the serial number before delivering a repaired accessory');
   }
+  if (bill.loanerPending && !data.loanerReturned) {
+    throw invalid('loanerReturned', `Receive the loaner phone (${bill.loanerPending}) back before delivering`);
+  }
   if (bill.accessories.length && !data.accessoriesReturned) throw invalid('accessoriesReturned', 'Confirm the accessories were returned');
 
   // No invoice and no charge for a phone returned without repair: any advance is simply refunded.
@@ -165,6 +171,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
         deliveredById: actor.sub,
         deliveredTo: data.deliveredTo,
         deliveryNote: data.note ?? null,
+        ...(bill.loanerPending && { loanerReturnedAt: now, loanerReturnedById: actor.sub }),
         ...(deliveryImei && { imei: deliveryImei }),
         // Repair warranty is decided at delivery (branch default pre-filled).
         ...(data.warrantyPeriod !== undefined && { warrantyPeriod: data.warrantyPeriod }),
@@ -236,6 +243,7 @@ export async function deliver(jobId: string, data: DeliveryData, actor: Actor) {
           collected,
           refund: data.refund?.amount ?? 0,
           deliveredTo: data.deliveredTo,
+          ...(bill.loanerPending && { loanerReturned: bill.loanerPending }),
         },
         ip: actor.ip,
       },

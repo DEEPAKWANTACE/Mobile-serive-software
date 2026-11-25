@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { isValidImei, PAYMENT_MODE_LABELS, PAYMENT_MODES, roundMoney, type BillPreviewDto, type JobDto, type PaymentMode } from '@msm/shared';
 import { Button } from '@/components/ui/Button';
 import { Field, inputClass } from '@/components/ui/Field';
+import { Modal } from '@/components/ui/Modal';
 import { api, ApiError } from '@/lib/api-client';
 import { formatCurrency } from '@/lib/format';
 import { showDeliveredPrintToast } from './DeliveredPrintToast';
@@ -16,7 +17,42 @@ export function DeliveryForm({ job, onDone }: { job: JobDto; onDone: () => void 
   const preview = useQuery({ queryKey: ['jobs', job.id, 'bill'], queryFn: () => api.get<BillPreviewDto>(`/jobs/${job.id}/bill-preview`) });
   if (preview.isLoading) return <p className="text-sm text-slate-500">Loading bill…</p>;
   if (!preview.data) return <p className="text-sm text-red-600">{preview.error?.message ?? 'Could not load the bill'}</p>;
-  return <DeliveryFormInner job={job} bill={preview.data} onDone={onDone} />;
+  return <LoanerGate job={job} bill={preview.data} onDone={onDone} />;
+}
+
+/** Before anything else, a loaner phone still with the customer must be confirmed as received back. */
+function LoanerGate({ job, bill, onDone }: { job: JobDto; bill: BillPreviewDto; onDone: () => void }) {
+  const [answer, setAnswer] = useState<'ASK' | 'RECEIVED' | 'NOT_RECEIVED'>(bill.loanerPending ? 'ASK' : 'RECEIVED');
+  if (answer === 'RECEIVED') return <DeliveryFormInner job={job} bill={bill} onDone={onDone} />;
+  return (
+    <>
+      <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        Loaner phone <b>{bill.loanerPending}</b> is with the customer.
+      </p>
+      <Modal open onClose={onDone} title="Loaner phone" size="sm">
+        {answer === 'ASK' ? (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-700">
+              Has the loaner phone <b>{bill.loanerPending}</b> been received back from the customer?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setAnswer('NOT_RECEIVED')}>No, not returned</Button>
+              <Button type="button" onClick={() => setAnswer('RECEIVED')}>Yes, received back</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              Delivery is not allowed. Collect the loaner phone first — the job stays open until it is returned.
+            </p>
+            <div className="flex justify-end">
+              <Button type="button" onClick={onDone}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </>
+  );
 }
 
 function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPreviewDto; onDone: () => void }) {
@@ -59,6 +95,8 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
         refund: due < 0 ? { mode: refundMode, amount: -due } : null,
         deliveredTo,
         accessoriesReturned,
+        // The form is only reachable after confirming a pending loaner phone was received back.
+        loanerReturned: !!bill.loanerPending,
         note: note || null,
         ...(bill.imeiAsked && (imeiChoice === 'NA' ? { imei: 'N/A' } : imei.trim() ? { imei: imei.trim() } : {})),
         ...(bill.kind === 'REPAIR' && { warrantyPeriod: warrantyPeriod.trim() || null, warrantyTerms: warrantyTerms.trim() || null }),
@@ -92,6 +130,10 @@ function DeliveryFormInner({ job, bill, onDone }: { job: JobDto; bill: BillPrevi
       }}
       className="space-y-5"
     >
+      {bill.loanerPending && (
+        <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Loaner phone {bill.loanerPending} received back — it is recorded when you deliver.</p>
+      )}
+
       {missingSerialNumber && (
         <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           Serial number is missing. Add it on the job before delivering a repaired accessory.

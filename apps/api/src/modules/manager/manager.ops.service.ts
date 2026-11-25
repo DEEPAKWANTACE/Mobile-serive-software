@@ -176,8 +176,8 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
     { key: 'po', label: 'Consumed parts not yet on a purchase order', count: unordered, priority: 'MEDIUM', link: '/branch-insights?tab=po' },
     { key: 'noteMissing', label: 'Jobs with issued parts but no approved Return Note', count: notesMissing, priority: 'MEDIUM', link: '/branch-insights?tab=returnNotes' },
     { key: 'noCall', label: 'Customers not called yet', count: noCall, priority: 'MEDIUM', link: '/branch-insights?tab=calling' },
-    { key: 'followUp', label: 'Customer follow-ups due', count: due, priority: 'MEDIUM', link: '/calling' },
-    { key: 'approval', label: 'Estimates awaiting customer approval', count: awaiting, priority: 'LOW', link: '/jobs' },
+    { key: 'followUp', label: 'Customer follow-ups due', count: due, priority: 'MEDIUM', link: '/calling?list=due' },
+    { key: 'approval', label: 'Estimates awaiting customer approval', count: awaiting, priority: 'LOW', link: '/jobs?status=AWAITING_APPROVAL&owned=true' },
     { key: 'expense', label: 'Expenses this month not yet approved', count: unapproved, priority: 'LOW', link: '/accounts/day-book' },
   ];
   return items.filter((i) => i.count > 0);

@@ -39,6 +39,25 @@ export const canDeliverRow = (j: JobListItemDto, role: Role | undefined) =>
 
 export const jobProblem = (j: JobListItemDto) => j.faults.join(', ');
 
+export const isBackHome = (j: JobListItemDto) => j.location === 'AT_BRANCH' && j.currentBranch.id === j.branch.id;
+
+export const phoneWhereabouts = (j: JobListItemDto) =>
+  j.location === 'TO_L4' ? 'On the way to L4'
+    : j.location === 'TO_BRANCH' ? `On the way back to ${j.branch.code}`
+      : `At ${j.currentBranch.code}`;
+
+function HomeBadge({ j }: { j: JobListItemDto }) {
+  const home = isBackHome(j);
+  return <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${home ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{home ? 'Yes' : 'No'}</span>;
+}
+
+/** Extra Repeat Repair columns: the earlier job and whether the phone is back at the branch that took it in. */
+const REPEAT_COLUMNS: { header: string; rem: number; cell: Column<JobListItemDto>['cell'] }[] = [
+  { header: 'Repeat of', rem: 6, cell: (j) => <span className="block truncate font-mono text-sm">{j.repeatOf ? formatJobNumber(j.repeatOf) : '—'}</span> },
+  { header: 'Back at home branch', rem: 10, cell: (j) => <HomeBadge j={j} /> },
+  { header: 'Phone is now', rem: 10, cell: (j) => truncate(phoneWhereabouts(j)) },
+];
+
 const ageDays = (j: JobListItemDto) => Math.max(0, Math.floor((Date.now() - new Date(j.createdAt).getTime()) / 86_400_000));
 
 function Payment({ j }: { j: JobListItemDto }) {
@@ -107,13 +126,14 @@ const WEIGHT: Record<Exclude<JobListColumn, 'approval'>, number> = {
   pendingWith: 14, estimate: 9, payment: 11, imei: 13, city: 9, branch: 9, inwardBy: 10, ageDays: 7,
 };
 
-export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers): Column<JobListItemDto>[] {
+export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers, repeatColumns = false): Column<JobListItemDto>[] {
+  const extra = repeatColumns ? REPEAT_COLUMNS : [];
   const canApprove = handlers.role === ROLES.CCO || handlers.role === ROLES.BRANCH_MANAGER;
   // The action column is only meaningful for staff who can approve / deliver; it always sits right after the job ID.
   const showAction = keys.includes('approval') && canApprove;
   const rest = keys.filter((k): k is Exclude<JobListColumn, 'approval'> => k !== 'approval');
   const total = rest.reduce((sum, k) => sum + WEIGHT[k], 0) || 1;
-  const fixedRem = 5.75 + (showAction ? 6.5 : 0);
+  const fixedRem = 5.75 + (showAction ? 6.5 : 0) + extra.reduce((sum, c) => sum + c.rem, 0);
 
   const cells: Record<Exclude<JobListColumn, 'approval'>, Column<JobListItemDto>['cell']> = {
     status: (j) => <JobStatusBadge status={j.status} />,
@@ -144,7 +164,8 @@ export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers)
       style: { width: '5.75rem' },
     },
     ...(showAction ? [{ header: 'Action', cell: (j: JobListItemDto) => <JobRowAction job={j} {...handlers} />, style: { width: '6.5rem' } }] : []),
-    // The remaining width (after the fixed ID / action columns) is shared by weight.
+    ...extra.map((c) => ({ header: c.header, cell: c.cell, style: { width: `${c.rem}rem` } })),
+    // The remaining width (after the fixed ID / action / repeat columns) is shared by weight.
     ...rest.map((k) => ({
       header: JOB_LIST_COLUMN_LABELS[k],
       cell: cells[k],

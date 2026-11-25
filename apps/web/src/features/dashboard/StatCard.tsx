@@ -11,6 +11,9 @@ type Props = {
   tone?: Tone;
   icon?: ComponentType<{ className?: string }>;
   hint?: string;
+  /** Makes the card a toggle button that switches a section on the same page. */
+  onClick?: () => void;
+  active?: boolean;
 };
 
 // Status tones (good / warning / critical) are reserved for state; "brand"/"info" mark identity, "default" is neutral.
@@ -23,10 +26,10 @@ const tones: Record<Tone, { badge: string; value: string; panel: string }> = {
   critical: { badge: 'bg-red-100 text-red-700', value: 'text-red-700', panel: 'bg-gradient-to-br from-red-50 to-white' },
 };
 
-export function StatCard({ label, value, to, tone = 'default', icon: Icon, hint }: Props) {
+export function StatCard({ label, value, to, tone = 'default', icon: Icon, hint, onClick, active }: Props) {
   const t = tones[tone];
   const body = (
-    <div className={`group relative h-full rounded-xl ${t.panel} p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ring-1 ring-slate-200/80 transition hover:-translate-y-0.5 hover:shadow-md`}>
+    <div className={`group relative h-full rounded-xl ${t.panel} p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)] ${active ? 'ring-2 ring-brand-500' : 'ring-1 ring-slate-200/80'} transition hover:-translate-y-0.5 hover:shadow-md`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[13px] leading-tight font-medium text-slate-500">{label}</div>
@@ -42,6 +45,13 @@ export function StatCard({ label, value, to, tone = 'default', icon: Icon, hint 
       {to && <ArrowUpRight className="absolute right-3 bottom-3 size-4 text-slate-300 transition group-hover:text-brand-600" />}
     </div>
   );
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} aria-pressed={active} className="block h-full w-full cursor-pointer rounded-xl text-left focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none">
+        {body}
+      </button>
+    );
+  }
   return to ? (
     <Link to={to} className="block h-full rounded-xl focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:outline-none">
       {body}

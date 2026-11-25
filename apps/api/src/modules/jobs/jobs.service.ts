@@ -232,6 +232,7 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
       ? data.totalAmount
       : resolvedDevices.estimatedAmount;
 
+  const loanerModelId = data.loanerPhone ? await findLoanerModel(branch.id, data.loanerBrandId!, data.loanerModelId!) : null;
   const engineer = data.engineerId ? await findBranchEngineer(branch.id, data.engineerId) : null;
   const inwardById = data.inwardById ? (await findInwardStaff(branch.id, data.inwardById)).id : actor.sub;
   const prepared = preparePhotos(photos);
@@ -247,6 +248,9 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     skipDiagnosis,
     customerAlreadyApproved,
     devices: _devices,
+    loanerPhone: _lp,
+    loanerBrandId: _lb,
+    loanerModelId: _lm,
     ...jobFields
   } = data;
 
@@ -284,6 +288,7 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
           physicalConditionRemark: primary.physicalConditionRemark,
           jobNumber,
           estimatedAmount,
+          loanerModelId,
           branchId: branch.id,
           currentBranchId: branch.id,
           customerId: savedCustomer.id,
@@ -366,6 +371,16 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
       return job;
     }),
   );
+}
+
+/** The loaner phone must be an active catalogue model (shared or this branch's own) of the chosen brand. */
+async function findLoanerModel(branchId: string, brandId: string, modelId: string) {
+  const model = await prisma.deviceModel.findFirst({
+    where: { id: modelId, brandId, isActive: true, brand: { OR: [{ branchId: null }, { branchId }] } },
+    select: { id: true },
+  });
+  if (!model) throw HttpError.badRequest('Invalid request', { loanerModelId: ['Select the loaner phone model from the list'] });
+  return model.id;
 }
 
 // ─── Device details ─────────────────────────────────────────────────────────
@@ -477,6 +492,7 @@ export async function list(query: JobListQuery, actor: Actor) {
   const viewBranch = actor.branchId ?? query.branchId;
   if (query.here && viewBranch) and.push({ currentBranchId: viewBranch, location: 'AT_BRANCH' });
   if (query.owned && viewBranch) and.push({ branchId: viewBranch });
+  if (query.current && viewBranch) and.push({ currentBranchId: viewBranch });
   if (query.open) and.push({ status: { notIn: ['DELIVERED', 'CANCELLED'] } });
   if (query.minAgeDays !== undefined) and.push({ createdAt: { lte: new Date(Date.now() - query.minAgeDays * 86_400_000) } });
   if (query.from || query.to) {
@@ -733,6 +749,8 @@ const detailSelect = {
     },
     orderBy: { sortOrder: 'asc' },
   },
+  loanerReturnedAt: true,
+  loanerModel: { select: { name: true, brand: { select: { name: true } } } },
   repeatOf: { select: { id: true, jobNumber: true } },
   repeats: { select: { id: true, jobNumber: true, status: true }, orderBy: { createdAt: 'asc' } },
   estimateOptions: {
@@ -843,6 +861,8 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     cancelledAt,
     statusHistory,
     assignments,
+    loanerModel,
+    loanerReturnedAt,
     ...rest
   } = j;
   // Unlock code: counter staff of the job's branches, or the engineer working on it — never an offered-only engineer.
@@ -928,6 +948,7 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
       receiveNote: m.receiveNote,
     })),
     invoice: invoice && { ...invoice, total: invoice.total.toNumber() },
+    loaner: loanerModel && { brand: loanerModel.brand.name, model: loanerModel.name, returnedAt: iso(loanerReturnedAt) },
     repeatOf: repeatOf && { id: repeatOf.id, jobNumber: publicJobNumber(repeatOf.jobNumber) },
     repeats: repeats.map((r) => ({ ...r, jobNumber: publicJobNumber(r.jobNumber) })),
     pendingTransfer: pending
@@ -1093,6 +1114,15 @@ export async function unassign(jobId: string, note: string | null | undefined, a
   });
 }
 
+/** "Brand Model" of a loaner phone the customer has not returned yet, else null. */
+async function loanerOutstanding(jobId: string) {
+  const j = await prisma.job.findUniqueOrThrow({
+    where: { id: jobId },
+    select: { loanerReturnedAt: true, loanerModel: { select: { name: true, brand: { select: { name: true } } } } },
+  });
+  return j.loanerModel && !j.loanerReturnedAt ? `${j.loanerModel.brand.name} ${j.loanerModel.name}` : null;
+}
+
 // ─── Cancel / delete ────────────────────────────────────────────────────────
 
 const isCounterRole = (actor: Actor) => actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
@@ -1106,11 +1136,19 @@ export async function cancel(jobId: string, data: JobCancelData, actor: Actor) {
   const payments = await prisma.payment.findMany({ where: { jobId }, select: { kind: true, amount: true } });
   const paid = roundMoney(payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
   if (paid > 0 && !data.refundMode) throw HttpError.badRequest('Invalid request', { refundMode: [`Refund ₹${paid.toFixed(2)} advance — choose how`] });
+  // Cancelling closes the job, so a loaner phone must be back first.
+  const loanerOut = await loanerOutstanding(jobId);
+  if (loanerOut && !data.loanerReturned) {
+    throw HttpError.badRequest('Invalid request', { loanerReturned: [`Receive the loaner phone (${loanerOut}) back before cancelling this job`] });
+  }
 
   await prisma.$transaction(async (tx) => {
     const { count } = await tx.job.updateMany({
       where: { id: jobId, status: job.status },
-      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason, statusBeforeHold: null, dueAt: null },
+      data: {
+        status: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason, statusBeforeHold: null, dueAt: null,
+        ...(loanerOut && { loanerReturnedAt: new Date(), loanerReturnedById: actor.sub }),
+      },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
     if (paid > 0) {
@@ -1124,7 +1162,7 @@ export async function cancel(jobId: string, data: JobCancelData, actor: Actor) {
     await endAssignment(tx, jobId, 'CLOSED');
     await recordStatus(tx, { jobId, from: job.status, to: 'CANCELLED', actorId: actor.sub, remark: data.reason });
     await recordAudit(
-      { actorId: actor.sub, action: 'job.cancelled', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { reason: data.reason, refund: paid }, ip: actor.ip },
+      { actorId: actor.sub, action: 'job.cancelled', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { reason: data.reason, refund: paid, ...(loanerOut && { loanerReturned: loanerOut }) }, ip: actor.ip },
       tx,
     );
   });
@@ -1148,6 +1186,9 @@ export async function remove(jobId: string, actor: Actor) {
       _count: { select: { payments: true, movements: true, parts: { where: { status: { in: ['ISSUED', 'RETURNED'] } } } } },
     },
   });
+  if (await loanerOutstanding(jobId)) {
+    throw HttpError.conflict('A loaner phone is still with the customer — cancel the job and receive it back instead of deleting');
+  }
   if (j.invoice || j._count.payments || j._count.movements || j._count.parts) {
     throw HttpError.conflict('This job has payments, an invoice, issued parts or L4 movements — cancel it instead of deleting');
   }

@@ -174,6 +174,11 @@ export function JobDetailPage() {
             <Button size="sm" className="bg-emerald-600! hover:bg-emerald-700!" onClick={() => setDelivering(true)}>Deliver</Button>
           )}
         </div>
+        {job.loaner && (
+          <p className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${job.loaner.returnedAt ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-amber-50 text-amber-900 ring-amber-200'}`}>
+            Loaner phone: {job.loaner.brand} {job.loaner.model} · {job.loaner.returnedAt ? `returned ${formatDateTime(job.loaner.returnedAt)}` : 'with customer — not returned'}
+          </p>
+        )}
         {(job.repeatOf || job.repeats.length > 0) && (
           <div className="mt-2 flex flex-wrap gap-2 text-xs">
             {job.repeatOf && (

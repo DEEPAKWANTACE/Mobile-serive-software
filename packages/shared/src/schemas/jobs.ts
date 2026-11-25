@@ -310,6 +310,10 @@ export const jobCreateSchema = z
     physicalConditionRemark: optionalText(1000),
     /** New multi-device shape. When omitted, the legacy top-level device fields are used. */
     devices: z.array(jobDeviceSchema).min(1, 'Add at least one device').max(10, 'At most 10 devices per job sheet').optional(),
+    /** A loaner phone is lent to the customer; its brand and model are then compulsory. */
+    loanerPhone: z.boolean().default(false),
+    loanerBrandId: z.uuid('Select the loaner phone brand').nullish(),
+    loanerModelId: z.uuid('Select the loaner phone model').nullish(),
     /** Every new job enters the assigned engineer's diagnosis/repair queue. */
     engineerId: z.uuid('Assign an engineer'),
     /** Only Super Admin chooses the branch; branch staff always use their own. */
@@ -326,6 +330,10 @@ export const jobCreateSchema = z
   })
   .refine((v) => !v.advance || v.advance.amount > 0, { message: 'Enter the advance amount', path: ['advance', 'amount'] })
   .superRefine((v, ctx) => {
+    if (v.loanerPhone) {
+      if (!v.loanerBrandId) ctx.addIssue({ code: 'custom', message: 'Select the loaner phone brand', path: ['loanerBrandId'] });
+      if (!v.loanerModelId) ctx.addIssue({ code: 'custom', message: 'Select the loaner phone model', path: ['loanerModelId'] });
+    }
     if (v.customerType === 'RETAILER' && !v.retailer?.trim()) {
       ctx.addIssue({ code: 'custom', message: 'Enter the retailer / shop name', path: ['retailer'] });
     }
@@ -414,6 +422,11 @@ export const jobListQuerySchema = listQuerySchema.extend({
   sort: z.enum(['newest', 'oldest']).default('newest'),
   /** true = only phones physically at my branch (excludes my jobs that are at L4). */
   here: z
+    .enum(['true', 'false'])
+    .transform((v) => v === 'true')
+    .optional(),
+  /** true = jobs counted at my branch on the dashboard (current branch, including phones in transit). */
+  current: z
     .enum(['true', 'false'])
     .transform((v) => v === 'true')
     .optional(),
@@ -689,6 +702,8 @@ export const jobCancelSchema = z.object({
   reason: z.string().trim().min(3, 'Why is the job cancelled?').max(300),
   /** Required when the customer has paid an advance: how it is returned. */
   refundMode: z.enum(PAYMENT_MODES).nullish(),
+  /** Required when a loaner phone is still with the customer: confirms it is back. */
+  loanerReturned: z.boolean().optional(),
 });
 export type JobCancelData = z.output<typeof jobCancelSchema>;
 
@@ -824,7 +839,11 @@ export type JobDeviceDto = {
   faults: { id: string; name: string; priceLabel: string | null; price: number | null }[];
 };
 
+/** Loaner phone lent to the customer for this job. */
+export type LoanerPhoneDto = { brand: string; model: string; returnedAt: string | null };
+
 export type JobDto = {
+  loaner: LoanerPhoneDto | null;
   id: string;
   jobNumber: string;
   status: JobStatus;
