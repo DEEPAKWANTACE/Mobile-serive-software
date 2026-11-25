@@ -323,6 +323,14 @@ jobRoutes.post('/:id/cancel', authorize(ROLES.BRANCH_MANAGER, ROLES.CCO), valida
   await service.cancel(req.params.id as string, req.body, actorOf(req));
   res.status(204).end();
 });
+jobRoutes.post('/:id/cancel/approve', authorize(ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema }), async (req, res) => {
+  await service.approveCancel(req.params.id as string, actorOf(req));
+  res.status(204).end();
+});
+jobRoutes.post('/:id/cancel/reject', authorize(ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN), validate({ params: idParamSchema, body: movementNoteSchema }), async (req, res) => {
+  await service.rejectCancel(req.params.id as string, req.body.note, actorOf(req));
+  res.status(204).end();
+});
 jobRoutes.delete('/:id', authorize(ROLES.BRANCH_MANAGER), validate({ params: idParamSchema }), async (req, res) => {
   await service.remove(req.params.id as string, actorOf(req));
   res.status(204).end();

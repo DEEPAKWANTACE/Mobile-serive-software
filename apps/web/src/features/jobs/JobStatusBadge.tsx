@@ -12,6 +12,7 @@ const styles: Record<JobStatus, string> = {
   SPARE_PENDING: 'bg-yellow-100 text-yellow-800',
   RWR_PENDING: 'bg-amber-100 text-amber-900',
   RWR: 'bg-slate-200 text-slate-700',
+  CANCEL_PENDING: 'bg-rose-100 text-rose-800',
   DELIVERED: 'bg-slate-800 text-white',
   CANCELLED: 'bg-slate-100 text-slate-500 line-through',
 };

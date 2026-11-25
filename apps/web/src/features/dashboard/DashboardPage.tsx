@@ -68,6 +68,7 @@ import { FranchisePicker, type FranchiseSelection } from './FranchisePicker';
 import { AgeBadge, OverdueCard } from './OverdueCard';
 import { CancelTransferButton, TransferResponseButtons } from '@/features/jobs/TransferActions';
 import { DashboardSummary } from './DashboardSummary';
+import { CentralDashboard } from '@/features/purchase/CentralDashboard';
 
 const useStats = () => useQuery({ queryKey: ['jobs', 'stats'], queryFn: () => api.get<JobStatsDto>('/jobs/stats') });
 
@@ -108,7 +109,16 @@ function heroActions(role: string, onFindJob: () => void) {
       return (
         <>
           {link('/store/requests', 'Part requests', Inbox)}
+          {link('/store/purchase-orders', 'Purchase orders', ClipboardList)}
           {link('/store/stock', 'Stock', Boxes)}
+        </>
+      );
+    case ROLES.CENTRAL_STOREKEEPER:
+      return (
+        <>
+          {link('/store/purchase-orders', 'Branch orders', Inbox)}
+          {link('/store/stock', 'Central stock', Boxes)}
+          {link('/central/supplies', 'Supply records', ClipboardList)}
         </>
       );
     case ROLES.ACCOUNTS:
@@ -151,6 +161,7 @@ export function DashboardPage() {
       <DashboardHero user={user} actions={heroActions(user.role, () => setFindJobOpen(true))} />
       {user.role === ROLES.ENGINEER && <EngineerDashboard />}
       {user.role === ROLES.STOREKEEPER && <StoreDashboard />}
+      {user.role === ROLES.CENTRAL_STOREKEEPER && <CentralDashboard />}
       {user.role === ROLES.ACCOUNTS && <AccountsDashboard />}
       {user.role === ROLES.SUPER_ADMIN && <AdminDashboard user={user} />}
       {user.role === ROLES.BRANCH_MANAGER && <ManagerAlerts />}

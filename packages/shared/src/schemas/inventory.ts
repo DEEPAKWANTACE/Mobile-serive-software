@@ -4,7 +4,7 @@ import { priceAmount } from './catalog.js';
 import { listQuerySchema, optionalText } from './common.js';
 
 /** Roles that run a branch store (receive, adjust, issue parts). */
-export const STORE_ROLES: readonly Role[] = [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN];
+export const STORE_ROLES: readonly Role[] = [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN, ROLES.CENTRAL_STOREKEEPER];
 
 export const partCode = z
   .string()

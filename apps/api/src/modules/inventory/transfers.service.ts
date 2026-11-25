@@ -1,4 +1,4 @@
-import { STORE_ROLES, type StockTransferCreateData, type StockTransferDto, type StockTransferListQuery, type StockTransferReceiveData } from '@msm/shared';
+import { ROLES, STORE_ROLES, type StockTransferCreateData, type StockTransferDto, type StockTransferListQuery, type StockTransferReceiveData } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
 import { assertBranchAccess } from '../../lib/access.ts';
 import { HttpError } from '../../lib/http-error.ts';
@@ -46,10 +46,20 @@ function assertStore(actor: Actor, branchId: string) {
   assertBranchAccess(actor, branchId);
 }
 
+const isCentral = (actor: Actor) => actor.role === ROLES.CENTRAL_STOREKEEPER;
+
 export async function send(data: StockTransferCreateData, actor: Actor) {
-  const fromBranchId = actor.branchId ?? data.fromBranchId;
+  // A recall: the Central Storekeeper moves stock from a branch back into the Central Store.
+  const recall = isCentral(actor) && !!data.fromBranchId && data.fromBranchId !== actor.branchId;
+  const fromBranchId = recall ? data.fromBranchId! : (actor.branchId ?? data.fromBranchId);
   if (!fromBranchId) throw HttpError.badRequest('Invalid request', { fromBranchId: ['Select the sending branch'] });
-  assertStore(actor, fromBranchId);
+  if (recall) {
+    if (data.toBranchId !== actor.branchId) throw HttpError.forbidden('Stock can only be recalled into the Central Store');
+  } else {
+    // Central supplies branches on a challan, so every dispatch shows in the supply records.
+    if (isCentral(actor)) throw HttpError.conflict('Use “Supply” to send stock to a branch');
+    assertStore(actor, fromBranchId);
+  }
   if (data.toBranchId === fromBranchId) throw HttpError.badRequest('Invalid request', { toBranchId: ['Choose a different branch'] });
   const [to, part] = await Promise.all([
     prisma.branch.findUnique({ where: { id: data.toBranchId }, select: { id: true, code: true, isActive: true } }),
@@ -68,7 +78,7 @@ export async function send(data: StockTransferCreateData, actor: Actor) {
       branchId: fromBranchId,
       type: 'TRANSFER_OUT',
       quantity: -data.quantity,
-      reference: `To ${to.code}`,
+      reference: recall ? `Recalled to ${to.code}` : `To ${to.code}`,
       note: data.note,
       actorId: actor.sub,
     });
@@ -106,7 +116,9 @@ async function close(id: string, status: 'RECEIVED' | 'CANCELLED', actor: Actor,
   const discrepancy = receiving && counted !== t.quantity;
   if (discrepancy && !tally?.note) throw HttpError.badRequest('Invalid request', { note: ['Explain the difference in quantity'] });
   // Receiving branch confirms receipt; the sending branch may cancel while it is still in transit.
-  assertStore(actor, receiving ? t.toBranchId : t.fromBranchId);
+  // The Central Store may also withdraw a recall it started.
+  const cancellingRecall = !receiving && isCentral(actor) && t.toBranchId === actor.branchId;
+  if (!cancellingRecall) assertStore(actor, receiving ? t.toBranchId : t.fromBranchId);
 
   return prisma.$transaction(async (tx) => {
     const { count } = await tx.stockTransfer.updateMany({
@@ -148,7 +160,7 @@ export const cancel = (id: string, actor: Actor) => close(id, 'CANCELLED', actor
 
 export async function list(query: StockTransferListQuery, actor: Actor) {
   if (!STORE_ROLES.includes(actor.role)) throw HttpError.forbidden();
-  const branch = actor.branchId ?? query.branchId;
+  const branch = isCentral(actor) ? (query.branchId ?? actor.branchId) : (actor.branchId ?? query.branchId);
   const where: Prisma.StockTransferWhereInput =
     query.view === 'incoming'
       ? { status: 'SENT', ...(branch && { toBranchId: branch }) }

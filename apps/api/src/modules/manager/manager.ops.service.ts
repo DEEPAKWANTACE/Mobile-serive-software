@@ -1,4 +1,5 @@
 import {
+  MANAGER_APPROVAL_STATUSES,
   roundMoney,
   type CallingPendingRowDto,
   type DayClosingDto,
@@ -21,6 +22,7 @@ import { assertCan } from '../../lib/permissions.ts';
 import { recordAudit } from '../audit/audit.service.ts';
 import { dayBook } from '../accounts/accounts.service.ts';
 import { publicJobNumber } from '../jobs/job-number.ts';
+import { nextPoNumber, poSelect, toPoDto } from '../purchase/purchase.service.ts';
 import { atBranch, consumption, diagnosisPending, groupConsumption, pendingJobs, scope } from './manager.service.ts';
 
 const DAY = 86_400_000;
@@ -146,7 +148,7 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
   const branchId = scope(actor, requested);
   const own = branchId ? { branchId } : {};
   const today = businessToday();
-  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved, notesWaiting, notesMissing, closingOpen, rwrWaiting] = await Promise.all([
+  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved, notesWaiting, notesMissing, closingOpen, approvalsWaiting] = await Promise.all([
     pendingJobs({ days: 15, branchId: requested }, actor).then((r) => r.length),
     diagnosisPending({ from: today, to: today, branchId: requested }, actor).then((r) => r.length),
     prisma.l4Request.count({ where: { status: 'PENDING', ...(branchId && { job: { branchId } }) } }),
@@ -164,11 +166,11 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
       distinct: ['jobId'],
     }).then((r) => r.length),
     closingPending(branchId),
-    // Only the branch that took in the phone can approve its RWR.
-    prisma.job.count({ where: { ...own, status: 'RWR_PENDING' } }),
+    // Only the branch that took in the phone can approve its RWR or cancellation.
+    prisma.job.count({ where: { ...own, status: { in: [...MANAGER_APPROVAL_STATUSES] } } }),
   ]);
   const items: ManagerAlertDto[] = [
-    { key: 'rwr', label: 'RWR waiting for your approval', count: rwrWaiting, priority: 'HIGH', link: '/rwr' },
+    { key: 'rwr', label: 'RWR / cancellation waiting for your approval', count: approvalsWaiting, priority: 'HIGH', link: '/rwr' },
     { key: 'pending15', label: 'Jobs pending more than 15 days', count: old, priority: 'HIGH', link: '/branch-insights?tab=pending' },
     { key: 'l4', label: 'L4 transfer approvals pending', count: l4, priority: 'HIGH', link: '/l4' },
     { key: 'diagnosis', label: 'Same-day diagnosis pending', count: diag, priority: 'HIGH', link: '/branch-insights?tab=diagnosis' },
@@ -247,59 +249,20 @@ export async function overview(query: ManagerRangeQuery, actor: Actor): Promise<
 
 // ─── Purchase orders ────────────────────────────────────────────────────────
 
-type PoRow = {
-  id: string;
-  poNumber: string;
-  fromDate: string;
-  toDate: string;
-  status: 'DRAFT' | 'FORWARDED';
-  note: string | null;
-  lines: unknown;
-  createdAt: Date;
-  forwardedAt: Date | null;
-  branch: { code: string };
-  createdBy: { name: string };
-};
-const toPoDto = (r: PoRow): PurchaseOrderDto => {
-  const lines = r.lines as PoRowDto[];
-  return {
-    id: r.id,
-    poNumber: r.poNumber,
-    branchCode: r.branch.code,
-    from: r.fromDate,
-    to: r.toDate,
-    status: r.status,
-    note: r.note,
-    createdBy: r.createdBy.name,
-    createdAt: r.createdAt.toISOString(),
-    forwardedAt: r.forwardedAt?.toISOString() ?? null,
-    lines,
-    totalQuantity: lines.reduce((s, l) => s + l.quantity, 0),
-    totalAmount: roundMoney(lines.reduce((s, l) => s + l.amount, 0)),
-  };
-};
-const poSelect = {
-  id: true, poNumber: true, fromDate: true, toDate: true, status: true, note: true, lines: true, createdAt: true, forwardedAt: true,
-  branch: { select: { code: true } },
-  createdBy: { select: { name: true } },
-} as const;
-
 /** Saves a PO from parts issued in the period that are on no PO yet, and marks them so they are never ordered twice. */
 export async function createPo(data: PoCreateData, actor: Actor) {
   await assertCan(actor, 'manage_po');
   const branchId = scope(actor, data.branchId);
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select a branch'] });
   if (data.from > data.to) throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
-  const branch = await prisma.branch.findUniqueOrThrow({ where: { id: branchId }, select: { code: true } });
 
   return prisma.$transaction(async (tx) => {
     const used = await consumption({ from: data.from, to: data.to, branchId }, actor, true);
     if (!used.length) throw HttpError.conflict('Nothing new to order for this period');
     const lines = groupConsumption(used);
-    const ym = businessToday().slice(2, 7).replace('-', '');
-    const seq = (await tx.purchaseOrder.count({ where: { branchId, poNumber: { startsWith: `PO-${branch.code}-${ym}-` } } })) + 1;
+    const poNumber = await nextPoNumber(tx, branchId);
     const po = await tx.purchaseOrder.create({
-      data: { poNumber: `PO-${branch.code}-${ym}-${String(seq).padStart(3, '0')}`, branchId, fromDate: data.from, toDate: data.to, note: data.note ?? null, lines, createdById: actor.sub },
+      data: { poNumber, branchId, fromDate: data.from, toDate: data.to, note: data.note ?? null, lines, createdById: actor.sub },
       select: poSelect,
     });
     const { count } = await tx.jobPart.updateMany({ where: { id: { in: used.map((u) => u.id) }, poId: null }, data: { poId: po.id } });
@@ -313,18 +276,6 @@ export async function listPos(actor: Actor, requested?: string): Promise<Purchas
   const branchId = scope(actor, requested);
   const rows = await prisma.purchaseOrder.findMany({ where: branchId ? { branchId } : {}, orderBy: { createdAt: 'desc' }, take: 100, select: poSelect });
   return rows.map(toPoDto);
-}
-
-export async function forwardPo(id: string, actor: Actor) {
-  await assertCan(actor, 'manage_po');
-  const po = await prisma.purchaseOrder.findUnique({ where: { id }, select: { branchId: true, status: true, poNumber: true } });
-  if (!po) throw HttpError.notFound('Purchase order not found');
-  if (actor.branchId && actor.branchId !== po.branchId) throw HttpError.forbidden();
-  if (po.status === 'FORWARDED') throw HttpError.conflict('Already forwarded to Head Office');
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseOrder.update({ where: { id }, data: { status: 'FORWARDED', forwardedAt: new Date() } });
-    await recordAudit({ actorId: actor.sub, action: 'po.forwarded', entityType: 'purchase_order', entityId: id, branchId: po.branchId, metadata: { poNumber: po.poNumber }, ip: actor.ip }, tx);
-  });
 }
 
 // ─── Remarks ────────────────────────────────────────────────────────────────

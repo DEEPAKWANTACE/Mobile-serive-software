@@ -145,7 +145,17 @@ export type PurchaseOrderDto = {
   branchCode: string;
   from: string;
   to: string;
-  status: 'DRAFT' | 'FORWARDED';
+  status: PoStatus;
+  source: 'CONSUMPTION' | 'MANUAL';
+  /** Where the order stands, including supply progress. */
+  stage: PoStage;
+  branchId: string;
+  branchName: string;
+  /** Central Store's reason for rejecting or closing short. */
+  centralNote: string | null;
+  /** Per ordered part: dispatched (not cancelled), counted in by the branch, and still to be sent. */
+  progress: PoProgressDto[];
+  supplies: SupplyDto[];
   note: string | null;
   createdBy: string;
   createdAt: string;
@@ -153,6 +163,91 @@ export type PurchaseOrderDto = {
   lines: PoRowDto[];
   totalQuantity: number;
   totalAmount: number;
+};
+
+export const PO_STATUSES = ['DRAFT', 'FORWARDED', 'ACCEPTED', 'REJECTED', 'CLOSED'] as const;
+export type PoStatus = (typeof PO_STATUSES)[number];
+export const PO_STAGE_LABELS = {
+  DRAFT: 'Draft',
+  SENT: 'Sent to Central',
+  ACCEPTED: 'Accepted',
+  PART_SUPPLIED: 'Part supplied',
+  IN_TRANSIT: 'Supplied · in transit',
+  COMPLETED: 'Completed',
+  REJECTED: 'Rejected',
+  CLOSED: 'Closed short',
+} as const;
+export type PoStage = keyof typeof PO_STAGE_LABELS;
+export type PoProgressDto = { partId: string; ordered: number; supplied: number; received: number; pending: number };
+
+export type SupplyLineDto = {
+  transferId: string;
+  partId: string;
+  partCode: string;
+  product: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  status: 'SENT' | 'RECEIVED' | 'CANCELLED';
+  receivedQuantity: number | null;
+  discrepancyNote: string | null;
+};
+export type SupplyDto = {
+  id: string;
+  challanNumber: string;
+  poNumber: string | null;
+  branch: { id: string; code: string; name: string };
+  note: string | null;
+  createdBy: string;
+  createdAt: string;
+  lines: SupplyLineDto[];
+  /** Cancelled lines are not counted. */
+  totalQuantity: number;
+  totalAmount: number;
+};
+
+const orderQuantity = z.coerce.number('Enter quantity').int('Whole number').min(1, 'At least 1').max(100_000);
+
+/** A branch orders parts it picks itself (e.g. low stock), as a draft or straight to the Central Store. */
+export const manualPoSchema = z.object({
+  branchId: z.uuid().optional(),
+  note: z.string().trim().max(300).optional(),
+  send: z.boolean().default(false),
+  lines: z
+    .array(z.object({ partId: z.uuid(), quantity: orderQuantity }))
+    .min(1, 'Add at least one part')
+    .max(200)
+    .refine((l) => new Set(l.map((x) => x.partId)).size === l.length, 'A part is listed twice'),
+});
+export type ManualPoData = z.output<typeof manualPoSchema>;
+
+export const poDecisionSchema = z.object({ reason: z.string().trim().min(3, 'Enter the reason').max(300) });
+
+const supplyLines = z
+  .array(z.object({ partId: z.uuid(), quantity: orderQuantity, rate: z.coerce.number('Enter rate').min(0).max(10_000_000).multipleOf(0.01, 'Max 2 decimal places') }))
+  .min(1, 'Add at least one part')
+  .max(200)
+  .refine((l) => new Set(l.map((x) => x.partId)).size === l.length, 'A part is listed twice');
+
+/** Central Store dispatch: against a purchase order, or direct to a branch. */
+export const supplyCreateSchema = z.object({
+  purchaseOrderId: z.uuid().optional(),
+  toBranchId: z.uuid().optional(),
+  note: z.string().trim().max(300).optional(),
+  lines: supplyLines,
+});
+export type SupplyCreateData = z.output<typeof supplyCreateSchema>;
+
+export const supplyListQuerySchema = z.object({ from: businessDate, to: businessDate, branchId: z.uuid().optional() });
+export type SupplyListQuery = z.output<typeof supplyListQuerySchema>;
+
+export type CentralOverviewDto = {
+  newOrders: number;
+  ordersToSupply: number;
+  linesInTransit: number;
+  recallsInTransit: number;
+  central: { id: string; items: number; units: number; value: number; low: number };
+  branches: { id: string; code: string; name: string; items: number; units: number; value: number; low: number; openOrders: number; inTransit: number }[];
 };
 
 export const managerRemarkSchema = z.object({ jobId: z.uuid(), remark: z.string().trim().min(2, 'Enter a remark').max(500) });

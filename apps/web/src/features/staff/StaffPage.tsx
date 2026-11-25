@@ -244,7 +244,8 @@ function StaffForm({ user, me, roles, branches, onDone }: StaffFormProps) {
               aria-invalid={!!errors.branchId}
             >
               <option value="">Select branch</option>
-              {branches.map((b) => (
+              {/* The Central Storekeeper works only at the Central Store; everyone else at a branch. */}
+              {branches.filter((b) => (b.type === 'CENTRAL_STORE') === (role === ROLES.CENTRAL_STOREKEEPER)).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name} ({b.code})
                 </option>

@@ -17,7 +17,7 @@ const STATUS: Record<StockTransferDto['status'], string> = { SENT: 'In transit',
 
 export function StockTransfersPage() {
   const queryClient = useQueryClient();
-  const { branchId, picker, needsBranch } = useStoreBranch();
+  const { branchId, picker, needsBranch, viewingOther, ownBranchId } = useStoreBranch();
   const [view, setView] = useState<View>('incoming');
   const [counting, setCounting] = useState<StockTransferDto | null>(null);
   const [counted, setCounted] = useState('');
@@ -78,7 +78,10 @@ export function StockTransfersPage() {
       className: 'text-right',
       cell: (t) =>
         t.status === 'SENT' &&
-        (view === 'incoming' ? (
+        // Central looking at another store can only withdraw a recall it started.
+        (viewingOther ? (
+          t.to.id === ownBranchId && <Button size="sm" variant="secondary" loading={act.isPending} onClick={() => act.mutate({ id: t.id, action: 'cancel' })}>Cancel recall</Button>
+        ) : view === 'incoming' ? (
           <Button size="sm" onClick={() => { setCounting(t); setCounted(String(t.quantity)); setCountNote(''); }}>Check &amp; receive</Button>
         ) : view === 'outgoing' ? (
           <Button size="sm" variant="secondary" loading={act.isPending} onClick={() => act.mutate({ id: t.id, action: 'cancel' })}>Cancel</Button>
@@ -112,7 +115,7 @@ export function StockTransfersPage() {
               act.mutate({ id: counting.id, action: 'receive', body: { receivedQuantity: qty, note: countNote.trim() || undefined } });
             }}
           >
-            <p className="text-sm"><span className="font-mono font-semibold">{counting.part.code}</span> · {counting.part.name} — sent <b>{counting.quantity}</b> from {counting.from.code}. Purchase and sale rates stay as set by Head Office.</p>
+            <p className="text-sm"><span className="font-mono font-semibold">{counting.part.code}</span> · {counting.part.name} — sent <b>{counting.quantity}</b> from {counting.from.code}. Purchase and sale rates stay as set in the parts master.</p>
             <Field label="Quantity actually received">
               <input value={counted} onChange={(e) => setCounted(e.target.value)} inputMode="numeric" className={inputClass} autoFocus />
             </Field>

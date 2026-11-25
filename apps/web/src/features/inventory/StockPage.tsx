@@ -15,11 +15,12 @@ import { toQueryString, useOptions } from '@/lib/crud';
 import { formatCurrency } from '@/lib/format';
 import { PartCodeInput } from './PartCodeInput';
 import { useStoreBranch } from './useStoreBranch';
+import { SupplyDialog } from '@/features/purchase/SupplyDialog';
 
-type Dialog = { kind: 'receive' | 'adjust' | 'transfer'; part?: StockRowDto['part'] } | null;
+type Dialog = { kind: 'receive' | 'adjust' | 'transfer' | 'recall' | 'supply'; part?: StockRowDto['part'] } | null;
 
 export function StockPage() {
-  const { branchId, picker, needsBranch } = useStoreBranch();
+  const { branchId, picker, needsBranch, isCentral, viewingOther, ownBranchId, branchName } = useStoreBranch();
   const [search, setSearch] = useState('');
   const [lowOnly, setLowOnly] = useState(false);
   const [page, setPage] = useState(1);
@@ -48,21 +49,28 @@ export function StockPage() {
     {
       header: '',
       className: 'text-right',
-      cell: (r) => (
-        <div className="flex justify-end gap-3">
-          <Button variant="link" onClick={() => setDialog({ kind: 'receive', part: r.part })}>
-            Stock in
-          </Button>
-          <Button variant="link" onClick={() => setDialog({ kind: 'adjust', part: r.part })}>
-            Adjust
-          </Button>
-          {r.quantity > 0 && (
-            <Button variant="link" onClick={() => setDialog({ kind: 'transfer', part: r.part })}>
-              Send to branch
+      cell: (r) =>
+        viewingOther ? (
+          r.quantity > 0 && (
+            <Button variant="link" onClick={() => setDialog({ kind: 'recall', part: r.part })}>
+              Recall to Central
             </Button>
-          )}
-        </div>
-      ),
+          )
+        ) : (
+          <div className="flex justify-end gap-3">
+            <Button variant="link" onClick={() => setDialog({ kind: 'receive', part: r.part })}>
+              Stock in
+            </Button>
+            <Button variant="link" onClick={() => setDialog({ kind: 'adjust', part: r.part })}>
+              Adjust
+            </Button>
+            {r.quantity > 0 && (
+              <Button variant="link" onClick={() => setDialog({ kind: isCentral ? 'supply' : 'transfer', part: r.part })}>
+                {isCentral ? 'Supply to branch' : 'Send to branch'}
+              </Button>
+            )}
+          </div>
+        ),
     },
   ];
 
@@ -70,9 +78,9 @@ export function StockPage() {
     <div>
       <PageHeader
         title="Stock"
-        description="Spare parts in this branch"
+        description={viewingOther ? `Viewing ${branchName} — the branch manages its own stock; you can recall parts` : isCentral ? 'Spare parts in the Central Store' : 'Spare parts in this branch'}
         actions={
-          !needsBranch && (
+          !needsBranch && !viewingOther && (
             <Button onClick={() => setDialog({ kind: 'receive' })}>Stock in</Button>
           )
         }
@@ -93,8 +101,14 @@ export function StockPage() {
           {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onChange={setPage} />}
         </>
       )}
-      <Modal open={!!dialog && dialog.kind !== 'transfer'} onClose={() => setDialog(null)} title={dialog?.kind === 'adjust' ? 'Adjust stock' : 'Stock in'} size="sm">
-        {dialog && dialog.kind !== 'transfer' && <StockForm kind={dialog.kind} part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
+      <Modal open={dialog?.kind === 'receive' || dialog?.kind === 'adjust'} onClose={() => setDialog(null)} title={dialog?.kind === 'adjust' ? 'Adjust stock' : 'Stock in'} size="sm">
+        {(dialog?.kind === 'receive' || dialog?.kind === 'adjust') && <StockForm kind={dialog.kind} part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
+      </Modal>
+      <Modal open={dialog?.kind === 'recall'} onClose={() => setDialog(null)} title={`Recall from ${branchName}`} size="sm">
+        {dialog?.kind === 'recall' && dialog.part && <TransferForm part={dialog.part} branchId={branchId} recallTo={ownBranchId} onDone={() => setDialog(null)} />}
+      </Modal>
+      <Modal open={dialog?.kind === 'supply'} onClose={() => setDialog(null)} title="Supply to a branch" size="lg">
+        {dialog?.kind === 'supply' && dialog.part && <DirectSupply part={dialog.part} onDone={() => setDialog(null)} />}
       </Modal>
       <Modal open={dialog?.kind === 'transfer'} onClose={() => setDialog(null)} title="Send parts to another branch" size="sm">
         {dialog?.kind === 'transfer' && dialog.part && <TransferForm part={dialog.part} branchId={branchId} onDone={() => setDialog(null)} />}
@@ -173,17 +187,44 @@ function StockForm({ kind, part: initial, branchId, onDone }: { kind: 'receive' 
   );
 }
 
-function TransferForm({ part, branchId, onDone }: { part: StockRowDto['part']; branchId: string; onDone: () => void }) {
-  const queryClient = useQueryClient();
+/** Central sends one part to a branch without a purchase order; it still gets a supply challan. */
+function DirectSupply({ part, onDone }: { part: StockRowDto['part']; onDone: () => void }) {
   const { items: branches } = useOptions<BranchDto>('branches');
   const [to, setTo] = useState('');
+  const rate = useQuery({
+    queryKey: ['parts', 'cost', part.code],
+    queryFn: () => api.get<Paginated<{ id: string; costPrice: number | null }>>(`/parts?scope=effective&search=${encodeURIComponent(part.code)}&pageSize=50`),
+  });
+  const cost = rate.data?.items.find((p) => p.id === part.id)?.costPrice ?? 0;
+  const target = branches.find((b) => b.id === to);
+  return (
+    <div className="space-y-4">
+      <Field label="To branch" required>
+        <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
+          <option value="">Select branch</option>
+          {branches.filter((b) => b.type !== 'CENTRAL_STORE').map((b) => (
+            <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+          ))}
+        </select>
+      </Field>
+      {target && !rate.isLoading && (
+        <SupplyDialog key={target.id} branch={{ id: target.id, name: target.name }} lines={[{ partId: part.id, code: part.code, name: part.name, quantity: 1, rate: cost }]} onDone={onDone} />
+      )}
+    </div>
+  );
+}
+
+function TransferForm({ part, branchId, recallTo, onDone }: { part: StockRowDto['part']; branchId: string; recallTo?: string; onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const { items: branches } = useOptions<BranchDto>('branches');
+  const [to, setTo] = useState(recallTo ?? '');
   const [quantity, setQuantity] = useState('1');
   const [note, setNote] = useState('');
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const send = useMutation({
     mutationFn: () => api.post('/inventory/transfers', { fromBranchId: branchId, toBranchId: to, partId: part.id, quantity, note: note || null }),
     onSuccess: () => {
-      toast.success(`${part.code} sent — the other branch must receive it`);
+      toast.success(recallTo ? `${part.code} recalled — receive it under Stock Transfers when it arrives` : `${part.code} sent — the other branch must receive it`);
       void queryClient.invalidateQueries({ queryKey: ['inventory'] });
       onDone();
     },
@@ -198,21 +239,25 @@ function TransferForm({ part, branchId, onDone }: { part: StockRowDto['part']; b
       <p className="text-sm">
         <span className="font-mono font-semibold">{part.code}</span> · {part.name}
       </p>
-      <Field label="To branch" required error={errors.toBranchId}>
-        <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
-          <option value="">Select branch</option>
-          {branches.filter((b) => b.id !== branchId).map((b) => (
-            <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
-          ))}
-        </select>
-      </Field>
+      {recallTo ? (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">The quantity leaves the branch stock now and reaches the Central Store when you receive it.</p>
+      ) : (
+        <Field label="To branch" required error={errors.toBranchId}>
+          <select value={to} onChange={(e) => setTo(e.target.value)} className={inputClass}>
+            <option value="">Select branch</option>
+            {branches.filter((b) => b.id !== branchId).map((b) => (
+              <option key={b.id} value={b.id}>{b.name} ({b.code})</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Quantity" required error={errors.quantity}>
         <input value={quantity} onChange={(e) => setQuantity(e.target.value)} inputMode="numeric" className={inputClass} />
       </Field>
       <Field label="Note">
         <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="e.g. Urgent for job WHF01-2610-0003" />
       </Field>
-      <FormActions onCancel={onDone} loading={send.isPending} submitLabel="Send" />
+      <FormActions onCancel={onDone} loading={send.isPending} submitLabel={recallTo ? 'Recall' : 'Send'} />
     </form>
   );
 }

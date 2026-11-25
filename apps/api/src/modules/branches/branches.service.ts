@@ -1,5 +1,6 @@
 import type { BranchCreateData, BranchDto, BranchListQuery, BranchUpdateData } from '@msm/shared';
 import type { Prisma } from '../../generated/prisma/client.ts';
+import { HttpError } from '../../lib/http-error.ts';
 import type { Actor } from '../../lib/request-context.ts';
 import { contains, pageArgs, toPage } from '../../lib/pagination.ts';
 import { prisma } from '../../lib/prisma.ts';
@@ -36,7 +37,25 @@ export async function list(query: BranchListQuery) {
   return toPage(rows.map(toDto), total, query);
 }
 
+/** There is a single Central Store; a branch with job sheets or branch staff cannot become one (or stop being one). */
+async function assertCentralStoreRules(next: { type?: string; isActive?: boolean }, id?: string) {
+  const current = id ? await prisma.branch.findUniqueOrThrow({ where: { id }, select: { type: true, isActive: true } }) : null;
+  const type = next.type ?? current?.type;
+  const active = next.isActive ?? current?.isActive ?? true;
+  if (type === 'CENTRAL_STORE' && active) {
+    const other = await prisma.branch.findFirst({ where: { type: 'CENTRAL_STORE', isActive: true, ...(id && { id: { not: id } }) }, select: { name: true } });
+    if (other) throw HttpError.badRequest('Invalid request', { type: [`There is already a Central Store: ${other.name}`] });
+  }
+  if (!id || !current || (type === 'CENTRAL_STORE') === (current.type === 'CENTRAL_STORE')) return;
+  const [jobs, users] = await Promise.all([
+    prisma.job.count({ where: { OR: [{ branchId: id }, { currentBranchId: id }] } }),
+    prisma.user.count({ where: { branchId: id } }),
+  ]);
+  if (jobs || users) throw HttpError.badRequest('Invalid request', { type: ['A branch with job sheets or staff cannot change to or from Central Store — add a new branch instead'] });
+}
+
 export async function create(data: BranchCreateData, actor: Actor) {
+  await assertCentralStoreRules(data);
   return prisma.$transaction(async (tx) => {
     const row = await tx.branch.create({ data, select });
     await recordAudit(
@@ -56,6 +75,7 @@ export async function create(data: BranchCreateData, actor: Actor) {
 }
 
 export async function update(id: string, data: BranchUpdateData, actor: Actor) {
+  await assertCentralStoreRules(data, id);
   return prisma.$transaction(async (tx) => {
     const row = await tx.branch.update({ where: { id }, data, select });
     await recordAudit(

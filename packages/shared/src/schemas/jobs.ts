@@ -17,6 +17,7 @@ export const JOB_STATUSES = [
   'SPARE_PENDING',
   'RWR_PENDING',
   'RWR',
+  'CANCEL_PENDING',
   'DELIVERED',
   'CANCELLED',
 ] as const;
@@ -33,6 +34,7 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   SPARE_PENDING: 'Spare not available',
   RWR_PENDING: 'RWR awaiting manager',
   RWR: 'Returned without repair (RWR)',
+  CANCEL_PENDING: 'Cancellation awaiting manager',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',
 };
@@ -60,6 +62,7 @@ export const JOB_PENDING_WITH: Record<JobStatus, string> = {
   SPARE_PENDING: 'Store / engineer · spare part',
   RWR_PENDING: 'Branch Manager · RWR approval',
   RWR: 'CCO · customer delivery',
+  CANCEL_PENDING: 'Branch Manager · cancellation approval',
   DELIVERED: 'Completed',
   CANCELLED: 'Closed',
 };
@@ -92,7 +95,11 @@ export const ENGINEER_OPEN_STATUSES: readonly JobStatus[] = [
   'TESTING',
   'SPARE_PENDING',
   'RWR_PENDING',
+  'CANCEL_PENDING',
 ];
+
+/** Waiting for the Branch Manager's decision. */
+export const MANAGER_APPROVAL_STATUSES: readonly JobStatus[] = ['RWR_PENDING', 'CANCEL_PENDING'];
 
 /** Engineer can hand the job to another engineer in these statuses. */
 export const TRANSFERABLE_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'SPARE_PENDING'];
@@ -812,6 +819,8 @@ export type JobListItemDto = {
   deliveredAt: string | null;
   deliveryNote: string | null;
   hasInvoice: boolean;
+  /** Why the job is waiting for the Branch Manager (RWR note or cancellation reason), else null. */
+  approvalReason: string | null;
   /** Job number this one repeats ("repeat repair"), if any. */
   repeatOf: string | null;
 };
@@ -843,6 +852,8 @@ export type JobDeviceDto = {
 export type LoanerPhoneDto = { brand: string; model: string; returnedAt: string | null };
 
 export type JobDto = {
+  /** Set while a cancellation waits for the Branch Manager (reason is in cancelReason). */
+  cancelRequest: { at: string; by: string | null; refundMode: PaymentMode | null } | null;
   loaner: LoanerPhoneDto | null;
   id: string;
   jobNumber: string;
@@ -889,7 +900,7 @@ export type JobDto = {
   deadRiskApprovedBy: { id: string; name: string } | null;
   repairedAt: string | null;
   readyAt: string | null;
-  currentBranch: { id: string; code: string; name: string; type: 'SERVICE_CENTER' | 'MAIN_OFFICE' };
+  currentBranch: { id: string; code: string; name: string; type: 'SERVICE_CENTER' | 'MAIN_OFFICE' | 'CENTRAL_STORE' };
   retailer: string | null;
   inwardBy: { id: string; name: string } | null;
   phoneDamaged: boolean;

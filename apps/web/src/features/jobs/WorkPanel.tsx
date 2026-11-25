@@ -396,7 +396,7 @@ export function WorkPanel({ job }: { job: JobDto }) {
                   {job.approvedBy ? ` — confirmed by ${job.approvedBy.name}` : ' at intake'}
                   {job.customerResponse && ` (“${job.customerResponse}”)`}
                 </p>
-                {canApprove && !job.invoice && !['DELIVERED', 'CANCELLED', 'RWR', 'RWR_PENDING'].includes(job.status) && (
+                {canApprove && !job.invoice && !['DELIVERED', 'CANCELLED', 'RWR', 'RWR_PENDING', 'CANCEL_PENDING'].includes(job.status) && (
                   <Button size="sm" variant="secondary" onClick={() => setEditingCosting(true)}>Edit costing</Button>
                 )}
               </div>

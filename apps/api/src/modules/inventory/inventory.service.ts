@@ -35,6 +35,14 @@ function storeBranch(actor: Actor, requested?: string | null) {
   return requested;
 }
 
+/** The Central Storekeeper may look at any store's stock and ledger; changes stay with that store. */
+function viewBranch(actor: Actor, requested?: string | null) {
+  if (actor.role === ROLES.CENTRAL_STOREKEEPER && requested) return requested;
+  const branchId = storeBranch(actor, requested);
+  if (actor.role !== ROLES.CENTRAL_STOREKEEPER) assertStore(actor, branchId);
+  return branchId;
+}
+
 function assertStore(actor: Actor, branchId: string) {
   if (!STORE_ROLES.includes(actor.role)) throw HttpError.forbidden();
   assertBranchAccess(actor, branchId);
@@ -44,7 +52,7 @@ function assertStore(actor: Actor, branchId: string) {
 
 /** Every active part with its quantity at the branch (0 when never stocked). */
 export async function stock(query: StockListQuery, actor: Actor) {
-  const branchId = storeBranch(actor, query.branchId);
+  const branchId = viewBranch(actor, query.branchId);
   const where: Prisma.PartWhereInput = {
     isActive: true,
     ...(query.search && { OR: [{ code: contains(query.search) }, { name: contains(query.search) }] }),
@@ -137,8 +145,7 @@ export async function adjust(data: StockAdjustmentData, actor: Actor) {
 }
 
 export async function movements(query: MovementListQuery, actor: Actor) {
-  const branchId = storeBranch(actor, query.branchId);
-  assertStore(actor, branchId);
+  const branchId = viewBranch(actor, query.branchId);
   const where: Prisma.StockMovementWhereInput = {
     branchId,
     partId: query.partId,
@@ -331,6 +338,7 @@ export async function issue(id: string, note: string | null | undefined, actor: 
   const jp = await loadJobPart(id);
   assertStore(actor, jp.job.currentBranchId);
   if (jp.status !== 'REQUESTED' && jp.status !== 'NOT_AVAILABLE') throw HttpError.conflict('This request is already closed');
+  if (jp.job.status === 'CANCEL_PENDING') throw HttpError.conflict('A cancellation is waiting for approval on this job — do not issue the part yet');
 
   return prisma.$transaction(async (tx) => {
     await setStatus(tx, id, ['REQUESTED', 'NOT_AVAILABLE'], 'ISSUED', actor, note);

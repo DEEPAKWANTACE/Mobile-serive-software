@@ -18,11 +18,13 @@ enum Role {
   ENGINEER
   STOREKEEPER
   ACCOUNTS
+  CENTRAL_STOREKEEPER // runs the Central Store, the supplier of every branch store
 }
 
 enum BranchType {
   SERVICE_CENTER
   MAIN_OFFICE // L4 / central repair centre that receives transfers
+  CENTRAL_STORE // warehouse that supplies the branches; takes no job sheets
 }
 
 // ─── Organisation hierarchy: State → City → Branch ──────────────────────────
@@ -56,6 +58,7 @@ model City {
 }
 
 model Branch {
+  suppliesReceived      StockSupply[]   @relation("SupplyTo")
   stockTransfersOut     StockTransfer[] @relation("StockTransferFrom")
   stockTransfersIn      StockTransfer[] @relation("StockTransferTo")
   jobsHere              Job[]           @relation("JobCurrentBranch")
@@ -133,6 +136,8 @@ model User {
   remindersAssigned      Reminder[]           @relation("ReminderAssignedTo")
   jobsDelivered          Job[]                @relation("JobDeliveredBy")
   loanersReceived        Job[]                @relation("JobLoanerReturnedBy")
+  suppliesCreated        StockSupply[]        @relation("SupplyCreatedBy")
+  cancelsRequested       Job[]                @relation("JobCancelRequestedBy")
   invoicesCreated        Invoice[]
   stockMovements         StockMovement[]
   partsRequested         JobPart[]            @relation("JobPartRequestedBy")
@@ -345,6 +350,7 @@ enum JobStatus {
   SPARE_PENDING // "Spare not available": waiting for a part
   RWR_PENDING // requested by CCO / engineer; locked until the branch manager finalises it
   RWR // returned without repair (reason + photos recorded)
+  CANCEL_PENDING // CCO asked to cancel; locked until the branch manager approves or rejects
   DELIVERED // handed back to the customer; job closed
   CANCELLED // cancelled by the counter (reason recorded); job closed
 }
@@ -394,6 +400,12 @@ enum TransferStatus {
 }
 
 model Job {
+  /// Cancellation requested by the CCO and waiting for the Branch Manager (reason is kept in cancelReason).
+  cancelRequestedAt       DateTime?          @map("cancel_requested_at")
+  cancelRequestedById     String?            @map("cancel_requested_by_id") @db.Uuid
+  cancelRequestedBy       User?              @relation("JobCancelRequestedBy", fields: [cancelRequestedById], references: [id])
+  cancelRefundMode        PaymentMode?       @map("cancel_refund_mode")
+  statusBeforeCancel      JobStatus?         @map("status_before_cancel")
   /// Loaner phone lent to the customer. While set and not returned, the job cannot be delivered or cancelled.
   loanerModelId           String?            @map("loaner_model_id") @db.Uuid
   loanerModel             DeviceModel?       @relation("JobLoanerModel", fields: [loanerModelId], references: [id], onDelete: Restrict)
@@ -1129,6 +1141,11 @@ enum StockTransferStatus {
 
 /// Parts moving between branch stores. Stock leaves on send and arrives on receive.
 model StockTransfer {
+  /// Set when the Central Store dispatched this line on a supply challan.
+  supplyId         String?             @map("supply_id") @db.Uuid
+  supply           StockSupply?        @relation(fields: [supplyId], references: [id])
+  /// Rate charged on the challan (value tracking only).
+  unitRate         Decimal?            @map("unit_rate") @db.Decimal(10, 2)
   id               String              @id @default(uuid(7)) @db.Uuid
   partId           String              @map("part_id") @db.Uuid
   fromBranchId     String              @map("from_branch_id") @db.Uuid
@@ -1253,11 +1270,24 @@ model L4Request {
 
 enum PurchaseOrderStatus {
   DRAFT // created from consumption; the manager is reviewing
-  FORWARDED // sent to Head Office for replenishment
+  FORWARDED // sent to the Central Store
+  ACCEPTED // the Central Store is supplying it
+  REJECTED // the Central Store refused it (reason recorded)
+  CLOSED // closed short: the rest will not be supplied
+}
+
+enum PurchaseOrderSource {
+  CONSUMPTION // built from parts issued to jobs
+  MANUAL // parts and quantities picked by the branch
 }
 
 /// Purchase order built from parts actually issued to jobs. Each consumed line is attached to at most one PO.
 model PurchaseOrder {
+  source      PurchaseOrderSource @default(CONSUMPTION)
+  /// Central Store's reason for rejecting or closing short.
+  centralNote String?             @map("central_note")
+  decidedAt   DateTime?           @map("decided_at")
+  supplies    StockSupply[]
   id          String              @id @default(uuid(7)) @db.Uuid
   poNumber    String              @unique @map("po_number")
   branchId    String              @map("branch_id") @db.Uuid
@@ -1277,6 +1307,26 @@ model PurchaseOrder {
 
   @@index([branchId, createdAt])
   @@map("purchase_orders")
+}
+
+/// One dispatch from the Central Store to a branch (supply challan); each line is a stock transfer.
+model StockSupply {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  challanNumber   String   @unique @map("challan_number")
+  purchaseOrderId String?  @map("purchase_order_id") @db.Uuid
+  toBranchId      String   @map("to_branch_id") @db.Uuid
+  note            String?
+  createdById     String   @map("created_by_id") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  purchaseOrder PurchaseOrder?  @relation(fields: [purchaseOrderId], references: [id])
+  toBranch      Branch          @relation("SupplyTo", fields: [toBranchId], references: [id])
+  createdBy     User            @relation("SupplyCreatedBy", fields: [createdById], references: [id])
+  lines         StockTransfer[]
+
+  @@index([toBranchId, createdAt])
+  @@index([purchaseOrderId])
+  @@map("stock_supplies")
 }
 
 /// Branch Manager remark on a job (e.g. why it was not diagnosed on the day).

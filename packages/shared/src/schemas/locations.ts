@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import { listQuerySchema, optionalText } from './common.js';
 
-export const BRANCH_TYPES = ['SERVICE_CENTER', 'MAIN_OFFICE'] as const;
+export const BRANCH_TYPES = ['SERVICE_CENTER', 'MAIN_OFFICE', 'CENTRAL_STORE'] as const;
 export type BranchType = (typeof BRANCH_TYPES)[number];
 export const BRANCH_TYPE_LABELS: Record<BranchType, string> = {
   SERVICE_CENTER: 'Service Center',
   MAIN_OFFICE: 'Main Office (L4)',
+  CENTRAL_STORE: 'Central Store',
 };
 
 const name = z.string().trim().min(2, 'Enter at least 2 characters').max(100);

@@ -5,6 +5,7 @@ export const ROLES = {
   ENGINEER: 'ENGINEER',
   STOREKEEPER: 'STOREKEEPER',
   ACCOUNTS: 'ACCOUNTS',
+  CENTRAL_STOREKEEPER: 'CENTRAL_STOREKEEPER',
 } as const;
 
 export type Role = (typeof ROLES)[keyof typeof ROLES];
@@ -18,6 +19,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   ENGINEER: 'Engineer',
   STOREKEEPER: 'Storekeeper',
   ACCOUNTS: 'Accounts',
+  CENTRAL_STOREKEEPER: 'Central Storekeeper',
 };
 
 /** Roles that operate across all branches. Every other role is bound to a single branch. */

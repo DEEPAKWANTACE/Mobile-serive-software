@@ -171,6 +171,8 @@ export const DEFAULT_JOB_LIST_COLUMNS: Record<Role, JobListColumn[]> = {
   ENGINEER: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem'],
   STOREKEEPER: ['status', 'date', 'customerName', 'device', 'problem', 'engineer'],
   ACCOUNTS: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'payment'],
+  // No job access; listed so every role has an entry.
+  CENTRAL_STOREKEEPER: ['status', 'date', 'device'],
 };
 export type JobListColumnsDto = Record<Role, JobListColumn[]>;
 const columnList = z.array(z.enum(JOB_LIST_COLUMNS)).max(JOB_LIST_COLUMNS.length).transform((cols) => [...new Set(cols)]);

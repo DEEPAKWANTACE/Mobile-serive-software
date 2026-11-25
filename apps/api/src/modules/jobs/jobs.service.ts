@@ -3,6 +3,7 @@ import {
   ADMIN_REASSIGNABLE_STATUSES,
   ASSIGNABLE_STATUSES,
   CANCELLABLE_STATUSES,
+  type PaymentMode,
   CLOSED_STATUSES,
   ENGINEER_OPEN_STATUSES,
   ENGINEER_VISIBLE_PHOTO_KINDS,
@@ -190,8 +191,8 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
   // Branch staff create jobs for their own branch; Super Admin picks the branch.
   const branchId = actor.branchId ?? data.branchId;
   if (!branchId) throw HttpError.badRequest('Invalid request', { branchId: ['Select the branch'] });
-  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, isActive: true, allowManualDevice: true } });
-  if (!branch || !branch.isActive) throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
+  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { id: true, code: true, type: true, isActive: true, allowManualDevice: true } });
+  if (!branch || !branch.isActive || branch.type === 'CENTRAL_STORE') throw HttpError.badRequest('Invalid request', { branchId: ['Select an active branch'] });
   // Branch setting: the main phone must come from the brand / model catalogue.
   const first = data.devices?.[0] ?? data;
   if (!branch.allowManualDevice && first.jobType === 'MOBILE' && (first.manualBrand || first.manualModel)) {
@@ -462,6 +463,8 @@ const listSelect = {
   deliveryNote: true,
   invoice: { select: { total: true } },
   repeatOf: { select: { jobNumber: true } },
+  rwrNote: true,
+  cancelReason: true,
   inwardBy: { select: { name: true } },
   transfers: { where: { status: 'PENDING' }, select: { id: true } },
   payments: { select: { kind: true, amount: true } },
@@ -616,6 +619,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     deliveryNote: j.deliveryNote,
     hasInvoice: !!j.invoice,
     repeatOf: j.repeatOf ? publicJobNumber(j.repeatOf.jobNumber) : null,
+    approvalReason: j.status === 'RWR_PENDING' ? j.rwrNote : j.status === 'CANCEL_PENDING' ? j.cancelReason : null,
   }));
   return toPage(items, total, query);
 }
@@ -673,6 +677,9 @@ const detailSelect = {
   testingAt: true,
   cancelledAt: true,
   cancelReason: true,
+  cancelRequestedAt: true,
+  cancelRequestedBy: { select: { name: true } },
+  cancelRefundMode: true,
   inwardBy: { select: { id: true, name: true } },
   statusHistory: {
     select: {
@@ -863,6 +870,9 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
     assignments,
     loanerModel,
     loanerReturnedAt,
+    cancelRequestedAt,
+    cancelRequestedBy,
+    cancelRefundMode,
     ...rest
   } = j;
   // Unlock code: counter staff of the job's branches, or the engineer working on it — never an offered-only engineer.
@@ -948,6 +958,9 @@ export async function get(id: string, actor: Actor): Promise<JobDto> {
       receiveNote: m.receiveNote,
     })),
     invoice: invoice && { ...invoice, total: invoice.total.toNumber() },
+    cancelRequest: j.status === 'CANCEL_PENDING' && cancelRequestedAt
+      ? { at: cancelRequestedAt.toISOString(), by: cancelRequestedBy?.name ?? null, refundMode: cancelRefundMode }
+      : null,
     loaner: loanerModel && { brand: loanerModel.brand.name, model: loanerModel.name, returnedAt: iso(loanerReturnedAt) },
     repeatOf: repeatOf && { id: repeatOf.id, jobNumber: publicJobNumber(repeatOf.jobNumber) },
     repeats: repeats.map((r) => ({ ...r, jobNumber: publicJobNumber(r.jobNumber) })),
@@ -1127,42 +1140,125 @@ async function loanerOutstanding(jobId: string) {
 
 const isCounterRole = (actor: Actor) => actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER || actor.role === ROLES.CCO;
 
-/** Cancel a job that has not been repaired; any advance must be refunded in the same step. */
+/**
+ * Cancel a job that has not been repaired; any advance must be refunded. A CCO's cancellation waits for the
+ * Branch Manager's approval; a Branch Manager's (or Super Admin's) own cancellation closes the job at once.
+ */
 export async function cancel(jobId: string, data: JobCancelData, actor: Actor) {
   const job = await loadForAccess(jobId, actor);
   if (!isCounterRole(actor) || (actor.branchId && actor.branchId !== job.branchId)) throw HttpError.forbidden('Only the branch that took in the phone can cancel it');
-  if (!CANCELLABLE_STATUSES.includes(job.status)) throw HttpError.conflict('This job can no longer be cancelled — deliver it or return it without repair');
+  if (!CANCELLABLE_STATUSES.includes(job.status)) {
+    throw HttpError.conflict(job.status === 'CANCEL_PENDING' ? 'This cancellation is already waiting for the Branch Manager' : 'This job can no longer be cancelled — deliver it or return it without repair');
+  }
   if (job.location !== 'AT_BRANCH' || job.currentBranchId !== job.branchId) throw HttpError.conflict('The phone is not at the branch');
-  const payments = await prisma.payment.findMany({ where: { jobId }, select: { kind: true, amount: true } });
-  const paid = roundMoney(payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
+  const paid = await netPaidFor(jobId);
   if (paid > 0 && !data.refundMode) throw HttpError.badRequest('Invalid request', { refundMode: [`Refund ₹${paid.toFixed(2)} advance — choose how`] });
   // Cancelling closes the job, so a loaner phone must be back first.
   const loanerOut = await loanerOutstanding(jobId);
   if (loanerOut && !data.loanerReturned) {
     throw HttpError.badRequest('Invalid request', { loanerReturned: [`Receive the loaner phone (${loanerOut}) back before cancelling this job`] });
   }
+  // The loaner is physically back as soon as the counter confirms it, even if the manager later rejects.
+  const loanerData = loanerOut ? { loanerReturnedAt: new Date(), loanerReturnedById: actor.sub } : {};
+  const loanerMeta: Record<string, string> = loanerOut ? { loanerReturned: loanerOut } : {};
 
+  if (actor.role === ROLES.CCO) {
+    await prisma.$transaction(async (tx) => {
+      const { count } = await tx.job.updateMany({
+        where: { id: jobId, status: job.status },
+        data: {
+          status: 'CANCEL_PENDING', statusBeforeCancel: job.status, cancelReason: data.reason,
+          cancelRequestedAt: new Date(), cancelRequestedById: actor.sub, cancelRefundMode: data.refundMode ?? null,
+          ...loanerData,
+        },
+      });
+      if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+      await tx.jobTransfer.updateMany({ where: { jobId, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
+      await recordStatus(tx, { jobId, from: job.status, to: 'CANCEL_PENDING', actorId: actor.sub, remark: `Cancellation requested: ${data.reason}` });
+      await recordAudit(
+        { actorId: actor.sub, action: 'job.cancel_requested', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { reason: data.reason, ...loanerMeta }, ip: actor.ip },
+        tx,
+      );
+    });
+    return;
+  }
+
+  await prisma.$transaction((tx) =>
+    closeAsCancelled(tx, { job, actor, paid, reason: data.reason, refundMode: data.refundMode, extra: loanerData, meta: loanerMeta }),
+  );
+}
+
+async function netPaidFor(jobId: string) {
+  const payments = await prisma.payment.findMany({ where: { jobId }, select: { kind: true, amount: true } });
+  return roundMoney(payments.reduce((s, p) => s + (p.kind === 'REFUND' ? -1 : 1) * p.amount.toNumber(), 0));
+}
+
+/** Close the job as cancelled: refund the advance and withdraw anything still open on it. */
+async function closeAsCancelled(
+  tx: Prisma.TransactionClient,
+  { job, actor, paid, reason, refundMode, extra = {}, meta = {} }: {
+    job: { id: string; branchId: string; status: JobStatus };
+    actor: Actor;
+    paid: number;
+    reason: string;
+    refundMode: PaymentMode | null | undefined;
+    extra?: Prisma.JobUncheckedUpdateManyInput;
+    meta?: Record<string, string>;
+  },
+) {
+  const jobId = job.id;
+  const { count } = await tx.job.updateMany({
+    where: { id: jobId, status: job.status },
+    data: { status: 'CANCELLED', cancelledAt: new Date(), cancelReason: reason, statusBeforeHold: null, statusBeforeCancel: null, dueAt: null, ...extra },
+  });
+  if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
+  if (paid > 0) {
+    await tx.payment.create({ data: { jobId, branchId: job.branchId, kind: 'REFUND', mode: refundMode!, amount: paid, reference: 'Job cancelled', receivedById: actor.sub } });
+  }
+  await tx.jobTransfer.updateMany({ where: { jobId, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
+  await tx.jobPart.updateMany({
+    where: { jobId, status: { in: ['REQUESTED', 'NOT_AVAILABLE'] } },
+    data: { status: 'CANCELLED', handledById: actor.sub, handledAt: new Date(), note: 'Job cancelled' },
+  });
+  await endAssignment(tx, jobId, 'CLOSED');
+  await recordStatus(tx, { jobId, from: job.status, to: 'CANCELLED', actorId: actor.sub, remark: reason });
+  await recordAudit(
+    { actorId: actor.sub, action: 'job.cancelled', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { reason, refund: paid, ...meta }, ip: actor.ip },
+    tx,
+  );
+}
+
+/** The owning branch's manager (or Super Admin) decides a CCO's cancellation request. */
+async function loadCancelRequest(jobId: string, actor: Actor) {
+  const access = await loadForAccess(jobId, actor);
+  const isManager = actor.role === ROLES.SUPER_ADMIN || (actor.role === ROLES.BRANCH_MANAGER && actor.branchId === access.branchId);
+  if (!isManager) throw HttpError.forbidden('Only this job\'s Branch Manager can decide the cancellation');
+  if (access.status !== 'CANCEL_PENDING') throw HttpError.conflict('No cancellation is waiting for approval on this job');
+  const request = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { cancelReason: true, cancelRefundMode: true, statusBeforeCancel: true } });
+  return { access, request };
+}
+
+export async function approveCancel(jobId: string, actor: Actor) {
+  const { access, request } = await loadCancelRequest(jobId, actor);
+  const paid = await netPaidFor(jobId);
+  if (paid > 0 && !request.cancelRefundMode) throw HttpError.conflict('An advance was added after this request — reject it and cancel again');
+  await prisma.$transaction((tx) =>
+    closeAsCancelled(tx, { job: access, actor, paid, reason: request.cancelReason ?? 'Cancelled', refundMode: request.cancelRefundMode }),
+  );
+}
+
+export async function rejectCancel(jobId: string, remark: string | null | undefined, actor: Actor) {
+  const { access, request } = await loadCancelRequest(jobId, actor);
+  const resume = request.statusBeforeCancel ?? 'ASSIGNED';
   await prisma.$transaction(async (tx) => {
     const { count } = await tx.job.updateMany({
-      where: { id: jobId, status: job.status },
-      data: {
-        status: 'CANCELLED', cancelledAt: new Date(), cancelReason: data.reason, statusBeforeHold: null, dueAt: null,
-        ...(loanerOut && { loanerReturnedAt: new Date(), loanerReturnedById: actor.sub }),
-      },
+      where: { id: jobId, status: 'CANCEL_PENDING' },
+      data: { status: resume, statusBeforeCancel: null, cancelReason: null, cancelRequestedAt: null, cancelRequestedById: null, cancelRefundMode: null },
     });
     if (!count) throw HttpError.conflict('This job was just updated by someone else. Refresh and try again.');
-    if (paid > 0) {
-      await tx.payment.create({ data: { jobId, branchId: job.branchId, kind: 'REFUND', mode: data.refundMode!, amount: paid, reference: 'Job cancelled', receivedById: actor.sub } });
-    }
-    await tx.jobTransfer.updateMany({ where: { jobId, status: 'PENDING' }, data: { status: 'CANCELLED', respondedAt: new Date() } });
-    await tx.jobPart.updateMany({
-      where: { jobId, status: { in: ['REQUESTED', 'NOT_AVAILABLE'] } },
-      data: { status: 'CANCELLED', handledById: actor.sub, handledAt: new Date(), note: 'Job cancelled' },
-    });
-    await endAssignment(tx, jobId, 'CLOSED');
-    await recordStatus(tx, { jobId, from: job.status, to: 'CANCELLED', actorId: actor.sub, remark: data.reason });
+    await recordStatus(tx, { jobId, from: 'CANCEL_PENDING', to: resume, actorId: actor.sub, remark: `Cancellation rejected${remark ? `: ${remark}` : ''}` });
     await recordAudit(
-      { actorId: actor.sub, action: 'job.cancelled', entityType: 'job', entityId: jobId, branchId: job.branchId, metadata: { reason: data.reason, refund: paid, ...(loanerOut && { loanerReturned: loanerOut }) }, ip: actor.ip },
+      { actorId: actor.sub, action: 'job.cancel_rejected', entityType: 'job', entityId: jobId, branchId: access.branchId, metadata: { remark: remark ?? null }, ip: actor.ip },
       tx,
     );
   });
@@ -1206,6 +1302,7 @@ export async function addPayment(jobId: string, data: JobPaymentData, actor: Act
   const access = await loadForAccess(jobId, actor);
   if (!isCounterRole(actor) || (actor.branchId && actor.branchId !== access.branchId)) throw HttpError.forbidden('Only the counter of the owning branch takes payments');
   if (CLOSED_STATUSES.includes(access.status)) throw HttpError.conflict('This job is closed');
+  if (access.status === 'CANCEL_PENDING') throw HttpError.conflict('A cancellation is waiting for approval — no payment can be taken');
   const j = await prisma.job.findUniqueOrThrow({
     where: { id: jobId },
     select: { status: true, invoice: { select: { total: true } }, quotedAmount: true, estimatedAmount: true, payments: { select: { kind: true, amount: true } } },

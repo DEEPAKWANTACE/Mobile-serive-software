@@ -30,7 +30,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: 'Operations',
     items: [
       { label: 'New Job Sheet', to: '/jobs/new', roles: [ROLES.CCO] },
-      { label: 'RWR', to: '/rwr', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
+      { label: 'RWR & Cancellation', to: '/rwr', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
       { label: 'L4 Transfers', to: '/l4', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
       { label: 'Customer Calling', to: '/calling', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
@@ -50,13 +50,22 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: 'Central Store',
+    items: [
+      { label: 'Branch Purchase Orders', to: '/store/purchase-orders', roles: [ROLES.CENTRAL_STOREKEEPER] },
+      { label: 'Supply Records', to: '/central/supplies', roles: [ROLES.CENTRAL_STOREKEEPER, ROLES.SUPER_ADMIN] },
+    ],
+  },
+  {
     title: 'Store',
     items: [
       { label: 'Part Requests', to: '/store/requests', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
       { label: 'Part Categories', to: '/store/categories', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
-      { label: 'Stock', to: '/store/stock', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
-      { label: 'Stock Transfers', to: '/store/transfers', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
-      { label: 'Stock Ledger', to: '/store/ledger', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Purchase Orders', to: '/store/purchase-orders', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN] },
+      { label: 'Supplies Received', to: '/central/supplies', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER] },
+      { label: 'Stock', to: '/store/stock', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN, ROLES.CENTRAL_STOREKEEPER] },
+      { label: 'Stock Transfers', to: '/store/transfers', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN, ROLES.CENTRAL_STOREKEEPER] },
+      { label: 'Stock Ledger', to: '/store/ledger', roles: [ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN, ROLES.CENTRAL_STOREKEEPER] },
     ],
   },
   {

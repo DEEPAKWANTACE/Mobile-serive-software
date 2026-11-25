@@ -92,7 +92,7 @@ export async function diagnosisPending(query: ManagerRangeQuery, actor: Actor): 
       ...atBranch(branchId),
       jobType: 'MOBILE',
       diagnosedAt: null,
-      status: { notIn: ['CANCELLED', 'DELIVERED', 'CUSTOMER_REJECTED', 'RWR', 'RWR_PENDING'] },
+      status: { notIn: ['CANCELLED', 'DELIVERED', 'CUSTOMER_REJECTED', 'RWR', 'RWR_PENDING', 'CANCEL_PENDING'] },
       createdAt: businessRange(query.from, query.to),
     },
     orderBy: { createdAt: 'asc' },

@@ -46,10 +46,6 @@ managerRoutes.get('/purchase-orders', validate({ query: poListQuerySchema }), as
 managerRoutes.post('/purchase-orders', validate({ body: poCreateSchema }), async (req, res) => {
   res.status(201).json(await ops.createPo(req.body, actorOf(req)));
 });
-managerRoutes.post('/purchase-orders/:id/forward', validate({ params: idParamSchema }), async (req, res) => {
-  await ops.forwardPo(req.params.id as string, actorOf(req));
-  res.status(204).end();
-});
 managerRoutes.post('/remarks', validate({ body: managerRemarkSchema }), async (req, res) => {
   await ops.addDiagnosisRemark(req.body.jobId, req.body.remark, actorOf(req));
   res.status(204).end();

@@ -149,6 +149,7 @@ export function JobDetailPage() {
 
   return (
     <div className="space-y-4">
+      {job.cancelRequest && <CancelApproval job={job} />}
       {job.status === 'CANCELLED' && (
         <div className="rounded-lg bg-slate-100 px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
           <span className="font-medium">Cancelled</span>
@@ -361,6 +362,47 @@ export function JobDetailPage() {
 type DetailTab = 'overview' | 'work' | 'payments' | 'photos' | 'history' | 'l4';
 /** Statuses where someone must act in the Repair work tab. */
 const ACTION_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'AWAITING_APPROVAL', 'CUSTOMER_REJECTED', 'IN_REPAIR', 'REPAIRED', 'TESTING', 'READY_FOR_DELIVERY', 'RWR_PENDING', 'RWR'];
+
+/** A CCO's cancellation waiting for the Branch Manager, who approves or rejects it here. */
+function CancelApproval({ job }: { job: JobDto }) {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const canDecide = user?.role === ROLES.SUPER_ADMIN || (user?.role === ROLES.BRANCH_MANAGER && user.branch?.id === job.branch.id);
+  const decide = useMutation({
+    mutationFn: (v: { action: 'approve' | 'reject'; note?: string }) => api.post(`/jobs/${job.id}/cancel/${v.action}`, { note: v.note || null }),
+    onSuccess: (_d, v) => {
+      toast.success(v.action === 'approve' ? 'Cancellation approved — job cancelled' : 'Cancellation rejected — job is open again');
+      void queryClient.invalidateQueries();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const request = job.cancelRequest!;
+  return (
+    <div className="rounded-lg bg-rose-50 p-4 ring-1 ring-rose-300">
+      <div className="font-semibold text-rose-950">Cancellation awaiting Branch Manager approval — job is locked</div>
+      <p className="mt-1 text-sm text-rose-900">“{job.cancelReason}”</p>
+      <p className="mt-1 text-xs text-rose-800">
+        Requested{request.by ? ` by ${request.by}` : ''} on {formatDateTime(request.at)}
+        {job.paidAmount > 0 && ` · ${formatCurrency(job.paidAmount)} advance will be refunded${request.refundMode ? ` by ${PAYMENT_MODE_LABELS[request.refundMode]}` : ''} on approval`}
+      </p>
+      {canDecide && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button loading={decide.isPending} onClick={() => decide.mutate({ action: 'approve' })}>Approve cancellation</Button>
+          <Button
+            variant="secondary"
+            loading={decide.isPending}
+            onClick={() => {
+              const note = window.prompt('Why is the cancellation rejected?');
+              if (note !== null) decide.mutate({ action: 'reject', note: note.trim() });
+            }}
+          >
+            Reject
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** CCO starts the job again as a new linked job sheet that goes straight to the engineer's diagnosis. */
 function RepeatRepairForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
@@ -1056,6 +1098,10 @@ function describe(entry: JobHistoryEntryDto) {
       return `Photo removed (${PHOTO_KIND_LABELS[meta.kind as PhotoKind] ?? meta.kind}) — “${meta.reason ?? ''}”`;
     case 'job.unassigned':
       return `Taken back from engineer${meta.note ? ` — “${meta.note}”` : ''}`;
+    case 'job.cancel_requested':
+      return `Cancellation requested — “${meta.reason ?? ''}”`;
+    case 'job.cancel_rejected':
+      return `Cancellation rejected${meta.remark ? ` — “${meta.remark}”` : ''}`;
     case 'job.cancelled':
       return `Job cancelled — “${meta.reason ?? ''}”${Number(meta.refund) > 0 ? `, refunded ${formatCurrency(Number(meta.refund))}` : ''}`;
     case 'job.repair_notes':

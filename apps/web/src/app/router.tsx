@@ -38,6 +38,8 @@ import { StatesPage } from '@/features/masters/StatesPage';
 import { StaffPage } from '@/features/staff/StaffPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { MyRemindersPage } from '@/features/reminders/MyRemindersPage';
+import { PurchaseOrdersPage } from '@/features/purchase/PurchaseOrdersPage';
+import { SupplyReportPage } from '@/features/purchase/SupplyReportPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -133,14 +135,21 @@ export const router = createBrowserRouter([
             children: [{ path: 'settings/job-defaults', element: <ShopSettingsPage branchDefaultsOnly /> }],
           },
           {
+            element: <RequireAuth roles={[ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN, ROLES.CENTRAL_STOREKEEPER]} />,
+            children: [
+              { path: 'store/purchase-orders', element: <PurchaseOrdersPage /> },
+              { path: 'central/supplies', element: <SupplyReportPage /> },
+              { path: 'store/stock', element: <StockPage /> },
+              { path: 'store/ledger', element: <StockLedgerPage /> },
+              { path: 'store/transfers', element: <StockTransfersPage /> },
+            ],
+          },
+          {
             path: 'store',
             element: <RequireAuth roles={[ROLES.STOREKEEPER, ROLES.BRANCH_MANAGER, ROLES.SUPER_ADMIN]} />,
             children: [
               { path: 'requests', element: <PartRequestsPage /> },
               { path: 'categories', element: <PartCategoriesPage /> },
-              { path: 'stock', element: <StockPage /> },
-              { path: 'ledger', element: <StockLedgerPage /> },
-              { path: 'transfers', element: <StockTransfersPage /> },
             ],
           },
         ],

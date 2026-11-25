@@ -553,6 +553,9 @@ function EditTab() {
 function DeleteTab({ canDelete }: { canDelete: boolean }) {
   const [params] = useSearchParams();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  // A CCO's cancellation is only a request until the Branch Manager approves it.
+  const needsApproval = user?.role === ROLES.CCO;
   const [found, setFound] = useState<JobListItemDto | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [reason, setReason] = useState('');
@@ -579,7 +582,7 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
   });
   const cancel = useMutation({
     mutationFn: () => api.post(`/jobs/${found!.id}/cancel`, { reason, refundMode: found!.paid > 0 ? refundMode : null, loanerReturned }),
-    onSuccess: () => done(`Job ${found!.jobNumber} cancelled`),
+    onSuccess: () => done(needsApproval ? `Cancellation of ${found!.jobNumber} sent to the Branch Manager for approval` : `Job ${found!.jobNumber} cancelled`),
     onError: (e) => setError(e instanceof ApiError ? Object.values((e.details as Record<string, string[]>) ?? {})[0]?.[0] ?? e.message : e.message),
   });
 
@@ -626,10 +629,11 @@ function DeleteTab({ canDelete }: { canDelete: boolean }) {
                       <span>Loaner phone <b>{loanerOut.brand} {loanerOut.model}</b> has been received back. The job cannot be cancelled without it.</span>
                     </label>
                   )}
-                  <Button disabled={reason.trim().length < 3 || !detail.data || (!!loanerOut && !loanerReturned)} loading={cancel.isPending} onClick={() => cancel.mutate()}>Cancel job</Button>
+                  <Button disabled={reason.trim().length < 3 || !detail.data || (!!loanerOut && !loanerReturned)} loading={cancel.isPending} onClick={() => cancel.mutate()}>{needsApproval ? 'Send for approval' : 'Cancel job'}</Button>
+                  {needsApproval && <p className="text-xs text-slate-500">The job is cancelled only after the Branch Manager approves. Any advance is refunded then.</p>}
                 </div>
               ) : (
-                <p className="mt-1 text-sm text-slate-600">This job can't be cancelled at its current stage (repaired, returned or closed).</p>
+                <p className="mt-1 text-sm text-slate-600">{found.status === 'CANCEL_PENDING' ? "This job's cancellation is already waiting for the Branch Manager." : "This job can't be cancelled at its current stage (repaired, returned or closed)."}</p>
               )}
             </div>
           </div>

@@ -70,6 +70,15 @@ function resolveBranch(role: Role, branchId: string | null | undefined) {
   return branchId;
 }
 
+/** The Central Storekeeper belongs to the Central Store, and nobody else does. */
+async function assertRoleFitsBranch(role: Role, branchId: string | null) {
+  if (!branchId) return;
+  const branch = await prisma.branch.findUnique({ where: { id: branchId }, select: { type: true } });
+  const central = branch?.type === 'CENTRAL_STORE';
+  if (role === ROLES.CENTRAL_STOREKEEPER && !central) throw HttpError.badRequest('Invalid request', { branchId: ['Select the Central Store for a Central Storekeeper'] });
+  if (role !== ROLES.CENTRAL_STOREKEEPER && central) throw HttpError.badRequest('Invalid request', { branchId: ['Only a Central Storekeeper can be assigned to the Central Store'] });
+}
+
 async function revokeSessions(tx: Prisma.TransactionClient, userId: string) {
   await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
 }
@@ -96,6 +105,7 @@ export async function create(data: UserCreateData, actor: Actor) {
   // Branch Managers always create into their own branch.
   const branchId = resolveBranch(fields.role, isSuperAdmin(actor) ? fields.branchId : actor.branchId);
   assertCanManage(actor, { role: fields.role, branchId });
+  await assertRoleFitsBranch(fields.role, branchId);
 
   const passwordHash = await hashPassword(password);
 
@@ -126,6 +136,7 @@ export async function update(id: string, data: UserUpdateData, actor: Actor) {
   const requestedBranch = data.branchId === undefined ? current.branchId : data.branchId;
   const branchId = resolveBranch(role, isSuperAdmin(actor) ? requestedBranch : actor.branchId);
   assertCanManage(actor, { role, branchId });
+  if (role !== current.role || branchId !== current.branchId) await assertRoleFitsBranch(role, branchId);
 
   const accessChanged =
     role !== current.role || branchId !== current.branchId || (data.isActive !== undefined && !data.isActive);

@@ -55,12 +55,12 @@ export function BulkJobActions({ role, branchId, selected, onClear }: Props) {
           </Button>
         ))}
       </div>
-      {action && <BulkDialog action={action} branchId={branchId} selected={selected} onClose={() => setAction(null)} onDone={onClear} />}
+      {action && <BulkDialog role={role} action={action} branchId={branchId} selected={selected} onClose={() => setAction(null)} onDone={onClear} />}
     </div>
   );
 }
 
-function BulkDialog({ action, branchId, selected, onClose, onDone }: { action: BulkJobAction; branchId: string | undefined; selected: JobListItemDto[]; onClose: () => void; onDone: () => void }) {
+function BulkDialog({ role, action, branchId, selected, onClose, onDone }: { role: Role; action: BulkJobAction; branchId: string | undefined; selected: JobListItemDto[]; onClose: () => void; onDone: () => void }) {
   const queryClient = useQueryClient();
   const [engineerId, setEngineerId] = useState('');
   const [status, setStatus] = useState<JobStatus>(STATUS_TARGETS[0]!);
@@ -91,7 +91,7 @@ function BulkDialog({ action, branchId, selected, onClose, onDone }: { action: B
       setResult(r);
       void queryClient.invalidateQueries();
       if (!r.failed) {
-        toast.success(`${r.succeeded} job${r.succeeded === 1 ? '' : 's'} updated`);
+        toast.success(action === 'cancel' && role === 'CCO' ? `${r.succeeded} cancellation${r.succeeded === 1 ? '' : 's'} sent for approval` : `${r.succeeded} job${r.succeeded === 1 ? '' : 's'} updated`);
         onDone();
         onClose();
       }
@@ -161,6 +161,7 @@ function BulkDialog({ action, branchId, selected, onClose, onDone }: { action: B
           )}
           {action === 'cancel' && (
             <>
+              {role === 'CCO' && <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-900">These cancellations wait for the Branch Manager&apos;s approval.</p>}
               <Field label="Reason" required>
                 <input value={note} onChange={(e) => setNote(e.target.value)} className={inputClass} placeholder="e.g. Customer took the phone back" />
               </Field>

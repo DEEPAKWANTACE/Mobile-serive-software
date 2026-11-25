@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import {
   CALL_OUTCOME_LABELS,
   CALL_PURPOSE_LABELS,
+  PO_STAGE_LABELS,
   JOB_STATUS_LABELS,
   type CallOutcome,
   type CallPurpose,
@@ -30,6 +31,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { BranchScopePicker } from '@/features/accounts/BranchScopePicker';
 import { JobStatusBadge } from '@/features/jobs/JobStatusBadge';
+import { PoStageBadge } from '@/features/purchase/PoStageBadge';
 import { api } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
 import { formatCurrency, formatDate, formatDateTime, todayIso } from '@/lib/format';
@@ -413,9 +415,9 @@ function PoTab({ branchId }: { branchId: string }) {
     onError: (e) => toast.error(e.message),
   });
   const forward = useMutation({
-    mutationFn: (id: string) => api.post(`/manager/purchase-orders/${id}/forward`, {}),
+    mutationFn: (id: string) => api.post(`/purchase-orders/${id}/send`, {}),
     onSuccess: () => {
-      toast.success('Forwarded to Head Office');
+      toast.success('Sent to the Central Store');
       void queryClient.invalidateQueries({ queryKey: ['manager', 'pos'] });
     },
     onError: (e) => toast.error(e.message),
@@ -451,10 +453,10 @@ function PoTab({ branchId }: { branchId: string }) {
   );
   const poActions = (po: PurchaseOrderDto): ReactNode => (
     <div className="flex flex-wrap items-center gap-2">
-      <ExportButtons title={po.poNumber} subtitle={`${formatDate(po.from)} to ${formatDate(po.to)} · ${po.branchCode} · ${po.status === 'FORWARDED' ? 'Forwarded to Head Office' : 'Draft'}`} headers={headers} rows={po.lines.map(lineRow)} />
+      <ExportButtons title={po.poNumber} subtitle={`${formatDate(po.from)} to ${formatDate(po.to)} · ${po.branchCode} · ${PO_STAGE_LABELS[po.stage]}`} headers={headers} rows={po.lines.map(lineRow)} />
       {po.status === 'DRAFT' && (
         <Button size="sm" loading={forward.isPending} onClick={() => forward.mutate(po.id)}>
-          Forward to Head Office
+          Send to Central Store
         </Button>
       )}
     </div>
@@ -485,7 +487,7 @@ function PoTab({ branchId }: { branchId: string }) {
         </div>
         <DataTable columns={columns} rows={rows} rowKey={(r) => r.partId} isLoading={q.isLoading} emptyMessage="Nothing new to order in this period" />
       </Card>
-      <Card title="Saved purchase orders">
+      <Card title="Saved purchase orders" actions={<Link to="/store/purchase-orders?tab=all" className="text-sm text-brand-600 hover:underline">Track supply →</Link>}>
         {(saved.data ?? []).length === 0 ? (
           <p className="text-sm text-slate-500">No purchase orders yet.</p>
         ) : (
@@ -495,7 +497,7 @@ function PoTab({ branchId }: { branchId: string }) {
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="font-mono font-semibold">{po.poNumber}</span>
-                    <span className={`ml-2 rounded px-1.5 py-0.5 text-xs font-medium ${po.status === 'FORWARDED' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{po.status === 'FORWARDED' ? 'Forwarded' : 'Draft'}</span>
+                    <span className="ml-2"><PoStageBadge stage={po.stage} /></span>
                     <div className="text-xs text-slate-500">
                       {formatDate(po.from)} – {formatDate(po.to)} · {po.totalQuantity} pcs · {formatCurrency(po.totalAmount)} · by {po.createdBy}
                       {po.forwardedAt ? ` · forwarded ${formatDateTime(po.forwardedAt)}` : ''}
