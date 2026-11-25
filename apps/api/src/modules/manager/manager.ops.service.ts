@@ -146,7 +146,7 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
   const branchId = scope(actor, requested);
   const own = branchId ? { branchId } : {};
   const today = businessToday();
-  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved, notesWaiting, notesMissing, closingOpen] = await Promise.all([
+  const [old, diag, l4, incoming, stock, unordered, noCall, due, awaiting, unapproved, notesWaiting, notesMissing, closingOpen, rwrWaiting] = await Promise.all([
     pendingJobs({ days: 15, branchId: requested }, actor).then((r) => r.length),
     diagnosisPending({ from: today, to: today, branchId: requested }, actor).then((r) => r.length),
     prisma.l4Request.count({ where: { status: 'PENDING', ...(branchId && { job: { branchId } }) } }),
@@ -164,8 +164,11 @@ export async function alerts(actor: Actor, requested?: string): Promise<ManagerA
       distinct: ['jobId'],
     }).then((r) => r.length),
     closingPending(branchId),
+    // Only the branch that took in the phone can approve its RWR.
+    prisma.job.count({ where: { ...own, status: 'RWR_PENDING' } }),
   ]);
   const items: ManagerAlertDto[] = [
+    { key: 'rwr', label: 'RWR waiting for your approval', count: rwrWaiting, priority: 'HIGH', link: '/rwr' },
     { key: 'pending15', label: 'Jobs pending more than 15 days', count: old, priority: 'HIGH', link: '/branch-insights?tab=pending' },
     { key: 'l4', label: 'L4 transfer approvals pending', count: l4, priority: 'HIGH', link: '/l4' },
     { key: 'diagnosis', label: 'Same-day diagnosis pending', count: diag, priority: 'HIGH', link: '/branch-insights?tab=diagnosis' },
