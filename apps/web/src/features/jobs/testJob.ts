@@ -6,7 +6,7 @@ export function makeTestJob(): JobDto {
   return {
     id: 'test', jobNumber: 'TEST-0000', status: 'RECEIVED' as JobDto['status'], createdAt: now, dueAt: null,
     branch: { id: 'test', code: 'TST', name: 'Test Branch', address: null, phone: null },
-    customer: { id: 'test', name: 'Test Customer', phone: '9876543210', city: 'Khamgaon', altPhone: '9123456780', email: null, address: 'Railway Station Road, Khamgaon' },
+    customer: { id: 'test', name: 'Test Customer', phone: '9876543210', city: 'Khamgaon', state: null, district: null, village: null, altPhone: '9123456780', email: null, address: 'Railway Station Road, Khamgaon' },
     customerType: 'CUSTOMER',
     devices: [{
       id: 'test-device', jobType: 'MOBILE', accessoryName: null,

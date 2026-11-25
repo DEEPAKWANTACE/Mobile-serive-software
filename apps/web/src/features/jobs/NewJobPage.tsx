@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -42,7 +42,7 @@ import { ImeiWarning } from './ImeiWarning';
 import { PhotoPicker } from './PhotoPicker';
 import { useAuth } from '@/features/auth/auth-context';
 import { DeadlinePicker } from './DeadlinePicker';
-import { CityInput } from '@/components/ui/CityInput';
+import { AreaPicker, useBranchArea, type Area } from '@/features/geo/AreaPicker';
 
 type IntakeKind = Exclude<PhotoKind, 'RWR'>;
 const emptyPhotos = (): Record<IntakeKind, File[]> => ({ CUSTOMER: [], ID_PROOF: [], DEVICE: [], PHYSICAL_CONDITION: [] });
@@ -97,14 +97,14 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [manualProblem, setManualProblem] = useState(false);
   const [extraDevices, setExtraDevices] = useState<ExtraDeviceDraft[]>([]);
 
-  const { register, control, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<
+  const { register, control, handleSubmit, watch, setValue, getValues, setError, formState: { errors } } = useForm<
     JobCreateInput,
     unknown,
     JobCreateData
   >({
     resolver: zodResolver(jobCreateSchema),
     defaultValues: {
-      customer: { phone: '', name: '', city: '', altPhone: '', email: '', address: '' },
+      customer: { phone: '', name: '', state: '', district: '', city: '', village: '', altPhone: '', email: '', address: '' },
       customerType: 'CUSTOMER',
       jobType: 'MOBILE',
       accessoryName: '',
@@ -139,6 +139,21 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   });
 
   const brandId = watch('brandId');
+  const area: Area = {
+    state: watch('customer.state') ?? '',
+    district: watch('customer.district') ?? '',
+    city: watch('customer.city') ?? '',
+    village: watch('customer.village') ?? '',
+  };
+  const setArea = useCallback((next: Area) => {
+    for (const key of ['state', 'district', 'city', 'village'] as const) setValue(`customer.${key}`, next[key]);
+  }, [setValue]);
+  // Start from the branch's own state and district, until something else is chosen.
+  const branchArea = useBranchArea();
+  useEffect(() => {
+    if (!branchArea || getValues('customer.state') || getValues('customer.city') || getValues('customer.village')) return;
+    setArea({ ...branchArea, city: '', village: '' });
+  }, [branchArea, getValues, setArea]);
   const modelId = watch('deviceModelId');
   const jobType = watch('jobType');
   const loanerPhone = watch('loanerPhone');
@@ -203,7 +218,10 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
       if (customer) {
         setValue('customer.name', customer.name, { shouldValidate: true });
         setValue('customer.altPhone', customer.altPhone ?? '');
-        setValue('customer.city', customer.city ?? '');
+        // A saved area replaces the branch default; older records may have only a city.
+        if (customer.state || customer.city || customer.village) {
+          setArea({ state: customer.state ?? getValues('customer.state') ?? '', district: customer.district ?? (customer.state || customer.city ? '' : (getValues('customer.district') ?? '')), city: customer.city ?? '', village: customer.village ?? '' });
+        }
         setValue('customer.email', customer.email ?? '');
         setValue('customer.address', customer.address ?? '');
       }
@@ -211,7 +229,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
     return () => {
       cancelled = true;
     };
-  }, [phone, setValue]);
+  }, [phone, setValue, getValues, setArea]);
 
   // Prices for the chosen model, grouped by fault. Clear chosen prices if the model changes.
   const optionsByFault = useMemo(() => {
@@ -354,9 +372,7 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
           <Field label={customerType === 'RETAILER' ? 'Contact person' : 'Customer name'} required {...err(errors.customer?.name?.message)}>
             <input {...register('customer.name')} className={inputClass} />
           </Field>
-          <Field label="City" {...err(errors.customer?.city?.message)}>
-            <CityInput {...register('customer.city')} />
-          </Field>
+          <AreaPicker value={area} onChange={setArea} errors={{ city: errors.customer?.city?.message, village: errors.customer?.village?.message }} />
           {customerType === 'RETAILER' && (
             <Field label="Retailer / shop name" required {...err(errors.retailer?.message)} hint="Dealer or shop that brought the devices">
               <input {...register('retailer')} className={inputClass} />

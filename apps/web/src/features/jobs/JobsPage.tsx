@@ -139,7 +139,7 @@ type LinkFlag = keyof typeof LINK_FLAGS;
 /** Short labels for the phone cards. */
 const MOBILE_LABELS: Partial<Record<JobListColumn, string>> = {
   date: 'Date', customerName: 'Customer', customerMobile: 'Mobile', device: 'Model', problem: 'Problem', engineer: 'Engineer',
-  pendingWith: 'Pending', estimate: 'Estimate', payment: 'Payment', imei: 'IMEI', city: 'City', branch: 'Branch', inwardBy: 'Inward', ageDays: 'Age',
+  pendingWith: 'Pending', estimate: 'Estimate', payment: 'Payment', imei: 'IMEI', city: 'City', village: 'Gaon', branch: 'Branch', inwardBy: 'Inward', ageDays: 'Age',
 };
 /** Columns that get a full line on the phone card. */
 const MOBILE_WIDE: readonly JobListColumn[] = ['device', 'problem', 'pendingWith'];
@@ -324,9 +324,9 @@ export function ShowJobs() {
     const all = await api.get<{ items: JobListItemDto[] }>(`/jobs?${toQueryString({ ...params, page: 1, pageSize: 200 })}`);
     downloadCsv(
       `jobs_${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Job No', 'Date', 'Customer', 'Contact', 'City', 'Product', 'Serial/IMEI', 'Problem', 'Remark', 'Inward', 'Engineer', 'Status', 'Repaired Date', 'Out Date', 'Out Narration', 'Total', 'Paid', 'Balance'],
+      ['Job No', 'Date', 'Customer', 'Contact', 'City', 'Gaon', 'Product', 'Serial/IMEI', 'Problem', 'Remark', 'Inward', 'Engineer', 'Status', 'Repaired Date', 'Out Date', 'Out Narration', 'Total', 'Paid', 'Balance'],
       all.items.map((j) => [
-        j.jobNumber, formatDate(j.createdAt), j.customer.name, j.customer.phone, j.city, j.device, j.imei ?? j.serialNumber, j.faults.join('; '), j.remark,
+        j.jobNumber, formatDate(j.createdAt), j.customer.name, j.customer.phone, j.city, j.village, j.device, j.imei ?? j.serialNumber, j.faults.join('; '), j.remark,
         j.inwardBy, j.assignedEngineer?.name, JOB_STATUS_LABELS[j.status], j.readyAt ?? j.repairedAt ? formatDate((j.readyAt ?? j.repairedAt)!) : '',
         j.deliveredAt ? formatDate(j.deliveredAt) : '', j.deliveryNote, j.totalAmount, j.paid, j.balance,
       ]),

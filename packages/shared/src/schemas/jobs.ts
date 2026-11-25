@@ -207,7 +207,12 @@ export const mobileNumber = z
 export const jobCustomerSchema = z.object({
   phone: mobileNumber,
   name: z.string().trim().min(2, 'Enter customer name').max(100),
-  city: optionalText(60),
+  state: optionalText(100),
+  district: optionalText(100),
+  /** City / taluka. */
+  city: optionalText(100),
+  /** Gaon. */
+  village: optionalText(100),
   altPhone: optionalText(10).refine((v) => !v || /^[6-9]\d{9}$/.test(v), 'Enter a valid 10-digit mobile number'),
   email: optionalText(150).refine((v) => !v || z.email().safeParse(v).success, 'Invalid email'),
   address: optionalText(300),
@@ -775,6 +780,9 @@ export type CustomerDto = {
   name: string;
   phone: string;
   city: string | null;
+  state: string | null;
+  district: string | null;
+  village: string | null;
   altPhone: string | null;
   email: string | null;
   address: string | null;
@@ -801,6 +809,8 @@ export type JobListItemDto = {
   hasPendingTransfer: boolean;
   currentBranch: { id: string; code: string };
   location: JobLocation;
+  /** Customer's gaon. */
+  village: string | null;
   /** Net amount received so far (advances − refunds). */
   paid: number;
   /** Bill total: invoice if delivered, else engineer estimate, else intake estimate (0 if unknown). */

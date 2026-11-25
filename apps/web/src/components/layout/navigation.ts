@@ -36,6 +36,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: 'Day Book', to: '/accounts/day-book', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO, ROLES.ACCOUNTS] },
       { label: 'Branch Insights', to: '/branch-insights', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER] },
       { label: 'Reports', to: '/reports', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.ACCOUNTS] },
+      { label: 'City & Gaon Stats', to: '/area-stats', roles: [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO] },
     ],
   },
   {

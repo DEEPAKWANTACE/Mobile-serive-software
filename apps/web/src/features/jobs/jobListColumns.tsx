@@ -113,6 +113,7 @@ export function jobCellText(k: JobListColumn, j: JobListItemDto): string {
     case 'payment': return j.balance > 0 ? `Due ${formatCurrency(j.balance)}` : j.balance < 0 ? `Credit ${formatCurrency(-j.balance)}` : j.paid > 0 ? `Paid ${formatCurrency(j.paid)}` : 'Not billed';
     case 'imei': return j.imei ?? j.serialNumber ?? '—';
     case 'city': return j.city ?? '—';
+    case 'village': return j.village ?? '—';
     case 'branch': return j.branch.code;
     case 'inwardBy': return j.inwardBy ?? '—';
     case 'ageDays': return `${ageDays(j)}d open`;
@@ -123,7 +124,7 @@ export function jobCellText(k: JobListColumn, j: JobListItemDto): string {
 /** Relative width weight per column, so the fixed table layout gives text-heavy columns more room. */
 const WEIGHT: Record<Exclude<JobListColumn, 'approval'>, number> = {
   status: 14, date: 9, customerName: 13, customerMobile: 11, device: 14, problem: 17, engineer: 11,
-  pendingWith: 14, estimate: 9, payment: 11, imei: 13, city: 9, branch: 9, inwardBy: 10, ageDays: 7,
+  pendingWith: 14, estimate: 9, payment: 11, imei: 13, city: 10, village: 11, branch: 9, inwardBy: 10, ageDays: 7,
 };
 
 export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers, repeatColumns = false): Column<JobListItemDto>[] {
@@ -148,6 +149,7 @@ export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers,
     payment: (j) => <Payment j={j} />,
     imei: (j) => truncate(j.imei ?? j.serialNumber, 'font-mono text-xs'),
     city: (j) => truncate(j.city),
+    village: (j) => truncate(j.village),
     branch: (j) => truncate(j.branch.code),
     inwardBy: (j) => truncate(j.inwardBy),
     ageDays: (j) => <span className="tabular-nums">{ageDays(j)}d</span>,

@@ -120,7 +120,7 @@ function Sheet({ job, copy }: { job: JobDto; copy: 'customer' | 'office' }) {
       <Row label="Job No."><span className="font-mono whitespace-nowrap">{serial(job.jobNumber)}</span></Row>
       <Row label="Customer">{job.customer.name}</Row>
       <Row label="Mobile"><span className="whitespace-nowrap">{job.customer.phone}</span></Row>
-      <Row label="Address">{job.customer.address ?? job.customer.city}</Row>
+      <Row label="Address">{[job.customer.address, job.customer.village, job.customer.city].filter(Boolean).join(', ') || null}</Row>
       <Row label="Alternate"><span className="whitespace-nowrap">{job.customer.altPhone}</span></Row>
       <Row label="Received as">{job.customerType === 'RETAILER' ? `Retailer${job.retailer ? ` · ${job.retailer}` : ''}` : 'Customer'}</Row>
       <Row label="Inwarder">{job.inwardBy?.name ?? job.createdBy.name}</Row>

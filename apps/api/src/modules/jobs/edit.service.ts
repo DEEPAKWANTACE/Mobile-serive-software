@@ -42,7 +42,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
       devicePasswordEnc: true,
       diagnosedAt: true,
       dueAt: true,
-      customer: { select: { id: true, phone: true, name: true, city: true, altPhone: true, email: true, address: true } },
+      customer: { select: { id: true, phone: true, name: true, state: true, district: true, city: true, village: true, altPhone: true, email: true, address: true } },
       faults: { select: { faultId: true, priceLabel: true, price: true, fault: { select: { name: true } } } },
       devices: {
         select: { id: true, jobType: true, accessoryName: true, manualBrand: true, manualModel: true, deviceModelId: true },
@@ -199,7 +199,7 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
   const c = data.customer;
   const customerUpdate: Prisma.CustomerUpdateInput = {};
   if (c) {
-    for (const field of ['name', 'city', 'altPhone', 'email', 'address'] as const) {
+    for (const field of ['name', 'state', 'district', 'city', 'village', 'altPhone', 'email', 'address'] as const) {
       if (c[field] !== undefined) {
         track(`customer.${field}`, cur.customer[field], c[field]);
         if (!same(cur.customer[field], c[field])) customerUpdate[field] = c[field] as string;
@@ -219,6 +219,9 @@ export async function edit(id: string, data: JobEditData, actor: Actor) {
           phone: c.phone,
           name: c.name ?? cur.customer.name,
           city: c.city ?? null,
+          state: c.state ?? null,
+          district: c.district ?? null,
+          village: c.village ?? null,
           altPhone: c.altPhone ?? null,
           email: c.email ?? null,
           address: c.address ?? null,

@@ -259,10 +259,14 @@ export async function create(data: JobCreateData, photos: IncomingPhotos, actor:
     prisma.$transaction(async (tx) => {
       // Customers are matched by mobile number; latest details from the counter win.
       const { phone, ...customerFields } = customer;
+      const update: Record<string, unknown> = Object.fromEntries(Object.entries(customerFields).filter(([, v]) => v !== undefined && v !== null));
+      // The area is one address: a new one replaces every level, so an old gaon never stays under a new city.
+      const area = ['state', 'district', 'city', 'village'] as const;
+      if (area.some((k) => customerFields[k])) for (const k of area) update[k] = customerFields[k] ?? null;
       const savedCustomer = await tx.customer.upsert({
         where: { phone },
         create: customer,
-        update: Object.fromEntries(Object.entries(customerFields).filter(([, v]) => v !== undefined && v !== null)),
+        update,
         select: { id: true },
       });
 
@@ -442,7 +446,7 @@ const listSelect = {
   manualModel: true,
   manualFault: true,
   customerType: true,
-  customer: { select: { name: true, phone: true, city: true } },
+  customer: { select: { name: true, phone: true, city: true, village: true } },
   brand: { select: { name: true } },
   deviceModel: { select: { name: true } },
   branch: { select: { id: true, code: true, name: true } },
@@ -531,6 +535,7 @@ export async function list(query: JobListQuery, actor: Actor) {
       OR: [
         { jobNumber: contains(term) },
         { customer: { city: contains(term) } },
+        { customer: { village: contains(term) } },
         { imei: { startsWith: term } },
         { imei2: { startsWith: term } },
         { accessoryName: contains(term) },
@@ -607,6 +612,7 @@ export async function list(query: JobListQuery, actor: Actor) {
     totalAmount: jobMoney(j).totalAmount,
     balance: jobMoney(j).balance,
     city: j.customer.city,
+    village: j.customer.village,
     serialNumber: j.serialNumber,
     remark: j.customerComplaint,
     retailer: j.retailer,
@@ -646,7 +652,7 @@ const detailSelect = {
   conditionNotes: true,
   physicalConditionRemark: true,
   branch: { select: { id: true, code: true, name: true, address: true, phone: true } },
-  customer: { select: { id: true, name: true, phone: true, city: true, altPhone: true, email: true, address: true } },
+  customer: { select: { id: true, name: true, phone: true, state: true, district: true, city: true, village: true, altPhone: true, email: true, address: true } },
   brand: { select: { id: true, name: true } },
   deviceModel: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },

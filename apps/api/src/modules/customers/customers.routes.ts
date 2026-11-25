@@ -14,7 +14,7 @@ customerRoutes.get(
   async (_req, res) => {
     const customer: CustomerDto | null = await prisma.customer.findUnique({
       where: { phone: res.locals.query.phone },
-      select: { id: true, name: true, phone: true, city: true, altPhone: true, email: true, address: true },
+      select: { id: true, name: true, phone: true, state: true, district: true, city: true, village: true, altPhone: true, email: true, address: true },
     });
     res.json({ customer });
   },

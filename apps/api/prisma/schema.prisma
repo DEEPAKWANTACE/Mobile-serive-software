@@ -322,7 +322,11 @@ model ServicePrice {
 
 /// Customers are shared across branches and identified by mobile number.
 model Customer {
+  /// City / taluka. State, district and village complete the address area (names from the LGD directory or typed).
   city      String?
+  state     String?
+  district  String?
+  village   String?
   id        String   @id @default(uuid(7)) @db.Uuid
   name      String
   phone     String   @unique

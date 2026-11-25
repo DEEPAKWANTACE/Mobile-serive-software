@@ -13,7 +13,8 @@ import {
   type ReportDto,
   type ReportEngineerRow,
   type ReportQuery,
-  type CityStatRow,
+  type AreaStatRow,
+  type AreaStatsQuery,
 } from '@msm/shared';
 import { businessRange, businessToday } from '../../lib/business-date.ts';
 import { HttpError } from '../../lib/http-error.ts';
@@ -46,25 +47,33 @@ async function resolveBranches(query: ReportQuery, actor: Actor) {
   });
 }
 
-/** "khamgaon " / "KHAMGAON" → "Khamgaon"; blank → "Not entered". */
-const cityKey = (c: string | null) => {
-  const t = (c ?? '').trim().replace(/\s+/g, ' ');
-  return t ? t.toLowerCase().replace(/\b\p{L}/gu, (m) => m.toUpperCase()) : 'Not entered';
+/** "khamgaon " / "KHAMGAON" → "Khamgaon"; blank → null. */
+const areaName = (value: string | null) => {
+  const t = (value ?? '').trim().replace(/\s+/g, ' ');
+  return t ? t.toLowerCase().replace(/(?<![\p{L}\p{M}])\p{L}/gu, (m) => m.toUpperCase()) : null;
 };
 
-/** Branch Manager / Super Admin: how many job sheets of each type came from each city. */
-export async function cityStats(query: ReportQuery, actor: Actor): Promise<CityStatRow[]> {
+/** CCO and above: how many job sheets of each type came from each city, or each gaon. */
+export async function areaStats(query: AreaStatsQuery, actor: Actor): Promise<AreaStatRow[]> {
   if (query.from > query.to) throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
   const branches = await resolveBranches(query, actor);
   const r = businessRange(query.from, query.to);
   const jobs = await prisma.job.findMany({
     where: { branchId: { in: branches.map((b) => b.id) }, createdAt: r },
-    select: { jobType: true, customerType: true, status: true, customer: { select: { city: true } }, invoice: { select: { total: true } } },
+    select: { jobType: true, customerType: true, status: true, customer: { select: { state: true, district: true, city: true, village: true } }, invoice: { select: { total: true } } },
   });
-  const rows = new Map<string, CityStatRow>();
+  const money = actor.role !== ROLES.CCO;
+  const rows = new Map<string, AreaStatRow>();
   for (const j of jobs) {
-    const city = cityKey(j.customer.city);
-    const row = rows.get(city) ?? { city, total: 0, mobile: 0, accessory: 0, walkIn: 0, retailer: 0, open: 0, delivered: 0, rwr: 0, cancelled: 0, revenue: 0 };
+    const area = {
+      state: areaName(j.customer.state),
+      district: areaName(j.customer.district),
+      city: areaName(j.customer.city),
+      village: query.level === 'village' ? areaName(j.customer.village) : null,
+    };
+    // The same village name exists in many places, so the whole area is the key. Older records have a city only.
+    const key = [area.state, area.district, area.city, area.village].join('|');
+    const row = rows.get(key) ?? { ...area, total: 0, mobile: 0, accessory: 0, walkIn: 0, retailer: 0, open: 0, delivered: 0, rwr: 0, cancelled: 0, revenue: money ? 0 : null };
     row.total += 1;
     if (j.jobType === 'ACCESSORY') row.accessory += 1;
     else row.mobile += 1;
@@ -74,10 +83,10 @@ export async function cityStats(query: ReportQuery, actor: Actor): Promise<CityS
     else if (j.status === 'CANCELLED') row.cancelled += 1;
     else row.open += 1;
     if (j.status === 'RWR' || j.status === 'RWR_PENDING') row.rwr += 1;
-    if (j.invoice) row.revenue = roundMoney(row.revenue + j.invoice.total.toNumber());
-    rows.set(city, row);
+    if (j.invoice && row.revenue !== null) row.revenue = roundMoney(row.revenue + j.invoice.total.toNumber());
+    rows.set(key, row);
   }
-  return [...rows.values()].sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
+  return [...rows.values()].sort((a, b) => b.total - a.total || (a.village ?? a.city ?? '').localeCompare(b.village ?? b.city ?? ''));
 }
 
 const inRange = (d: Date | null, r: { gte: Date; lt: Date }) => !!d && d >= r.gte && d < r.lt;

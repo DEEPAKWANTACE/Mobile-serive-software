@@ -14,9 +14,18 @@ export const reportQuerySchema = z.object({
 });
 export type ReportQuery = z.output<typeof reportQuerySchema>;
 
-/** Job sheets received in the period, per customer city. */
-export type CityStatRow = {
-  city: string;
+/** Roles that can see City-wise and Gaon-wise stats. */
+export const AREA_STAT_ROLES: readonly Role[] = [ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO];
+export const areaStatsQuerySchema = reportQuerySchema.extend({ level: z.enum(['city', 'village']).default('city') });
+export type AreaStatsQuery = z.output<typeof areaStatsQuerySchema>;
+
+/** Job sheets received in the period, per customer city or gaon. */
+export type AreaStatRow = {
+  state: string | null;
+  district: string | null;
+  city: string | null;
+  /** Null in the city-wise view, or when no gaon was entered. */
+  village: string | null;
   total: number;
   mobile: number;
   accessory: number;
@@ -26,8 +35,8 @@ export type CityStatRow = {
   delivered: number;
   rwr: number;
   cancelled: number;
-  /** Sum of invoices of these jobs. */
-  revenue: number;
+  /** Sum of invoices of these jobs; null for the CCO. */
+  revenue: number | null;
 };
 
 type Counts = {

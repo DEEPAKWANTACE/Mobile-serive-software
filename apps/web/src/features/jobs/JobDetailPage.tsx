@@ -197,6 +197,12 @@ export function JobDetailPage() {
         <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-3 lg:grid-cols-6">
           <Row label="Customer"><span className="font-medium">{job.customer.name}</span></Row>
           <Row label="Mobile"><a href={`tel:${job.customer.phone}`} className="font-medium text-brand-600 hover:underline">{job.customer.phone}</a></Row>
+          {(job.customer.village || job.customer.city) && (
+            <Row label="Gaon / City">
+              <span className="font-medium">{[job.customer.village, job.customer.city].filter(Boolean).join(', ')}</span>
+              {job.customer.district && <span className="block text-xs text-slate-500">{[job.customer.district, job.customer.state].filter(Boolean).join(', ')}</span>}
+            </Row>
+          )}
           <Row label="Device"><span className="font-medium">{device}</span></Row>
           <Row label="Problem"><span className="line-clamp-2" title={problem}>{problem}</span></Row>
           <Row label="Engineer">
@@ -498,7 +504,9 @@ function JobInfo({ job, readOnly = false }: { job: JobDto; readOnly?: boolean })
           </Row>
           <Row label="Alternate mobile">{job.customer.altPhone}</Row>
           <Row label="Email">{job.customer.email}</Row>
-          <Row label="City">{job.customer.city}</Row>
+          <Row label="Gaon">{job.customer.village}</Row>
+          <Row label="City / Taluka">{job.customer.city}</Row>
+          <Row label="District / State">{[job.customer.district, job.customer.state].filter(Boolean).join(', ') || null}</Row>
           <Row label="Address">{job.customer.address}</Row>
           <Row label="Received as">{job.customerType === 'RETAILER' ? 'Retailer job' : 'Customer job'}</Row>
           <Row label="Retailer">{job.retailer}</Row>

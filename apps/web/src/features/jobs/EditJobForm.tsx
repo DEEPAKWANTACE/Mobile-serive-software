@@ -22,7 +22,7 @@ import { api } from '@/lib/api-client';
 import { useOptions } from '@/lib/crud';
 import { handleFormError } from '@/lib/form-errors';
 import { FaultPicker } from './NewJobPage';
-import { CityInput } from '@/components/ui/CityInput';
+import { AreaPicker, type Area } from '@/features/geo/AreaPicker';
 
 /** Correct a saved job sheet. Device & faults only before diagnosis; every change is logged in the history. */
 export function EditJobForm({ job, onDone }: { job: JobDto; onDone: () => void }) {
@@ -65,6 +65,9 @@ function Inner({
         phone: job.customer.phone,
         name: job.customer.name,
         city: job.customer.city ?? '',
+        state: job.customer.state ?? '',
+        district: job.customer.district ?? '',
+        village: job.customer.village ?? '',
         altPhone: job.customer.altPhone ?? '',
         email: job.customer.email ?? '',
         address: job.customer.address ?? '',
@@ -148,9 +151,12 @@ function Inner({
         <Field label="Email" {...err(errors.customer?.email?.message)}>
           <input {...register('customer.email')} className={inputClass} />
         </Field>
-        <Field label="City" {...err(errors.customer?.city?.message)}>
-          <CityInput {...register('customer.city')} />
-        </Field>
+        <AreaPicker
+          value={{ state: watch('customer.state') ?? '', district: watch('customer.district') ?? '', city: watch('customer.city') ?? '', village: watch('customer.village') ?? '' }}
+          onChange={(next: Area) => {
+            for (const key of ['state', 'district', 'city', 'village'] as const) setValue(`customer.${key}`, next[key], { shouldDirty: true });
+          }}
+        />
         <Field label="Address">
           <input {...register('customer.address')} className={inputClass} />
         </Field>

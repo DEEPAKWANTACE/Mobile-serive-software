@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ROLE_LABELS, ROLES, type CityStatRow, type ReportBranchRow, type ReportCcoRow, type ReportDto, type ReportEngineerRow } from '@msm/shared';
+import { ROLE_LABELS, ROLES, type ReportBranchRow, type ReportCcoRow, type ReportDto, type ReportEngineerRow } from '@msm/shared';
 import { QuickDateRange } from '@/components/ui/QuickDateRange';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -16,7 +16,7 @@ import { toQueryString } from '@/lib/crud';
 import { downloadCsv } from '@/lib/csv';
 import { formatCurrency, todayIso } from '@/lib/format';
 
-type Tab = 'branches' | 'engineers' | 'ccos' | 'cities';
+type Tab = 'branches' | 'engineers' | 'ccos';
 const pct = (v: number | null) => (v === null ? '—' : `${v}%`);
 const num = (v: number | null, suffix = '') => (v === null ? '—' : `${v}${suffix}`);
 
@@ -34,26 +34,6 @@ export function ReportsPage() {
     queryKey: ['reports', params],
     queryFn: () => api.get<ReportDto>(`/reports?${toQueryString(params)}`),
   });
-
-  const canSeeCities = user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.BRANCH_MANAGER;
-  const cities = useQuery({
-    queryKey: ['reports', 'city-stats', params],
-    queryFn: () => api.get<CityStatRow[]>(`/reports/city-stats?${toQueryString(params)}`),
-    enabled: canSeeCities && tab === 'cities',
-  });
-  const cityColumns: Column<CityStatRow>[] = [
-    { header: 'City', cell: (r) => <span className={`font-medium ${r.city === 'Not entered' ? 'text-slate-400' : ''}`}>{r.city}</span> },
-    { header: 'Job sheets', cell: (r) => <span className="font-semibold">{r.total}</span> },
-    { header: 'Mobile', cell: (r) => r.mobile },
-    { header: 'Accessory', cell: (r) => r.accessory },
-    { header: 'Walk-in', cell: (r) => r.walkIn },
-    { header: 'Retailer', cell: (r) => r.retailer },
-    { header: 'Open', cell: (r) => r.open },
-    { header: 'Delivered', cell: (r) => r.delivered },
-    { header: 'RWR', cell: (r) => r.rwr },
-    { header: 'Cancelled', cell: (r) => r.cancelled },
-    { header: 'Invoiced', className: 'text-right', cell: (r) => formatCurrency(r.revenue) },
-  ];
 
   const period = `${from}_to_${to}`;
   const branchColumns: Column<ReportBranchRow>[] = [
@@ -95,11 +75,6 @@ export function ReportsPage() {
   ];
 
   const exportTab = () => {
-    if (tab === 'cities') {
-      downloadCsv(`city-report_${period}.csv`, ['City', 'Job sheets', 'Mobile', 'Accessory', 'Walk-in', 'Retailer', 'Open', 'Delivered', 'RWR', 'Cancelled', 'Invoiced'],
-        (cities.data ?? []).map((r) => [r.city, r.total, r.mobile, r.accessory, r.walkIn, r.retailer, r.open, r.delivered, r.rwr, r.cancelled, r.revenue]));
-      return;
-    }
     if (!data) return;
     if (tab === 'branches')
       downloadCsv(`branch-report_${period}.csv`, ['Branch', 'Code', 'City', 'State', 'In', 'Out', 'Repaired', 'RWR', 'Pending now', '15+ days', 'Same day %', 'Avg TAT (days)', 'Sent to L4', 'Revenue'],
@@ -119,12 +94,6 @@ export function ReportsPage() {
     if (tab === 'engineers') table = <DataTable columns={engineerColumns} rows={data.engineers} rowKey={(r) => r.engineer.id} emptyMessage="No engineers" />;
     if (tab === 'ccos') table = <DataTable columns={ccoColumns} rows={data.ccos} rowKey={(r) => r.user.id} emptyMessage="No counter staff" />;
   }
-  if (tab === 'cities') {
-    table = cities.isLoading
-      ? <p className="text-sm text-slate-500">Loading…</p>
-      : <DataTable columns={cityColumns} rows={cities.data ?? []} rowKey={(r) => r.city} emptyMessage="No job sheets in this period" />;
-  }
-
   return (
     <div className="space-y-5">
       <PageHeader title="Reports" description="Branch, engineer and CCO performance for a period" />
@@ -154,13 +123,13 @@ export function ReportsPage() {
       >
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 text-sm">
-            {([['branches', 'Branch-wise'], ['engineers', 'Engineer-wise'], ['ccos', 'CCO-wise'], ...(canSeeCities ? [['cities', 'City-wise']] : [])] as [Tab, string][]).map(([t, label]) => (
+            {([['branches', 'Branch-wise'], ['engineers', 'Engineer-wise'], ['ccos', 'CCO-wise']] as [Tab, string][]).map(([t, label]) => (
               <button key={t} type="button" onClick={() => setTab(t)} className={`rounded px-3 py-1.5 ${tab === t ? 'bg-brand-600 text-white' : 'text-slate-700 hover:bg-slate-50'}`}>
                 {label}
               </button>
             ))}
           </div>
-          <Button variant="secondary" disabled={tab === 'cities' ? !cities.data : !data} onClick={exportTab}>
+          <Button variant="secondary" disabled={!data} onClick={exportTab}>
             ⬇ Export to Excel
           </Button>
         </div>

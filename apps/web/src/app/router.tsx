@@ -40,6 +40,7 @@ import { NotFoundPage } from '@/pages/NotFoundPage';
 import { MyRemindersPage } from '@/features/reminders/MyRemindersPage';
 import { PurchaseOrdersPage } from '@/features/purchase/PurchaseOrdersPage';
 import { SupplyReportPage } from '@/features/purchase/SupplyReportPage';
+import { AreaStatsPage } from '@/features/reports/AreaStatsPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -112,7 +113,7 @@ export const router = createBrowserRouter([
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER, ROLES.CCO]} />,
-            children: [{ path: 'entries', element: <EntriesPage /> }],
+            children: [{ path: 'entries', element: <EntriesPage /> }, { path: 'area-stats', element: <AreaStatsPage /> }],
           },
           {
             element: <RequireAuth roles={[ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER]} />,

@@ -134,6 +134,7 @@ export const JOB_LIST_COLUMNS = [
   'payment',
   'imei',
   'city',
+  'village',
   'branch',
   'inwardBy',
   'ageDays',
@@ -152,7 +153,8 @@ export const JOB_LIST_COLUMN_LABELS: Record<JobListColumn, string> = {
   estimate: 'Estimate amount',
   payment: 'Payment / balance',
   imei: 'IMEI / serial',
-  city: 'City',
+  city: 'City / Taluka',
+  village: 'Gaon',
   branch: 'Branch',
   inwardBy: 'Inward by',
   ageDays: 'Days open',
@@ -163,9 +165,9 @@ export const JOB_LIST_COLUMN_HINTS: Partial<Record<JobListColumn, string>> = {
   payment: 'Amount paid and balance due',
 };
 
-const COUNTER_COLUMNS: JobListColumn[] = ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'engineer', 'approval'];
+const COUNTER_COLUMNS: JobListColumn[] = ['status', 'date', 'customerName', 'customerMobile', 'city', 'village', 'device', 'problem', 'engineer', 'approval'];
 export const DEFAULT_JOB_LIST_COLUMNS: Record<Role, JobListColumn[]> = {
-  SUPER_ADMIN: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem', 'engineer', 'branch'],
+  SUPER_ADMIN: ['status', 'date', 'customerName', 'customerMobile', 'city', 'village', 'device', 'problem', 'engineer', 'branch'],
   BRANCH_MANAGER: COUNTER_COLUMNS,
   CCO: COUNTER_COLUMNS,
   ENGINEER: ['status', 'date', 'customerName', 'customerMobile', 'device', 'problem'],
