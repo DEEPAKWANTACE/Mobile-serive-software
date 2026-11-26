@@ -4,6 +4,7 @@ import {
   JOB_STATUS_LABELS,
   ROLES,
   RWR_STATUSES,
+  CCO_RWR_STATUSES,
   SPARE_HOLD_STATUSES,
   type ApprovalData,
   type DeadRiskApprovalData,
@@ -459,6 +460,9 @@ export async function returnWithoutRepair(id: string, { reason, note }: RwrData,
   const access = isCounterOrManager ? await loadForAccess(id, actor) : await loadForEngineer(id, actor);
   if (isCounterOrManager) assertBranchAccess(actor, access.currentBranchId);
   if (!RWR_STATUSES.includes(access.status)) throw notAllowed(access.status);
+  if (actor.role === ROLES.CCO && !CCO_RWR_STATUSES.includes(access.status)) {
+    throw HttpError.conflict('This job is still pending with the engineer — the engineer must return it (Returned OK or RWR) before the counter can deliver it');
+  }
   const prepared = preparePhotos({ RWR: files });
 
   await withStoredPhotos(prepared, () =>

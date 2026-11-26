@@ -110,6 +110,12 @@ export const SPARE_HOLD_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR
 /** Engineer can return the phone without repair from these statuses. */
 export const RWR_STATUSES: readonly JobStatus[] = ['ASSIGNED', 'IN_REPAIR', 'SPARE_PENDING', 'CUSTOMER_REJECTED', 'TESTING'];
 
+/**
+ * The CCO may request RWR only once the engineer is no longer working on the phone: spare not available or
+ * customer rejected. While it is pending with the engineer, only the engineer can hand it back.
+ */
+export const CCO_RWR_STATUSES: readonly JobStatus[] = ['SPARE_PENDING', 'CUSTOMER_REJECTED'];
+
 export const JOB_LOCATIONS = ['AT_BRANCH', 'TO_L4', 'TO_BRANCH'] as const;
 export type JobLocation = (typeof JOB_LOCATIONS)[number];
 

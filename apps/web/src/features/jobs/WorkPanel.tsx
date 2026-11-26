@@ -15,6 +15,7 @@ import {
   negotiatedEstimateSchema,
   RWR_REASON_LABELS,
   RWR_STATUSES,
+  CCO_RWR_STATUSES,
   SPARE_HOLD_STATUSES,
   TRANSFERABLE_STATUSES,
   type ApprovalData,
@@ -74,7 +75,9 @@ export function WorkPanel({ job }: { job: JobDto }) {
   const canCancelTransfer = !!pending && (pending.from.id === user?.id || isManager);
   const canTransfer = isAssignedEngineer && !pending && TRANSFERABLE_STATUSES.includes(job.status);
   const canHold = isAssignedEngineer && SPARE_HOLD_STATUSES.includes(job.status);
-  const canRwr = (isAssignedEngineer || user?.role === ROLES.CCO) && RWR_STATUSES.includes(job.status);
+  const canRwr = isAssignedEngineer
+    ? RWR_STATUSES.includes(job.status)
+    : user?.role === ROLES.CCO && CCO_RWR_STATUSES.includes(job.status);
   const canMarkSpareReceived = job.status === 'SPARE_PENDING' && (isAssignedEngineer || isManager);
 
   const messageContext = {
