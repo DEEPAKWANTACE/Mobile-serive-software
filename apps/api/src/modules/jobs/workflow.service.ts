@@ -415,7 +415,7 @@ export async function spareHold(id: string, { part, partId, note }: SpareHoldDat
   return { status: 'SPARE_PENDING' as const };
 }
 
-/** Part arrived: resume the job where it was. Assigned engineer, or a manager of the branch. */
+/** Part arrived: the job goes to In repair with the same engineer. Assigned engineer, or a manager of the branch. */
 export async function spareReceived(id: string, note: string | null | undefined, actor: Actor) {
   const access = await loadForAccess(id, actor);
   const isManager = actor.role === ROLES.SUPER_ADMIN || actor.role === ROLES.BRANCH_MANAGER;
@@ -425,9 +425,9 @@ export async function spareReceived(id: string, note: string | null | undefined,
 
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },
-    select: { statusBeforeHold: true, sparePart: true, spareRequestedAt: true },
+    select: { sparePart: true, spareRequestedAt: true },
   });
-  const resume: JobStatus = job.statusBeforeHold ?? 'IN_REPAIR';
+  const resume: JobStatus = 'IN_REPAIR';
   await prisma.$transaction(async (tx) => {
     await moveFrom(tx, id, 'SPARE_PENDING', { status: resume, statusBeforeHold: null }, { actor, remark: `Spare received${note ? `: ${note}` : ''}` });
     await recordAudit(

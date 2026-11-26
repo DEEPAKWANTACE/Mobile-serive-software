@@ -358,7 +358,7 @@ export async function issue(id: string, note: string | null | undefined, actor: 
     if (jp.job.status === 'SPARE_PENDING') {
       const stillMissing = await tx.jobPart.count({ where: { jobId: jp.job.id, status: 'NOT_AVAILABLE' } });
       if (!stillMissing) {
-        resumed = jp.job.statusBeforeHold ?? 'IN_REPAIR';
+        resumed = 'IN_REPAIR'; // the spare is here: straight to repair with the same engineer
         await tx.job.updateMany({ where: { id: jp.job.id, status: 'SPARE_PENDING' }, data: { status: resumed, statusBeforeHold: null } });
         await recordStatus(tx, { jobId: jp.job.id, from: 'SPARE_PENDING', to: resumed, actorId: actor.sub, remark: `Spare issued: ${jp.part.code} ${jp.part.name}` });
         await audit('job.spare_received', { part: `${jp.part.code} – ${jp.part.name}`, resumedTo: resumed, note: 'Issued by store' });
