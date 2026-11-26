@@ -17,6 +17,9 @@ const envSchema = z.object({
   APP_TIMEZONE: z.string().default('Asia/Kolkata'),
   /** Key for encrypting stored secrets (device unlock codes). Any long random string; keep it stable. */
   DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
+  /** Optional: post job sheet status changes to this Discord channel with this bot. */
+  DISCORD_BOT_TOKEN: z.string().min(1).optional(),
+  DISCORD_JOB_LOG_CHANNEL_ID: z.string().regex(/^\d+$/).optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
 });
 

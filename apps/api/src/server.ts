@@ -2,9 +2,11 @@ import { env } from './config/env.ts';
 import { createApp } from './app.ts';
 import { logger } from './lib/logger.ts';
 import { prisma } from './lib/prisma.ts';
+import { startDiscordJobLog } from './modules/events/discord-job-log.ts';
 
 const server = createApp().listen(env.PORT, () => {
   logger.info(`API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
+  startDiscordJobLog();
 });
 
 async function shutdown(signal: string) {
