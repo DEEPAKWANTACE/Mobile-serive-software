@@ -202,6 +202,7 @@ function useJobFeed(filters: Record<string, unknown>, batchSize: number, enabled
   const query = useInfiniteQuery({
     queryKey: ['jobs', 'feed', filters, batchSize],
     enabled,
+    refetchInterval: 60_000, // keep an open list current even without live updates
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       api.get<Paginated<JobListItemDto>>(`/jobs?${toQueryString({ ...filters, page: pageParam, pageSize: batchSize, ...(pageParam > 1 && { withTotal: false }) })}`),

@@ -148,11 +148,11 @@ export function NewJobPage({ embedded = false }: { embedded?: boolean } = {}) {
   const setArea = useCallback((next: Area) => {
     for (const key of ['state', 'district', 'city', 'village'] as const) setValue(`customer.${key}`, next[key]);
   }, [setValue]);
-  // Start from the branch's own state and district, until something else is chosen.
+  // Start from the branch's own state, district and taluka, until something else is chosen. The gaon is never assumed.
   const branchArea = useBranchArea();
   useEffect(() => {
     if (!branchArea || getValues('customer.state') || getValues('customer.city') || getValues('customer.village')) return;
-    setArea({ ...branchArea, city: '', village: '' });
+    setArea({ ...branchArea, village: '' });
   }, [branchArea, getValues, setArea]);
   const modelId = watch('deviceModelId');
   const jobType = watch('jobType');

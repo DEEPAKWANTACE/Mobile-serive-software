@@ -95,6 +95,14 @@ export function refreshSession(): Promise<AuthResponse | null> {
   return refreshInFlight;
 }
 
+/** Opens the live-updates stream (Server-Sent Events) with the current access token. */
+export const openEventStream = (signal: AbortSignal) =>
+  fetch(`${BASE_URL}/events`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    credentials: 'include',
+    signal,
+  });
+
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; responseType?: 'json' | 'blob' };
 
 async function request<T>(path: string, options: RequestOptions = {}, retry = true): Promise<T> {

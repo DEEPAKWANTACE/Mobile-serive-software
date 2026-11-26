@@ -22,10 +22,10 @@ const useGeoIndex = () => useQuery({ queryKey: ['geo', 'index'], queryFn: () => 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
- * The state and district of the signed-in user's branch, used to pre-fill new job sheets. The district is
- * found from the branch's city, which may be a district or one of its talukas.
+ * The state, district and taluka of the signed-in user's branch, used to pre-fill new job sheets. They are
+ * found from the branch's city, which may be a district or a taluka; whatever cannot be told apart stays blank.
  */
-export function useBranchArea(): { state: string; district: string } | null {
+export function useBranchArea(): { state: string; district: string; city: string } | null {
   const own = useAuth().user?.branch?.id;
   const { items: branches } = useOptions<BranchDto>('branches', {}, { enabled: !!own });
   const index = useGeoIndex().data;
@@ -37,7 +37,8 @@ export function useBranchArea(): { state: string; district: string } | null {
     const city = branch.city.name;
     const byName = state.districts.find((d) => same(d.name, city));
     const byTaluka = state.districts.filter((d) => d.talukas.some((t) => same(t, city)));
-    return { state: state.name, district: byName?.name ?? (byTaluka.length === 1 ? byTaluka[0]!.name : '') };
+    const district = byName ?? (byTaluka.length === 1 ? byTaluka[0] : undefined);
+    return { state: state.name, district: district?.name ?? '', city: district?.talukas.find((t) => same(t, city)) ?? '' };
   }, [branch, index]);
 }
 
