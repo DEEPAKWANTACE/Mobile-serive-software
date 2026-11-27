@@ -176,9 +176,21 @@ export const DEFAULT_JOB_LIST_COLUMNS: Record<Role, JobListColumn[]> = {
   // No job access; listed so every role has an entry.
   CENTRAL_STOREKEEPER: ['status', 'date', 'device'],
 };
-export type JobListColumnsDto = Record<Role, JobListColumn[]>;
+/** Default left-to-right order of the columns (after Job Sheet ID). */
+export const DEFAULT_JOB_LIST_ORDER: JobListColumn[] = [
+  'status', 'date', 'customerName', 'customerMobile', 'city', 'village', 'device', 'problem', 'engineer',
+  'pendingWith', 'estimate', 'payment', 'imei', 'branch', 'inwardBy', 'ageDays', 'approval',
+];
+/** Every role's ticked columns, plus the one column order Super Admin set for all roles. */
+export type JobListColumnsDto = Record<Role, JobListColumn[]> & { order: JobListColumn[] };
+/** Full column order: the saved order first, then any column it is missing, in the default order. */
+export const normalizeJobListOrder = (order: readonly string[] | undefined): JobListColumn[] => {
+  const known = (order ?? []).filter((c): c is JobListColumn => (JOB_LIST_COLUMNS as readonly string[]).includes(c));
+  return [...new Set([...known, ...DEFAULT_JOB_LIST_ORDER])];
+};
 const columnList = z.array(z.enum(JOB_LIST_COLUMNS)).max(JOB_LIST_COLUMNS.length).transform((cols) => [...new Set(cols)]);
 export const jobListColumnsSchema = z.object({
+  order: columnList.optional(),
   SUPER_ADMIN: columnList,
   BRANCH_MANAGER: columnList,
   CCO: columnList,

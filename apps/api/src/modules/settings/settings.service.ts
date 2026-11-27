@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   DEFAULT_JOB_LIST_COLUMNS,
+  normalizeJobListOrder,
   JOB_LIST_COLUMNS,
   ROLE_VALUES,
   ROLES,
@@ -270,15 +271,19 @@ export async function updateDiagnosisFinding(id: string, data: { label?: string;
 export async function jobListColumns(): Promise<JobListColumnsDto> {
   const row = await prisma.shopSettings.findUnique({ where: { id: ID }, select: { jobListColumns: true } });
   const saved = (row?.jobListColumns ?? {}) as Partial<Record<string, unknown>>;
-  return Object.fromEntries(
+  const savedOrder = Array.isArray(saved.order) ? (saved.order as string[]) : undefined;
+  const order = normalizeJobListOrder(savedOrder);
+  const roles = Object.fromEntries(
     ROLE_VALUES.map((role) => {
       const value = saved[role];
       const columns = Array.isArray(value)
         ? value.filter((key): key is JobListColumn => JOB_LIST_COLUMNS.includes(key as JobListColumn))
         : DEFAULT_JOB_LIST_COLUMNS[role];
-      return [role, columns];
+      // Once Super Admin has saved an order, every role shows its columns in that order.
+      return [role, savedOrder ? order.filter((c) => columns.includes(c)) : columns];
     }),
-  ) as JobListColumnsDto;
+  );
+  return { ...roles, order } as JobListColumnsDto;
 }
 
 export async function jobListMode(): Promise<JobListModeDto> {

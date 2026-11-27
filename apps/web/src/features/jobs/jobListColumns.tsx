@@ -130,7 +130,7 @@ const WEIGHT: Record<Exclude<JobListColumn, 'approval'>, number> = {
 export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers, repeatColumns = false): Column<JobListItemDto>[] {
   const extra = repeatColumns ? REPEAT_COLUMNS : [];
   const canApprove = handlers.role === ROLES.CCO || handlers.role === ROLES.BRANCH_MANAGER;
-  // The action column is only meaningful for staff who can approve / deliver; it always sits right after the job ID.
+  // The action column is only meaningful for staff who can approve / deliver; it sits where Super Admin placed it.
   const showAction = keys.includes('approval') && canApprove;
   const rest = keys.filter((k): k is Exclude<JobListColumn, 'approval'> => k !== 'approval');
   const total = rest.reduce((sum, k) => sum + WEIGHT[k], 0) || 1;
@@ -165,13 +165,16 @@ export function buildJobColumns(keys: JobListColumn[], handlers: ActionHandlers,
       ),
       style: { width: '5.75rem' },
     },
-    ...(showAction ? [{ header: 'Action', cell: (j: JobListItemDto) => <JobRowAction job={j} {...handlers} />, style: { width: '6.5rem' } }] : []),
     ...extra.map((c) => ({ header: c.header, cell: c.cell, style: { width: `${c.rem}rem` } })),
-    // The remaining width (after the fixed ID / action / repeat columns) is shared by weight.
-    ...rest.map((k) => ({
-      header: JOB_LIST_COLUMN_LABELS[k],
-      cell: cells[k],
-      style: { width: `calc((100% - ${fixedRem}rem) * ${(WEIGHT[k] / total).toFixed(4)})` },
-    })),
+    // Columns in Super Admin's order; the remaining width (after the fixed ID / action / repeat columns) is shared by weight.
+    ...keys.flatMap((k): Column<JobListItemDto>[] =>
+      k === 'approval'
+        ? (showAction ? [{ header: 'Action', cell: (j) => <JobRowAction job={j} {...handlers} />, style: { width: '6.5rem' } }] : [])
+        : [{
+            header: JOB_LIST_COLUMN_LABELS[k],
+            cell: cells[k],
+            style: { width: `calc((100% - ${fixedRem}rem) * ${(WEIGHT[k] / total).toFixed(4)})` },
+          }],
+    ),
   ];
 }

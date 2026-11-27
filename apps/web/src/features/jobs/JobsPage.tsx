@@ -319,6 +319,7 @@ export function ShowJobs() {
   const [deliveringId, setDeliveringId] = useState<string | null>(null);
   const actionHandlers = { role: user?.role, onApprove: (j: JobListItemDto) => setApprovingId(j.id), onDeliver: (j: JobListItemDto) => setDeliveringId(j.id) };
   const columns = buildJobColumns(columnKeys, actionHandlers, repeatColumns);
+  const minTableWidth = columns.length > 9 ? `${columns.length * 115}px` : undefined;
   const showCol = (key: JobListColumn) => columnKeys.includes(key);
 
   const exportCsv = async () => {
@@ -445,21 +446,25 @@ export function ShowJobs() {
         <div className="shrink-0"><BulkJobActions role={user.role} branchId={engineerBranch || undefined} selected={[...selected.values()]} onClear={() => setSelected(new Map())} /></div>
       )}
 
-      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className={`hidden md:block ${infinite ? 'min-h-full' : 'h-full'}`}>
+      {/* One screen-height box scrolls both ways, so the sideways scrollbar stays at the bottom of the screen
+          however many rows are loaded; the header row and Job ID stay pinned. */}
+      <div ref={listViewportRef} className="min-h-0 flex-1 overflow-auto overscroll-contain">
+        <div style={{ minWidth: minTableWidth }} className={`hidden md:block ${infinite ? 'min-h-full' : 'h-full'}`}>
           <DataTable
             columns={columns}
             rows={data?.items}
             rowKey={(j) => j.id}
             isLoading={isLoading}
             emptyMessage="No jobs match these filters"
-            containerClassName="min-h-full"
+            containerClassName="min-h-full overflow-visible!"
             tableClassName="table-fixed"
-            minTableWidth={columns.length > 9 ? `${columns.length * 115}px` : undefined}
+            minTableWidth={minTableWidth}
+            stickyHeader
+            stickyColumns={1}
             fillHeight={!infinite && !!paged.data?.items.length && paged.data.items.length === paged.data.pageSize}
             headerCellClassName="px-3! py-2!"
             cellClassName="px-3! py-2!"
-            rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50' : 'bg-amber-50') : ''}
+            rowClassName={(job) => job.dueAt ? (new Date(job.dueAt).getTime() <= Date.now() ? 'bg-red-50 [--row-tint:var(--color-red-50)]' : 'bg-amber-50 [--row-tint:var(--color-amber-50)]') : ''}
             {...(canBulk && { selected: new Set(selected.keys()), onSelectedChange: changeSelection })}
           />
         </div>
@@ -496,7 +501,7 @@ export function ShowJobs() {
           ))}
         </div>
         {infinite && !!feed.items.length && (
-          <div ref={sentinelRef} className="flex items-center justify-center gap-2 py-3 text-xs text-slate-500">
+          <div ref={sentinelRef} className="sticky left-0 flex items-center justify-center gap-2 py-3 text-xs text-slate-500">
             {hasNextPage || isFetchingNextPage ? (
               <>
                 <Loader2 className="size-4 animate-spin text-brand-600" />

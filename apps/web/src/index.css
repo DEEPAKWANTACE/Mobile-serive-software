@@ -310,3 +310,15 @@ html[data-glass] :where(input:not([type='checkbox']):not([type='radio']):not([ty
   size: A5 portrait;
   margin: 6mm;
 }
+
+/* Table columns pinned on the left while the table scrolls sideways: opaque so
+   rows sliding underneath stay hidden; rows can tint them with --row-tint. */
+.sticky-cell {
+  --sticky-bg: #ffffff;
+  background: linear-gradient(var(--row-tint, transparent), var(--row-tint, transparent)), var(--sticky-bg);
+}
+tr:hover > .sticky-cell { --sticky-bg: #f8fafc; --row-tint: transparent; }
+html[data-theme] .sticky-cell { --sticky-bg: var(--app-surface); }
+html[data-theme] tr:hover > .sticky-cell { --sticky-bg: var(--app-bg-2); }
+.sticky-cell-edge { box-shadow: inset -1px 0 0 #e2e8f0; }
+html[data-theme] .sticky-cell-edge { box-shadow: inset -1px 0 0 var(--app-line); }

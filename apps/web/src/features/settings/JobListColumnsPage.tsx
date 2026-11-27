@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Check, RotateCcw } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, GripVertical, RotateCcw } from 'lucide-react';
 import {
   DEFAULT_JOB_LIST_COLUMNS,
+  DEFAULT_JOB_LIST_ORDER,
   JOB_LIST_COLUMN_HINTS,
   JOB_LIST_COLUMN_LABELS,
-  JOB_LIST_COLUMNS,
   ROLE_LABELS,
   ROLE_VALUES,
   type JobListColumn,
@@ -24,11 +24,12 @@ import { jobListColumnsQueryKey, jobListModeQueryKey } from '@/features/jobs/job
 /** Columns beyond this make the list scroll sideways on a normal laptop screen. */
 const COMFORTABLE_COLUMNS = 9;
 
-/** Tick-box grid: which job sheet list columns each role sees. Job Sheet ID is always shown. */
+/** Tick-box grid: which job sheet list columns each role sees, and their left-to-right order. Job Sheet ID is always shown first. */
 export function JobListColumnsPage() {
   const queryClient = useQueryClient();
   const saved = useQuery({ queryKey: jobListColumnsQueryKey, queryFn: () => api.get<JobListColumnsDto>('/settings/job-list-columns') });
   const [draft, setDraft] = useState<JobListColumnsDto | null>(null);
+  const [dragging, setDragging] = useState<JobListColumn | null>(null);
   useEffect(() => {
     if (saved.data && !draft) setDraft(saved.data);
   }, [saved.data, draft]);
@@ -45,24 +46,35 @@ export function JobListColumnsPage() {
 
   if (!draft) return <div className="p-10 text-center text-slate-500">Loading…</div>;
 
-  // Keep the registry order so the list shows columns in a predictable sequence.
-  const ordered = (cols: JobListColumn[]) => JOB_LIST_COLUMNS.filter((c) => cols.includes(c));
+  // Every role's columns follow the one shared order.
+  const withOrder = (d: JobListColumnsDto, order: JobListColumn[]): JobListColumnsDto =>
+    ({ ...Object.fromEntries(ROLE_VALUES.map((r) => [r, order.filter((c) => d[r].includes(c))])), order }) as JobListColumnsDto;
+  const setRoles = (change: (role: Role, cols: JobListColumn[]) => JobListColumn[]) =>
+    setDraft((d) => d && withOrder({ ...d, ...Object.fromEntries(ROLE_VALUES.map((r) => [r, change(r, d[r])])) }, d.order));
   const toggle = (role: Role, column: JobListColumn) =>
-    setDraft((d) => d && { ...d, [role]: d[role].includes(column) ? d[role].filter((c) => c !== column) : ordered([...d[role], column]) });
+    setRoles((r, cols) => (r !== role ? cols : cols.includes(column) ? cols.filter((c) => c !== column) : [...cols, column]));
   const setRow = (column: JobListColumn, on: boolean) =>
-    setDraft((d) => d && (Object.fromEntries(ROLE_VALUES.map((r) => [r, on ? ordered([...new Set([...d[r], column])]) : d[r].filter((c) => c !== column)])) as JobListColumnsDto));
+    setRoles((_, cols) => (on ? [...cols, column] : cols.filter((c) => c !== column)));
+  /** Put `column` where `target` is now (drag and drop), or one step up / down. */
+  const move = (column: JobListColumn, to: number) =>
+    setDraft((d) => {
+      if (!d || to < 0 || to >= d.order.length) return d;
+      const order = d.order.filter((c) => c !== column);
+      order.splice(to, 0, column);
+      return withOrder(d, order);
+    });
   const dirty = JSON.stringify(draft) !== JSON.stringify(saved.data);
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Job List Columns" description="Tick the columns each role sees in the job sheet list. Job Sheet ID is always shown." />
+      <PageHeader title="Job List Columns" description="Tick the columns each role sees in the job sheet list, and drag rows (or use the arrows) to set the column order left to right. Job Sheet ID is always shown first." />
       <JobListModeCard />
       <Card
         title="Column matrix"
         subtitle={`Tip: keep around ${COMFORTABLE_COLUMNS - 1} columns or fewer per role — more columns make the list scroll sideways.`}
         actions={
           <div className="flex gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setDraft(DEFAULT_JOB_LIST_COLUMNS)}>
+            <Button variant="secondary" size="sm" onClick={() => setDraft(withOrder({ ...DEFAULT_JOB_LIST_COLUMNS, order: DEFAULT_JOB_LIST_ORDER }, DEFAULT_JOB_LIST_ORDER))}>
               <RotateCcw className="size-4" /> Reset to defaults
             </Button>
             <Button size="sm" disabled={!dirty} loading={save.isPending} onClick={() => save.mutate(draft)}>Save changes</Button>
@@ -73,7 +85,7 @@ export function JobListColumnsPage() {
           <table className="min-w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5 text-left font-semibold text-slate-700">Column</th>
+                <th className="sticky left-0 z-10 bg-slate-50 px-3 py-2.5 text-left font-semibold text-slate-700">Column <span className="font-normal text-slate-500">(top = left)</span></th>
                 {ROLE_VALUES.map((role) => (
                   <th key={role} className="px-3 py-2.5 text-center font-semibold text-slate-700">
                     <div>{ROLE_LABELS[role]}</div>
@@ -93,13 +105,35 @@ export function JobListColumnsPage() {
                 ))}
                 <td className="px-3 py-2 text-center text-xs text-slate-400">Always</td>
               </tr>
-              {JOB_LIST_COLUMNS.map((column) => {
+              {draft.order.map((column, index) => {
                 const onFor = ROLE_VALUES.filter((r) => draft[r].includes(column)).length;
                 return (
-                  <tr key={column} className="hover:bg-slate-50">
+                  <tr
+                    key={column}
+                    onDragOver={(event) => { if (dragging) { event.preventDefault(); if (dragging !== column) move(dragging, index); } }}
+                    onDrop={(event) => event.preventDefault()}
+                    className={`hover:bg-slate-50 ${dragging === column ? 'opacity-50' : ''}`}
+                  >
                     <td className="theme-panel sticky left-0 bg-white px-3 py-2">
-                      <div className="font-medium text-slate-900">{JOB_LIST_COLUMN_LABELS[column]}</div>
-                      {JOB_LIST_COLUMN_HINTS[column] && <div className="max-w-64 text-xs text-slate-500">{JOB_LIST_COLUMN_HINTS[column]}</div>}
+                      <div className="flex items-center gap-2">
+                        <span
+                          draggable
+                          onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', column); setDragging(column); }}
+                          onDragEnd={() => setDragging(null)}
+                          title="Drag to reorder"
+                          className="cursor-grab text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+                        >
+                          <GripVertical className="size-4" />
+                        </span>
+                        <div className="flex flex-col">
+                          <button type="button" onClick={() => move(column, index - 1)} disabled={index === 0} aria-label={`Move ${JOB_LIST_COLUMN_LABELS[column]} left`} className="rounded text-slate-500 hover:bg-slate-100 disabled:opacity-25"><ArrowUp className="size-3.5" /></button>
+                          <button type="button" onClick={() => move(column, index + 1)} disabled={index === draft.order.length - 1} aria-label={`Move ${JOB_LIST_COLUMN_LABELS[column]} right`} className="rounded text-slate-500 hover:bg-slate-100 disabled:opacity-25"><ArrowDown className="size-3.5" /></button>
+                        </div>
+                        <div>
+                          <div className="font-medium text-slate-900">{JOB_LIST_COLUMN_LABELS[column]}</div>
+                          {JOB_LIST_COLUMN_HINTS[column] && <div className="max-w-64 text-xs text-slate-500">{JOB_LIST_COLUMN_HINTS[column]}</div>}
+                        </div>
+                      </div>
                     </td>
                     {ROLE_VALUES.map((role) => {
                       const on = draft[role].includes(column);
