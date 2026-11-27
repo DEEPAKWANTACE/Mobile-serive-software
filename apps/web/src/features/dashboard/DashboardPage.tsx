@@ -616,9 +616,10 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
         </div>
       </Modal>
 
-      <PaymentSummary branchId={branchId} />
-
+      {/* CCO: job summary first, then the payment summary. */}
       {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
+
+      <PaymentSummary branchId={branchId} />
 
       {/* Temporarily keep the remaining dashboard sections hidden from CCO users. */}
       {user.role !== ROLES.CCO && (

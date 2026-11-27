@@ -95,15 +95,15 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
   const todayLabel = new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
-    <section className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200 sm:p-4" aria-label="Payment summary">
+    <section className="rounded-2xl bg-slate-50 p-2.5 ring-1 ring-slate-200 sm:p-3" aria-label="Payment summary">
       <div className="flex flex-wrap items-center justify-between gap-2 sm:items-start sm:gap-3">
         <div>
-          <h2 className="text-base font-bold text-slate-900 sm:text-lg">Payment Summary</h2>
-          <p className="hidden text-sm text-slate-500 sm:block">
+          <h2 className="text-base font-bold text-slate-900">Payment Summary</h2>
+          <p className="hidden text-xs text-slate-500 sm:block">
             {anyPeriod ? 'Choose any date or range for collection, expenses and net amount' : 'Collection, expenses and net amount for the latest 2 days'}
           </p>
         </div>
-        <div className="flex min-w-0 items-center gap-2 rounded-xl bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm ring-1 ring-slate-200 sm:gap-3 sm:px-3 sm:py-2 sm:text-sm">
+        <div className="flex min-w-0 items-center gap-2 rounded-xl bg-white px-2.5 py-1 text-xs text-slate-700 shadow-sm ring-1 ring-slate-200 sm:gap-3 sm:px-3 sm:py-1.5">
           <span className="inline-flex shrink-0 items-center gap-1.5 font-medium">
             <CalendarDays className="size-3.5 text-brand-600 sm:size-4" /> {todayLabel}
           </span>
@@ -116,7 +116,7 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
 
       {/* Phones: one sideways-scrolling row of period chips instead of several wrapped rows. */}
       <div
-        className="-mx-2.5 mt-2 flex items-center gap-1.5 overflow-x-auto px-2.5 pb-1 sm:mx-0 sm:mt-3 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0"
+        className="-mx-2.5 mt-2 flex items-center gap-1.5 overflow-x-auto px-2.5 pb-1 sm:mx-0 sm:mt-2 sm:flex-wrap sm:gap-2 sm:overflow-visible sm:px-0 sm:pb-0"
         aria-label="Payment summary period"
       >
         {shown.map((p) => (
@@ -127,7 +127,7 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
               setFrom(p.from);
               setTo(p.to);
             }}
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ring-1 transition sm:px-3 sm:py-1.5 ${
+            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold whitespace-nowrap ring-1 transition sm:px-3 ${
               active?.key === p.key ? 'bg-brand-600 text-white ring-brand-600 shadow-sm' : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-100'
             }`}
           >
@@ -150,7 +150,7 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
 
       {summary.error && <p className="mt-3 text-sm text-red-600">{summary.error.message}</p>}
 
-      <div className="mt-2.5 grid gap-2.5 sm:mt-4 sm:gap-4 lg:grid-cols-3">
+      <div className="mt-2.5 grid gap-2.5 sm:gap-3 lg:grid-cols-3">
         <Box
           icon={Wallet}
           title="Total Collection"
@@ -182,7 +182,7 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
         />
       </div>
 
-      <div className="mt-2.5 grid gap-2.5 sm:mt-4 sm:gap-4 lg:grid-cols-2">
+      <div className="mt-2.5 grid gap-2.5 sm:gap-3 lg:grid-cols-2">
         <Box
           icon={Wrench}
           title="To Repair Pending (Approved)"
@@ -201,8 +201,8 @@ export function PaymentSummary({ branchId }: { branchId?: string }) {
         />
       </div>
 
-      <p className="mt-2.5 flex items-start gap-2 rounded-xl bg-brand-50 px-2.5 py-1.5 text-xs text-slate-700 ring-1 ring-brand-100 sm:mt-4 sm:px-3 sm:py-2.5 sm:text-sm">
-        <Info className="mt-0.5 size-3.5 shrink-0 text-brand-600 sm:size-4" />
+      <p className="mt-2.5 flex items-start gap-2 rounded-xl bg-brand-50 px-2.5 py-1.5 text-xs text-slate-700 ring-1 ring-brand-100 sm:px-3 sm:py-2">
+        <Info className="mt-0.5 size-3.5 shrink-0 text-brand-600" />
         <span>
           <strong>Note:</strong> To Repair Pending and Ready to Collect show all pending calls until repair/delivery is completed, irrespective of date.
         </span>
@@ -239,30 +239,30 @@ function Box({
 }) {
   return (
     <div className="flex flex-col overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
-      <div className="flex items-center gap-2 bg-brand-600 px-3 py-2 text-white sm:gap-3 sm:px-4 sm:py-3">
-        <Icon className="size-5 shrink-0 sm:size-8" />
+      <div className="flex items-center gap-2 bg-brand-600 px-3 py-2 text-white sm:gap-2.5 sm:px-3.5">
+        <Icon className="size-5 shrink-0 sm:size-6" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm leading-tight font-bold sm:text-base">{title}</div>
-          <div className="truncate text-[11px] leading-tight opacity-85 sm:text-xs">{subtitle}</div>
+          <div className="truncate text-sm leading-tight font-bold">{title}</div>
+          <div className="truncate text-[11px] leading-tight opacity-85">{subtitle}</div>
         </div>
-        {/* Phones: the details link sits in the header to save a row. */}
-        <Link to={to} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/40 sm:hidden">
-          Details <ArrowRight className="size-3.5" />
+        {/* The details link sits in the header to save a row. */}
+        <Link to={to} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2.5 py-1 text-xs font-semibold ring-1 ring-white/40 hover:bg-white/30">
+          <List className="hidden size-3.5 sm:block" /> <span className="sm:hidden">Details</span><span className="hidden sm:inline">View Details</span> <ArrowRight className="size-3.5" />
         </Link>
       </div>
-      <div className="flex flex-1 flex-col px-3 py-2.5 sm:px-4 sm:py-4">
-        {amount !== undefined && <div className="text-center text-2xl font-extrabold text-brand-700 tabular-nums sm:text-4xl">{amount}</div>}
+      <div className="flex flex-1 flex-col justify-center px-3 py-2.5 sm:px-3.5">
+        {amount !== undefined && <div className="text-center text-2xl font-extrabold text-brand-700 tabular-nums sm:text-3xl">{amount}</div>}
         {chip && (
-          <div className="mt-1.5 flex items-center justify-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 sm:mt-3 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm">
+          <div className="mt-1.5 flex items-center justify-center gap-1.5 rounded-lg bg-brand-50 px-2 py-1 text-xs font-semibold text-brand-700 sm:mt-2 sm:gap-2 sm:px-3">
             {chip}
           </div>
         )}
         {left && right && (
-          <div className="mt-2 grid grid-cols-2 divide-x divide-slate-200 text-center sm:mt-3">
+          <div className="mt-2 grid grid-cols-2 divide-x divide-slate-200 text-center">
             {[left, right].map((pair) => (
               <div key={pair.label} className="px-2">
                 <div className="text-[11px] text-slate-600 sm:text-xs">{pair.label}</div>
-                <div className="text-base font-bold text-slate-900 tabular-nums sm:text-lg">{pair.value}</div>
+                <div className="text-base font-bold text-slate-900 tabular-nums">{pair.value}</div>
               </div>
             ))}
           </div>
@@ -270,26 +270,21 @@ function Box({
         {count && side && (
           <div className="grid grid-cols-2 items-center divide-x divide-slate-200">
             <div className="flex items-center gap-2 pr-2 sm:gap-3 sm:pr-3">
-              <Smartphone className="size-7 shrink-0 text-brand-600 sm:size-10" />
+              <Smartphone className="size-7 shrink-0 text-brand-600 sm:size-8" />
               <div className="min-w-0">
                 <div className="text-slate-900">
-                  <span className="text-2xl font-extrabold tabular-nums sm:text-3xl">{count.value ?? '–'}</span>{' '}
+                  <span className="text-2xl font-extrabold tabular-nums">{count.value ?? '–'}</span>{' '}
                   <span className="text-xs font-semibold sm:text-sm">{count.unit}</span>
                 </div>
                 <div className="mt-0.5 inline-block rounded bg-brand-50 px-1.5 py-0.5 text-[11px] text-brand-700 sm:mt-1 sm:px-2 sm:text-xs">({count.note})</div>
               </div>
             </div>
             <div className="pl-2 text-center sm:pl-3">
-              <div className="text-xl font-extrabold text-brand-700 tabular-nums sm:text-3xl">{side.value}</div>
+              <div className="text-xl font-extrabold text-brand-700 tabular-nums sm:text-2xl">{side.value}</div>
               <div className="text-[11px] text-slate-600 sm:text-xs">{side.label}</div>
             </div>
           </div>
         )}
-        <div className="mt-auto hidden pt-4 text-center sm:block">
-          <Link to={to} className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
-            <List className="size-4" /> View Details <ArrowRight className="size-4" />
-          </Link>
-        </div>
       </div>
     </div>
   );
