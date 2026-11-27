@@ -546,7 +546,8 @@ function EditTab() {
           {job.data.status === 'DELIVERED' || job.data.status === 'CANCELLED' ? (
             <p className="text-sm text-slate-600">This job is closed and can no longer be edited.</p>
           ) : (
-            <EditJobForm key={job.data.id + job.dataUpdatedAt} job={job.data} onDone={() => toast.info('Changes saved — search another job number to continue')} />
+            // Keyed on status, not fetch time: the 30-second job refresh must not wipe unsaved edits.
+            <EditJobForm key={`${job.data.id}:${job.data.status}`} job={job.data} onDone={() => toast.info('Changes saved — search another job number to continue')} />
           )}
         </div>
       )}

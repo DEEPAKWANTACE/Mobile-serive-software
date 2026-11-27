@@ -10,6 +10,7 @@ import { formatCurrency, formatJobNumber } from '@/lib/format';
 import { useAuth } from '@/features/auth/auth-context';
 import { useJob } from './api';
 import { RwrForm } from './HoldAndRwrForms';
+import { RejectionReasonFields } from './RejectionReasonFields';
 import { CostLinesEditor, rowsFromJob, rowsToLines, rowsTotal, type CostRow } from './CostLinesEditor';
 
 type Mode = 'approve' | 'reject';
@@ -19,7 +20,8 @@ export function ApprovalDecisionDialog({ jobId, onClose }: { jobId: string | nul
   const job = useJob(jobId ?? '', !!jobId);
   return (
     <Modal open={!!jobId} onClose={onClose} title={job.data ? `Customer approval · ${formatJobNumber(job.data.jobNumber)}` : 'Customer approval'} size="lg">
-      {jobId && (job.data ? <ApprovalDecisionForm key={job.data.id + job.dataUpdatedAt} job={job.data} onDone={onClose} /> : <p className="text-sm text-slate-500">Loading…</p>)}
+      {/* Keyed on status, not fetch time: the 30-second job refresh must not wipe the choice and reason being typed. */}
+      {jobId && (job.data ? <ApprovalDecisionForm key={`${job.data.id}:${job.data.status}`} job={job.data} onDone={onClose} /> : <p className="text-sm text-slate-500">Loading…</p>)}
     </Modal>
   );
 }
@@ -38,6 +40,8 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
   });
   const [optionId, setOptionId] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  // Rejection: picked reason + optional remark, combined into the stored note.
+  const [rejectNote, setRejectNote] = useState('');
   const needsDeadRisk = job.deadRiskRequested && !job.deadRiskApprovedAt;
   const [deadRiskOk, setDeadRiskOk] = useState(false);
   const [error, setError] = useState<string>();
@@ -45,7 +49,7 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
 
   const save = useMutation({
     mutationFn: async () => {
-      if (mode === 'reject') return api.post(`/jobs/${job.id}/approval`, { decision: 'REJECTED', note, selectedOptionId: null, amount: null });
+      if (mode === 'reject') return api.post(`/jobs/${job.id}/approval`, { decision: 'REJECTED', note: rejectNote, selectedOptionId: null, amount: null });
       const lines = rowsToLines(rows);
       if (typeof lines === 'string') throw new Error(lines);
       return api.post(`/jobs/${job.id}/approval`, {
@@ -84,7 +88,7 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
 
   const submit = () => {
     setError(undefined);
-    if (mode === 'reject' && note.trim().length < 3) return setError("Enter the customer's reason");
+    if (mode === 'reject' && rejectNote.trim().length < 3) return setError("Select or enter the customer's reason");
     if (mode === 'approve') {
       const lines = rowsToLines(rows);
       if (typeof lines === 'string') return setError(lines);
@@ -129,7 +133,7 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
             type="button"
             role="tab"
             aria-selected={mode === key}
-            onClick={() => (setMode(key), setError(undefined))}
+            onClick={() => (setMode(key), setRejectNote(''), setError(undefined))}
             className={`rounded-md px-2 py-1.5 text-sm font-medium ${mode === key ? (key === 'reject' ? 'bg-red-600 text-white' : 'bg-white text-slate-900 shadow-sm') : 'text-slate-600 hover:text-slate-900'}`}
           >
             {label}
@@ -178,9 +182,13 @@ export function ApprovalDecisionForm({ job, onDone }: { job: JobDto; onDone: () 
         </>
       )}
 
-      <Field label={mode === 'reject' ? "Customer's reason" : 'Note (optional)'} required={mode === 'reject'}>
-        <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} placeholder={mode === 'reject' ? 'e.g. Too costly, will buy a new phone' : 'e.g. Approved on call'} />
-      </Field>
+      {mode === 'reject' ? (
+        <RejectionReasonFields branchId={job.branch.id} onChange={setRejectNote} />
+      ) : (
+        <Field label="Note (optional)">
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} className={inputClass} placeholder="e.g. Approved on call" />
+        </Field>
+      )}
 
       {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
