@@ -48,6 +48,7 @@ import { LogCallForm } from '@/features/calling/LogCallForm';
 import { WhatsAppButton } from '@/features/messages/WhatsAppButton';
 import { ApprovalDecisionForm } from './ApprovalDecisionDialog';
 import { EditCostingForm } from './CostLinesEditor';
+import { RejectionReasonFields } from './RejectionReasonFields';
 
 /** Diagnosis / quote, customer approval and work-progress actions for one job. */
 export function WorkPanel({ job }: { job: JobDto }) {
@@ -758,13 +759,14 @@ function ApprovalForm({ job, decision, initialOptionId, onDone }: { job: JobDto;
           <input {...register('amount')} inputMode="decimal" className={inputClass} />
         </Field>
       )}
-      <Field
-        label={decision === 'APPROVED' ? 'Note (optional)' : "Customer's reason"}
-        required={decision === 'REJECTED'}
-        error={errors.note?.message}
-      >
-        <textarea {...register('note')} rows={2} autoFocus className={inputClass} placeholder={decision === 'REJECTED' ? 'e.g. Too costly, will buy a new phone' : 'e.g. Approved on call'} />
-      </Field>
+      {decision === 'REJECTED' ? (
+        // Reason from the branch list + optional remark, stored together as the note.
+        <RejectionReasonFields branchId={job.branch.id} onChange={(note) => setValue('note', note, { shouldValidate: !!note })} error={errors.note?.message} />
+      ) : (
+        <Field label="Note (optional)" error={errors.note?.message}>
+          <textarea {...register('note')} rows={2} autoFocus className={inputClass} placeholder="e.g. Approved on call" />
+        </Field>
+      )}
       <FormActions onCancel={onDone} loading={save.isPending} submitLabel={decision === 'APPROVED' ? 'Confirm approval' : 'Confirm rejection'} />
     </form>
   );

@@ -100,6 +100,7 @@ model Branch {
   jobCounters      JobCounter[]
   payments         Payment[]
   accessoryOptions AccessoryOption[]
+  rejectionReasons RejectionReason[]
   brands           Brand[]
   faultCategories  FaultCategory[]
   faults           Fault[]
@@ -671,6 +672,23 @@ model AccessoryOption {
   @@unique([branchId, name])
   @@index([branchId, isActive])
   @@map("accessory_options")
+}
+
+/// Reasons a customer rejects an estimate (picked at customer approval). Null branch = global default.
+model RejectionReason {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  branchId  String?  @map("branch_id") @db.Uuid
+  name      String
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, name])
+  @@index([branchId, isActive])
+  @@map("rejection_reasons")
 }
 
 /// Super Admin-managed diagnosis presets that engineers can select in addition to free text.

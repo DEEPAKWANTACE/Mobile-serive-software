@@ -70,6 +70,14 @@ export const accessoryOptionsQuerySchema = z.object({
 });
 export type AccessoryOptionDto = { id: string; name: string; sortOrder: number; isActive: boolean; branchId: string | null; isGlobal: boolean };
 
+/** Customer rejection reasons: same shape and rules as the accessories list (global defaults + per-branch rows). */
+export const rejectionReasonSchema = accessoryOptionSchema;
+export const rejectionReasonUpdateSchema = accessoryOptionUpdateSchema;
+export const rejectionReasonsQuerySchema = accessoryOptionsQuerySchema;
+export type RejectionReasonDto = AccessoryOptionDto;
+/** Stored approval note for a rejection: the picked reason, then the optional remark. */
+export const rejectionNote = (reason: string, remark: string) => [reason.trim(), remark.trim()].filter(Boolean).join(' · ');
+
 /** Problem types (e.g. Hardware, Software) grouping the diagnosis presets — Super Admin managed. */
 export const diagnosisFindingTypeSchema = z.object({
   name: z.string().trim().min(2, 'Enter a type name').max(60),

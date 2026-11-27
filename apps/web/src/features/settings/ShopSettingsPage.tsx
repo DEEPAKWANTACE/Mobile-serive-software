@@ -103,6 +103,7 @@ function SettingsForm({ settings }: { settings: ShopSettingsDto }) {
       </Card>
       <BranchOptionsCard />
       <AccessoryOptionsCard />
+    <RejectionReasonsCard />
     </div>
   );
 }
@@ -116,6 +117,7 @@ function BranchJobDefaults() {
     <WarrantyDefaultsForm initial={defaults.data} onSaved={() => void queryClient.invalidateQueries({ queryKey: ['settings', 'branch-warranty'] })} />
     <BranchOptionsCard />
     <AccessoryOptionsCard />
+    <RejectionReasonsCard />
   </div>;
 }
 
@@ -202,6 +204,15 @@ function BranchOptionsCard() {
 }
 
 function AccessoryOptionsCard() {
+  return <BranchListCard resource="accessories" title="Accessories received list" noun="Accessory option" />;
+}
+
+function RejectionReasonsCard() {
+  return <BranchListCard resource="rejection-reasons" title="Customer rejection reasons" noun="Reason" hint="Shown as a list when the customer rejects an estimate" />;
+}
+
+/** A pick-list with global defaults (Super Admin) and per-branch rows (Super Admin or that branch's manager). */
+function BranchListCard({ resource, title, noun, hint }: { resource: string; title: string; noun: string; hint?: string }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isSuper = user?.role === 'SUPER_ADMIN';
@@ -209,20 +220,24 @@ function AccessoryOptionsCard() {
   const [branchId, setBranchId] = useState('');
   const [name, setName] = useState('');
   const qs = isSuper ? (branchId ? `?scope=branch&branchId=${branchId}` : '?scope=global') : '?scope=branch';
-  const options = useQuery({ queryKey: ['settings', 'accessories', qs], queryFn: () => api.get<AccessoryOptionDto[]>(`/settings/accessories${qs}`) });
+  const options = useQuery({ queryKey: ['settings', resource, qs], queryFn: () => api.get<AccessoryOptionDto[]>(`/settings/${resource}${qs}`) });
   const add = useMutation({
-    mutationFn: () => api.post('/settings/accessories', { name, sortOrder: (options.data?.length ?? 0) * 10, branchId: isSuper ? (branchId || null) : null }),
-    onSuccess: () => { setName(''); toast.success('Accessory option added'); void queryClient.invalidateQueries({ queryKey: ['settings', 'accessories'] }); },
+    mutationFn: () => api.post(`/settings/${resource}`, { name, sortOrder: (options.data?.length ?? 0) * 10, branchId: isSuper ? (branchId || null) : null }),
+    onSuccess: () => { setName(''); toast.success(`${noun} added`); void queryClient.invalidateQueries({ queryKey: ['settings', resource] }); },
+    onError: (e) => toast.error(e.message),
   });
   const toggle = useMutation({
-    mutationFn: (o: AccessoryOptionDto) => api.patch(`/settings/accessories/${o.id}`, { isActive: !o.isActive }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings', 'accessories'] }),
+    mutationFn: (o: AccessoryOptionDto) => api.patch(`/settings/${resource}/${o.id}`, { isActive: !o.isActive }),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['settings', resource] }),
+    onError: (e) => toast.error(e.message),
   });
-  return <Card title="Accessories received list" subtitle={isSuper ? 'Global defaults or a selected branch' : 'Editable only for your branch'}>
+  const scopeText = isSuper ? 'Global defaults or a selected branch' : 'Your branch list — global defaults also show';
+  return <Card title={title} subtitle={hint ? `${hint} · ${scopeText}` : scopeText}>
     {isSuper && <Field label="List scope"><select value={branchId} onChange={(e) => setBranchId(e.target.value)} className={inputClass}><option value="">Global defaults</option>{branches.map((b) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}</select></Field>}
-    <div className="mt-4 flex gap-2"><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} placeholder="Add option" /><Button disabled={!name.trim()} loading={add.isPending} onClick={() => add.mutate()}>Add</Button></div>
+    <form className="mt-4 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim()) add.mutate(); }}><input value={name} onChange={(e) => setName(e.target.value)} className={inputClass} placeholder={`Add ${noun.toLowerCase()}`} /><Button type="submit" disabled={!name.trim()} loading={add.isPending}>Add</Button></form>
     <ul className="mt-4 divide-y divide-slate-100 rounded-md border border-slate-200">
       {(options.data ?? []).map((o) => <li key={o.id} className="flex items-center justify-between px-3 py-2 text-sm"><span className={o.isActive ? '' : 'text-slate-400 line-through'}>{o.name}</span><Button size="sm" variant="secondary" onClick={() => toggle.mutate(o)}>{o.isActive ? 'Deactivate' : 'Activate'}</Button></li>)}
+      {options.data?.length === 0 && <li className="px-3 py-2 text-sm text-slate-500">Nothing added yet.</li>}
     </ul>
   </Card>;
 }

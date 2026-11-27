@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, branchOptionsSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, jobListModeSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
+import { accessoryOptionSchema, accessoryOptionsQuerySchema, accessoryOptionUpdateSchema, rejectionReasonSchema, rejectionReasonsQuerySchema, rejectionReasonUpdateSchema, branchOptionsSchema, branchWarrantySchema, diagnosisFindingSchema, diagnosisFindingSubcategorySchema, diagnosisFindingSubcategoryUpdateSchema, diagnosisFindingTypeSchema, diagnosisFindingTypeUpdateSchema, diagnosisFindingUpdateSchema, idParamSchema, jobListColumnsSchema, jobListModeSchema, PHOTO_MAX_BYTES, ROLES, shopSettingsSchema } from '@msm/shared';
 import { actorOf } from '../../lib/request-context.ts';
 import { authorize } from '../../middleware/authorize.ts';
 import { validate } from '../../middleware/validate.ts';
@@ -48,6 +48,16 @@ settingsRoutes.post('/accessories', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MA
 });
 settingsRoutes.patch('/accessories/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema, body: accessoryOptionUpdateSchema }), async (req, res) => {
   res.json(await service.updateAccessoryOption(req.params.id as string, req.body, actorOf(req)));
+});
+// Customer rejection reasons: everyone reads the effective list; Super Admin / Branch Manager edit it.
+settingsRoutes.get('/rejection-reasons', validate({ query: rejectionReasonsQuerySchema }), async (req, res) => {
+  res.json(await service.rejectionReasons(res.locals.query as never, actorOf(req)));
+});
+settingsRoutes.post('/rejection-reasons', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ body: rejectionReasonSchema }), async (req, res) => {
+  res.status(201).json(await service.createRejectionReason(req.body, actorOf(req)));
+});
+settingsRoutes.patch('/rejection-reasons/:id', authorize(ROLES.SUPER_ADMIN, ROLES.BRANCH_MANAGER), validate({ params: idParamSchema, body: rejectionReasonUpdateSchema }), async (req, res) => {
+  res.json(await service.updateRejectionReason(req.params.id as string, req.body, actorOf(req)));
 });
 
 settingsRoutes.get('/diagnosis-finding-types', async (req, res) => {

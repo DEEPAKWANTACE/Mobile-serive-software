@@ -155,6 +155,28 @@ export async function updateAccessoryOption(id: string, data: { name?: string; s
   return accessoryDto(await prisma.accessoryOption.update({ where: { id }, data, select: accessorySelect }));
 }
 
+export async function rejectionReasons(query: { branchId?: string; scope: 'effective' | 'branch' | 'global' }, actor: Actor) {
+  const rows = await prisma.rejectionReason.findMany({
+    where: catalogWhere(actor, { ...query, page: 1, pageSize: 100, sort: undefined, search: undefined, isActive: undefined } as never),
+    select: accessorySelect,
+    orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+  });
+  return rows.map(accessoryDto);
+}
+
+export async function createRejectionReason(data: { name: string; sortOrder: number; branchId?: string | null }, actor: Actor) {
+  const branchId = writeCatalogBranch(actor, data.branchId);
+  const clash = await prisma.rejectionReason.findFirst({ where: { branchId, name: { equals: data.name, mode: 'insensitive' } }, select: { id: true } });
+  if (clash) throw HttpError.conflict('This reason is already in the list');
+  return accessoryDto(await prisma.rejectionReason.create({ data: { name: data.name, sortOrder: data.sortOrder, branchId }, select: accessorySelect }));
+}
+
+export async function updateRejectionReason(id: string, data: { name?: string; sortOrder?: number; isActive?: boolean }, actor: Actor) {
+  const current = await prisma.rejectionReason.findUniqueOrThrow({ where: { id }, select: { branchId: true } });
+  assertCatalogRow(actor, current.branchId);
+  return accessoryDto(await prisma.rejectionReason.update({ where: { id }, data, select: accessorySelect }));
+}
+
 const findingTypeSelect = { id: true, name: true, sortOrder: true, isActive: true } as const;
 
 export async function diagnosisFindingTypes(includeInactive: boolean, actor: Actor): Promise<DiagnosisFindingTypeDto[]> {
