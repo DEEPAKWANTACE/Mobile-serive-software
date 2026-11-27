@@ -4,28 +4,21 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  BadgeIndianRupee,
-  CircleDollarSign,
   ClockAlert,
   Hourglass,
-  IndianRupee,
   LayoutList,
-  PackageCheck,
   Wrench,
 } from 'lucide-react';
 import {
-  PAYMENT_MODE_LABELS,
-  PAYMENT_MODES,
   ROLES,
   type DashboardSummaryDto,
-  type PaymentMode,
 } from '@msm/shared';
 import { Card } from '@/components/ui/Card';
 import { inputClass } from '@/components/ui/Field';
 import { useAuth } from '@/features/auth/auth-context';
 import { api } from '@/lib/api-client';
 import { toQueryString } from '@/lib/crud';
-import { formatCurrency, formatDate, todayIso } from '@/lib/format';
+import { formatDate, todayIso } from '@/lib/format';
 import { StatCard } from './StatCard';
 
 type DatePreset = { key: string; label: string; from: string; to: string };
@@ -61,12 +54,11 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
   const today = todayIso();
   const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
-  const [paymentMode, setPaymentMode] = useState<PaymentMode | ''>('');
   const presets = datePresets().filter((p) => anyPeriod || p.key === 'today' || p.key === 'yesterday');
   const range = from || to ? { from, to } : {};
   const summary = useQuery({
-    queryKey: ['reports', 'dashboard-summary', branchId, from, to, paymentMode],
-    queryFn: () => api.get<DashboardSummaryDto>(`/reports/dashboard-summary?${toQueryString({ ...range, branchId, paymentMode })}`),
+    queryKey: ['reports', 'dashboard-summary', branchId, from, to],
+    queryFn: () => api.get<DashboardSummaryDto>(`/reports/dashboard-summary?${toQueryString({ ...range, branchId })}`),
   });
   const d = summary.data;
   const jobs = (extra: Record<string, string> = {}) =>
@@ -85,14 +77,11 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
         : to
           ? `Up to ${formatDate(to)}`
           : 'All time';
-  const allReceived = d
-    ? d.completedReceivedByMode.CASH + d.completedReceivedByMode.UPI + d.completedReceivedByMode.CARD
-    : undefined;
 
   return (
     <Card
       title="Job summary"
-      subtitle={`${periodLabel} · financial cards use the workflow event date`}
+      subtitle={periodLabel}
       icon={LayoutList}
     >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -112,8 +101,8 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
       <div className="mt-5 border-t border-slate-100 pt-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Financial position</h3>
-            <p className="text-xs text-slate-500">{anyPeriod ? 'Choose a date period; payment mode' : 'Today or yesterday; payment mode'} changes only “Received from completed jobs”.</p>
+            <h3 className="text-sm font-semibold text-slate-900">Period</h3>
+            <p className="text-xs text-slate-500">{anyPeriod ? 'Choose a date period' : 'Today or yesterday'} for jobs in / out. Collection, expenses, approved and ready amounts are in the payment summary above.</p>
           </div>
           {anyPeriod && <div className="flex flex-wrap items-center gap-2">
             <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600">
@@ -163,56 +152,12 @@ export function DashboardSummary({ branchId, linkable = true }: { branchId?: str
 
         <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
           <MoneyTile
-            label="Ready to collect"
-            value={money(d?.readyToCollectAmount)}
-            tone="good"
-            icon={PackageCheck}
-            hint={d ? `${d.readyToCollectCount} ready job${d.readyToCollectCount === 1 ? '' : 's'} · balance due now` : undefined}
-          />
-          <MoneyTile
             label="Pending customer approval"
             value={money(d?.pendingApprovalAmount)}
             tone="warning"
             icon={ClockAlert}
-            hint={d ? `${d.pendingApprovalCount} estimate${d.pendingApprovalCount === 1 ? '' : 's'} for CCO follow-up` : undefined}
+            hint={d ? `${d.pendingApprovalCount} estimate${d.pendingApprovalCount === 1 ? '' : 's'} for CCO follow-up · any date` : undefined}
           />
-          <MoneyTile
-            label="Approved · under repair"
-            value={money(d?.approvedUnderRepairAmount)}
-            tone="brand"
-            icon={BadgeIndianRupee}
-            hint={d ? `${d.approvedUnderRepairCount} approved job${d.approvedUnderRepairCount === 1 ? '' : 's'} in repair` : undefined}
-          />
-          <MoneyTile
-            label="Received from completed jobs"
-            value={money(d?.completedReceivedAmount)}
-            tone="info"
-            icon={CircleDollarSign}
-            hint={d ? `${d.completedReceivedCount} completed job${d.completedReceivedCount === 1 ? '' : 's'} · ${paymentMode ? PAYMENT_MODE_LABELS[paymentMode] : 'all modes'}` : undefined}
-          />
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="mr-1 inline-flex items-center gap-1 text-xs font-semibold text-slate-500">
-            <IndianRupee className="size-3.5" /> Received mode
-          </span>
-          {([
-            { value: '' as const, label: 'All', amount: allReceived },
-            ...PAYMENT_MODES.map((mode) => ({ value: mode, label: PAYMENT_MODE_LABELS[mode], amount: d?.completedReceivedByMode[mode] })),
-          ]).map((option) => (
-            <button
-              key={option.value || 'ALL'}
-              type="button"
-              onClick={() => setPaymentMode(option.value)}
-              className={`rounded-full px-3 py-1 text-xs font-medium ring-1 transition ${
-                paymentMode === option.value
-                  ? 'bg-slate-900 text-white ring-slate-900'
-                  : 'bg-slate-50 text-slate-700 ring-slate-200 hover:bg-slate-100'
-              }`}
-            >
-              {option.label}{option.amount === undefined ? '' : ` · ${formatCurrency(option.amount)}`}
-            </button>
-          ))}
         </div>
       </div>
 

@@ -65,13 +65,18 @@ export function DayBookPage() {
   const canOpenJobs = user?.role !== ROLES.ACCOUNTS;
   // CCO only sees today and yesterday — no older records.
   const isCco = user?.role === ROLES.CCO;
-  const [from, setFrom] = useState(todayIso());
-  const [to, setTo] = useState(todayIso());
-  const [branchId, setBranchId] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [voiding, setVoiding] = useState<ExpenseDto | null>(null);
   // The open section lives in the URL, so it survives a refresh or coming back from a job.
   const [urlParams, setUrlParams] = useSearchParams();
+  // Dashboard "View details" links open the day book on the period the dashboard showed.
+  const linkedDate = (key: string) => {
+    const value = urlParams.get(key);
+    return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : todayIso();
+  };
+  const [from, setFrom] = useState(() => linkedDate('from'));
+  const [to, setTo] = useState(() => linkedDate('to'));
+  const [branchId, setBranchId] = useState(() => urlParams.get('branchId') ?? '');
+  const [adding, setAdding] = useState(false);
+  const [voiding, setVoiding] = useState<ExpenseDto | null>(null);
   const requested = urlParams.get('view');
   const view = requested && Object.hasOwn(VIEWS, requested) ? (requested as View) : null;
   const [modeFilter, setModeFilter] = useState<PaymentMode | ''>('');

@@ -145,13 +145,13 @@ export type DashboardSummaryDto = {
   pending: number; // open now
   underRepair: number; // with an engineer now
   over15Days: number;
-  /** Positive balance still due on jobs that became ready for collection in the period. */
+  /** Positive balance still due on every repaired phone waiting for delivery now (any job date). */
   readyToCollectAmount: number;
   readyToCollectCount: number;
-  /** Engineer quote total waiting for the customer's answer in the period. */
+  /** Engineer quote total waiting for the customer's answer now (any job date). */
   pendingApprovalAmount: number;
   pendingApprovalCount: number;
-  /** Approved amount on jobs that entered repair in the period and are still in repair. */
+  /** Approved amount on every customer-approved job still pending repair now (any job date). */
   approvedUnderRepairAmount: number;
   approvedUnderRepairCount: number;
   /** Net payments received in the period for jobs that are now completed or delivered. */
@@ -159,5 +159,11 @@ export type DashboardSummaryDto = {
   completedReceivedCount: number;
   completedReceivedByMode: Record<PaymentMode, number>;
   paymentMode: PaymentMode | null;
-  engineerPending: { engineerId: string; engineer: string; phone: string | null; pending: number }[];
+  /** Payment summary for the period (the same records as the day book). Online = UPI + card. */
+  collection: { total: number; cash: number; online: number; deliveredCount: number };
+  expenses: { total: number; cash: number; online: number; count: number };
+  net: { total: number; cash: number; online: number };
+  /** The business dates the period-based figures cover (null = all time). */
+  period: { from: string | null; to: string | null };
+  engineerPending:{ engineerId: string; engineer: string; phone: string | null; pending: number }[];
 };

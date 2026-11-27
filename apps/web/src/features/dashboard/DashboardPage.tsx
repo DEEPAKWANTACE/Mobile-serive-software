@@ -68,6 +68,7 @@ import { FranchisePicker, type FranchiseSelection } from './FranchisePicker';
 import { AgeBadge, OverdueCard } from './OverdueCard';
 import { CancelTransferButton, TransferResponseButtons } from '@/features/jobs/TransferActions';
 import { DashboardSummary } from './DashboardSummary';
+import { PaymentSummary } from './PaymentSummary';
 import { CentralDashboard } from '@/features/purchase/CentralDashboard';
 
 const useStats = () => useQuery({ queryKey: ['jobs', 'stats'], queryFn: () => api.get<JobStatsDto>('/jobs/stats') });
@@ -614,6 +615,8 @@ function BranchDashboard({ user, branchId }: { user: AuthUser; branchId?: string
           </div>
         </div>
       </Modal>
+
+      <PaymentSummary branchId={branchId} />
 
       {user.role === ROLES.CCO && <DashboardSummary branchId={branchId} />}
 

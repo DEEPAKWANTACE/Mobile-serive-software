@@ -1,4 +1,5 @@
 import {
+  APPROVED_REPAIR_PENDING_STATUSES,
   ENGINEER_OPEN_STATUSES,
   REPORT_ROLES,
   roundMoney,
@@ -300,18 +301,20 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
   if (query.from && query.to && query.from > query.to) {
     throw HttpError.badRequest('Invalid request', { from: ['From date is after To date'] });
   }
-  // Financial position: only Branch Manager / Super Admin may look at any period; counter staff see today or yesterday.
+  // Financial position: only Branch Manager / Super Admin may look at any period; counter staff see
+  // the latest two days (today + yesterday, rolling) and nothing older.
   if (actor.role !== ROLES.SUPER_ADMIN && actor.role !== ROLES.BRANCH_MANAGER) {
     const today = businessToday();
     const yesterday = businessToday(new Date(Date.now() - 86_400_000));
-    query = { ...query, from: query.from ?? today, to: query.to ?? today };
+    query = { ...query, from: query.from ?? yesterday, to: query.to ?? today };
     if (query.from! < yesterday || query.to! > today) throw HttpError.forbidden('You can only view today or yesterday');
   }
   const branchId = actor.branchId ?? query.branchId;
   const scope: Prisma.JobWhereInput = branchId ? { branchId } : {};
   const range = query.from || query.to ? businessRange(query.from ?? '2000-01-01', query.to ?? businessToday()) : null;
 
-  const [totalIn, openJobs, totalOut, moneyJobs, completedPayments] = await Promise.all([
+  const branchWhere = branchId ? { branchId } : {};
+  const [totalIn, openJobs, totalOut, moneyJobs, completedPayments, periodPayments, periodExpenses] = await Promise.all([
     prisma.job.count({ where: { ...scope, ...(range && { createdAt: range }) } }),
     // Pending work is "what is open right now": it must not shrink as the chosen period moves on,
     // otherwise yesterday's unfinished jobs vanish from a dashboard that opens on "Today".
@@ -345,6 +348,22 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
       },
       select: { jobId: true, kind: true, mode: true, amount: true },
     }),
+    // Collection / expenses / net follow the day book: every payment taken and every expense booked in the period.
+    prisma.payment.groupBy({
+      by: ['kind', 'mode'],
+      where: { ...branchWhere, ...(range && { createdAt: range }) },
+      _sum: { amount: true },
+    }),
+    prisma.expense.groupBy({
+      by: ['mode'],
+      where: {
+        ...branchWhere,
+        voidedAt: null,
+        ...((query.from || query.to) && { expenseDate: { gte: query.from ?? '2000-01-01', lte: query.to ?? businessToday() } }),
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    }),
   ]);
   const open = openJobs;
   const perEngineer = new Map<string, { engineerId: string; engineer: string; phone: string | null; pending: number }>();
@@ -355,11 +374,11 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
     perEngineer.set(row.engineerId, row);
   }
 
-  const isInMetricRange = (date: Date | null) => !range || inRange(date, range);
-  const readyToCollect = moneyJobs.filter((j) => j.status === 'READY_FOR_DELIVERY' && isInMetricRange(j.readyAt));
-  const pendingApproval = moneyJobs.filter((j) => j.status === 'AWAITING_APPROVAL' && isInMetricRange(j.diagnosedAt));
-  const approvedUnderRepairStatuses = new Set(['IN_REPAIR', 'SPARE_PENDING', 'REPAIRED', 'TESTING']);
-  const approvedUnderRepair = moneyJobs.filter((j) => approvedUnderRepairStatuses.has(j.status) && isInMetricRange(j.approvedAt));
+  // Pending money is "open right now": a job stays counted whatever its date until it is repaired
+  // (leaves the repair statuses) or delivered, so old jobs never drop off the dashboard.
+  const readyToCollect = moneyJobs.filter((j) => j.status === 'READY_FOR_DELIVERY');
+  const pendingApproval = moneyJobs.filter((j) => j.status === 'AWAITING_APPROVAL');
+  const approvedUnderRepair = moneyJobs.filter((j) => (APPROVED_REPAIR_PENDING_STATUSES as readonly string[]).includes(j.status));
 
   const readyToCollectAmount = roundMoney(
     readyToCollect.reduce((sum, job) => sum + Math.max(0, jobMoney(job).balance), 0),
@@ -386,6 +405,26 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
     ? completedReceivedByMode[query.paymentMode]
     : roundMoney(Object.values(completedReceivedByMode).reduce((sum, amount) => sum + amount, 0));
 
+  let cashIn = 0;
+  let onlineIn = 0;
+  for (const g of periodPayments) {
+    const signed = (g.kind === 'REFUND' ? -1 : 1) * (g._sum.amount?.toNumber() ?? 0);
+    if (g.mode === 'CASH') cashIn += signed;
+    else onlineIn += signed;
+  }
+  let cashOut = 0;
+  let onlineOut = 0;
+  let expenseCount = 0;
+  for (const g of periodExpenses) {
+    const amount = g._sum.amount?.toNumber() ?? 0;
+    if (g.mode === 'CASH') cashOut += amount;
+    else onlineOut += amount;
+    expenseCount += g._count._all;
+  }
+  const collection = { total: roundMoney(cashIn + onlineIn), cash: roundMoney(cashIn), online: roundMoney(onlineIn), deliveredCount: totalOut };
+  const expenses = { total: roundMoney(cashOut + onlineOut), cash: roundMoney(cashOut), online: roundMoney(onlineOut), count: expenseCount };
+  const net = { total: roundMoney(collection.total - expenses.total), cash: roundMoney(cashIn - cashOut), online: roundMoney(onlineIn - onlineOut) };
+
   return {
     totalJobs: totalIn,
     totalIn,
@@ -403,6 +442,10 @@ export async function dashboardSummary(query: DashboardSummaryQuery, actor: Acto
     completedReceivedCount: new Set(selectedPayments.map((payment) => payment.jobId)).size,
     completedReceivedByMode,
     paymentMode: query.paymentMode ?? null,
+    collection,
+    expenses,
+    net,
+    period: { from: query.from ?? null, to: query.to ?? null },
     engineerPending: [...perEngineer.values()].sort((a, b) => b.pending - a.pending),
   };
 }

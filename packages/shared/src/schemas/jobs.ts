@@ -86,6 +86,9 @@ export const WARRANTY_LABELS: Record<WarrantyStatus, string> = { IN_WARRANTY: 'I
 /** Statuses in which the engineer can still be (re)assigned. */
 export const ASSIGNABLE_STATUSES: readonly JobStatus[] = ['RECEIVED', 'ASSIGNED'];
 
+/** Customer approved the estimate and the repair is not finished yet (dashboard "Repair pending (approved)"). */
+export const APPROVED_REPAIR_PENDING_STATUSES: readonly JobStatus[] = ['IN_REPAIR', 'SPARE_PENDING', 'REPAIRED', 'TESTING'];
+
 /** Statuses that count as an engineer's open workload (phone is with the engineer). */
 export const ENGINEER_OPEN_STATUSES: readonly JobStatus[] = [
   'ASSIGNED',
